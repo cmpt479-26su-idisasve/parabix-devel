@@ -10,6 +10,7 @@
 #include <idisa/idisa_avx_builder.h>
 #include <idisa/idisa_i64_builder.h>
 #include <idisa/idisa_nvptx_builder.h>
+#include <idisa/idisa_arm_builder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/ADT/Triple.h>
 #include <llvm/Support/ErrorHandling.h>
