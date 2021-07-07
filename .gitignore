@@ -7,6 +7,7 @@ llvm-[0-9]*.src
 # Don't track backup files
 *.bak
 *.kate-swp
+*.icloud
 *~
 .git/
 .DS_Store
