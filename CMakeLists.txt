@@ -63,7 +63,11 @@ else()
 find_package(LLVM REQUIRED CONFIG)
 endif()
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION} in: ${LLVM_DIR}")
-set(LLVM_ALL_TARGETS X86)
+set(LLVM_ALL_TARGETS
+    AArch64
+    ARM
+    X86
+)
 llvm_map_components_to_libnames(REQ_LLVM_LIBRARIES ${LLVM_ALL_TARGETS} mcjit native IRReader Linker)
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
