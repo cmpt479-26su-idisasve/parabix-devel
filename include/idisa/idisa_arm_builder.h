@@ -20,7 +20,7 @@ public:
 
     virtual std::string getBuilderUniqueName() override;
     #if defined(__ARM_ARCH)
-    int arm_signmak();
+    int arm_signmask();
     llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
     #endif
 

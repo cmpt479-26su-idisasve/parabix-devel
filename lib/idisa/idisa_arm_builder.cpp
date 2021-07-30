@@ -11,7 +11,7 @@ std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth !=
 
 #if defined(__ARM_ARCH)
 
-int IDISA_ARM_Builder::arm_signmak()
+int IDISA_ARM_Builder::arm_signmask()
 {
     static const int32_t shift_ammount[] = {0,1,2,3};
     const int32x4_t shift = vld1q_s32(shift_amount);
