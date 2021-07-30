@@ -2,6 +2,9 @@
 #define IDISA_ARM_BUILDER_H
 
 #include <idisa/idisa_builder.h>
+#if defined(__ARM_ARCH)
+#include<arm_neon.h>
+#endif
 
 namespace IDISA {
 
@@ -16,9 +19,13 @@ public:
     }
 
     virtual std::string getBuilderUniqueName() override;
+    #if defined(__ARM_ARCH)
+    int arm_signmak();
+    llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
+    #endif
 
     // SSE
-    llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
+    /*
     llvm::Value * mvmd_compress(unsigned fw, llvm::Value * a, llvm::Value * select_mask) override;
     // SSE2
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
@@ -29,6 +36,7 @@ public:
     // SSSE3
     llvm::Value * esimd_mergeh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * esimd_mergel(unsigned fw, llvm::Value * a, llvm::Value * b) override;
+    */
 
     ~IDISA_ARM_Builder() {}
 };

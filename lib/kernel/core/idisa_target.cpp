@@ -114,7 +114,7 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C) {
         return new KernelBuilderImpl<IDISA_I64_Builder>(C, codegen::BlockSize, codegen::LaneWidth);
     }
     if (SSSE3_available()) return new KernelBuilderImpl<IDISA_SSSE3_Builder>(C, codegen::BlockSize, codegen::LaneWidth);
-    else if(ARM_available()) throw std::runtime_error("NEON RECOGNIZED");
+    else if(ARM_available()) return new KernelBuilderImpl<IDISA_ARM_Builder>(C, codegen::BlockSize, codegen::LaneWidth);
     return new KernelBuilderImpl<IDISA_SSE2_Builder>(C, codegen::BlockSize, codegen::LaneWidth);
 }
 #ifdef CUDA_ENABLED
