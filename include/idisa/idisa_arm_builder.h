@@ -17,12 +17,11 @@ public:
     : IDISA_Builder(C, ARM_width, bitBlockWidth, laneWidth) {
 
     }
-
     virtual std::string getBuilderUniqueName() override;
-    #if defined(__ARM_ARCH)
-    int arm_signmask();
-    llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
-    #endif
+    llvm::Value* neon_vld1x4();
+    llvm::Value* neon_shrq(llvm::Value* a);
+    llvm::Value* neon_shlq(llvm::Value* a, llvm::Value* b);
+    llvm::Value* hsimd_signmask(unsigned fw, llvm::Value * a) override;
 
     // SSE
     /*
