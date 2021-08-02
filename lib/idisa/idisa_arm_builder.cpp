@@ -52,14 +52,18 @@ Value * IDISA_ARM_Builder::hsimd_signmask(unsigned fw, Value * a) {
     if(getVectorBitWidth(a) == ARM_width)
     {
         if(fw ==32){
+
+          /* shift operation */
           Value* shift = neon_vld1x4();
           Value* temp = neon_shrq(a);
-          Value* shift_left_a =neon_shlq(a,temp); 
+          Value* shift_left_a =neon_shlq(temp,shift); 
+
           /* finally add it to the vector */ 
           Function * add_32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vqaddu);
           return CreateCall(add_32func->getFunctionType(), add_32func,shift_left_a);
 
           /*
+          SIMDE implementation
           static const int32_t shift_ammount[] = {0,1,2,3};
           const int32x4_t shift = vld1q_s32(shift_amount);
           uint32x4_t tmp = vshrq_n_u32(a, 31);
