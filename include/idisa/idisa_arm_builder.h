@@ -2,8 +2,8 @@
 #define IDISA_ARM_BUILDER_H
 
 #include <idisa/idisa_builder.h>
-#if defined(__ARM_ARCH)
-#include<arm_neon.h>
+#ifdef __ARM_ARCH
+#include <arm_neon.h>
 #endif
 
 namespace IDISA {
@@ -18,10 +18,10 @@ public:
 
     }
     virtual std::string getBuilderUniqueName() override;
-    llvm::Value* neon_vld1x4();
-    llvm::Value* neon_shrq(llvm::Value* a);
-    llvm::Value* neon_shlq(llvm::Value* a, llvm::Value* b);
-    llvm::Value* hsimd_signmask(unsigned fw, llvm::Value * a) override;
+    llvm::Value * neon_vld1x4();
+    // llvm::Value * neon_shrq(llvm::Value * a);
+    // llvm::Value * neon_shlq(llvm::Value * a, llvm::Value * b);
+    llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
 
     // SSE
     /*
