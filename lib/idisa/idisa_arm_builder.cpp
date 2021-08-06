@@ -23,16 +23,26 @@ std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth !=
 /* Creates a call to neon_vldq to shift 4 vector */
 Value * IDISA_ARM_Builder::neon_vld1x4() {
   // create a function * to the vld1x4
-  Function * shiftl_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vld1x4, VectorType::get(getInt32Ty(), 4));
+  // Function * shiftl_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vld1, VectorType::get(getInt32Ty(), 4));
+  Function * shiftl_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vld4, {getInt32Ty()});
   // create a static vector of {0, 1, 2, 3} that represents the shift amounts
-  static const std::vector<Value *> shuffle_amount = {
-    ConstantInt::get(getInt32Ty(), 0),
-    ConstantInt::get(getInt32Ty(), 1),
-    ConstantInt::get(getInt32Ty(), 2),
-    ConstantInt::get(getInt32Ty(), 3)
-  };
+  // static const std::vector<Value *> shuffle_amount = {
+  //   ConstantInt::get(getInt32Ty(), 0),
+  //   ConstantInt::get(getInt32Ty(), 1),
+  //   ConstantInt::get(getInt32Ty(), 2),
+  //   ConstantInt::get(getInt32Ty(), 3)
+  // };
   // create a function call
-  return CreateCall(shiftl_f32func->getFunctionType(), shiftl_f32func, shuffle_amount);
+  return CreateCall(
+    shiftl_f32func->getFunctionType(),
+    shiftl_f32func,
+    {
+      ConstantInt::get(getInt32Ty(), 0),
+      ConstantInt::get(getInt32Ty(), 1),
+      ConstantInt::get(getInt32Ty(), 2),
+      ConstantInt::get(getInt32Ty(), 3)
+    }
+  );
 }
 
 // /* shifts the value to the right by 31 bit to get the most sig bits */ 
@@ -47,25 +57,23 @@ Value * IDISA_ARM_Builder::neon_vld1x4() {
 // }
 
 /* shift lefts everything */
-// Value * IDISA_ARM_Builder::neon_shlq(Value * a, Value * b) {
-//   Function * shiftl_u_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vshiftu);
-//   return CreateCall(shiftl_u_f32func->getFunctionType(), shiftl_u_f32func, {a, b});
-// }
+Value * IDISA_ARM_Builder::neon_shlq(Value * a, Value * b) {
+  Function * shiftl_u_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vshiftu);
+  return CreateCall(shiftl_u_f32func->getFunctionType(), shiftl_u_f32func, {a, b});
+}
 
 Value * IDISA_ARM_Builder::hsimd_signmask(unsigned fw, Value * a) {
   if (getVectorBitWidth(a) == ARM_width) {
     if (fw == 32) {
       /* shift operation */
-
       Value * shift = neon_vld1x4();
-      printf("%p\n", shift);
+      printf("shift %p\n", shift);
       // Value * temp = neon_shrq(a);
       Value * temp = CreateLShr(fwCast(fw, a), 31);
-      printf("%p\n", temp);
+      printf("temp %p\n", temp);
       // Value * shift_left_a = neon_shlq(temp, shift);
       Value * shift_left_a = CreateShl(temp, shift);
-      // fprintf(stderr, "3\n");
-      printf("%p\n", shift_left_a);
+      printf("shift_left_a %p\n", shift_left_a);
       /* finally add it to the vector */
       // Function * add_32func = Intrinsic::getDeclaration(
       //   getModule(),

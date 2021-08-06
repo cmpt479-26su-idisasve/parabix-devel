@@ -20,7 +20,7 @@ public:
     virtual std::string getBuilderUniqueName() override;
     llvm::Value * neon_vld1x4();
     // llvm::Value * neon_shrq(llvm::Value * a);
-    // llvm::Value * neon_shlq(llvm::Value * a, llvm::Value * b);
+    llvm::Value * neon_shlq(llvm::Value * a, llvm::Value * b);
     llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
 
     // SSE
