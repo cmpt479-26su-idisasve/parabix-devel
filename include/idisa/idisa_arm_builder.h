@@ -9,7 +9,7 @@
 namespace IDISA {
 
 const unsigned ARM_width = 32;
-    
+
 class IDISA_ARM_Builder : public virtual IDISA_Builder {
 public:
     static const unsigned NativeBitBlockWidth = ARM_width;

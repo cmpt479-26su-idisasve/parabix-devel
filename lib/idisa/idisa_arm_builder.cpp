@@ -78,22 +78,47 @@ Value * IDISA_ARM_Builder::hsimd_signmask(unsigned fw, Value * a) {
 }
 
 // SSE2
-Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * a, Value * index_vector) {
-    if ((mBitBlockWidth == 128) && (fw == 64)) {
-        // First create a vector with exchanged values of the 2 fields.
-        Constant * idx[2] = {ConstantInt::get(getInt32Ty(), 1), ConstantInt::get(getInt32Ty(), 0)};
-        Value * exchanged = CreateShuffleVector(a, UndefValue::get(fwVectorType(fw)), ConstantVector::get({idx, 2}));
-        // bits that change if the value in a needs to be exchanged.
-        Value * changed = simd_xor(a, exchanged);
-        // Now create a mask to select between original and exchanged values.
-        Constant * xchg[2] = {ConstantInt::get(getInt64Ty(), 1), ConstantInt::get(getInt64Ty(), 0)};
-        Value * xchg_vec = ConstantVector::get({xchg, 2});
-        Constant * oneSplat = ConstantVector::getSplat(2, ConstantInt::get(getInt64Ty(), 1));
-        Value * exchange_mask = simd_eq(fw, simd_and(index_vector, oneSplat), xchg_vec);
-        Value * rslt = simd_xor(simd_and(changed, exchange_mask), a);
-        return rslt;
+Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) {
+  if (mBitBlockWidth == 128 && fw > 8) {
+    // Create a table for shuffling with smaller field widths.
+    const unsigned fieldCount = mBitBlockWidth/fw;
+    Constant * idxMask = ConstantVector::getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), fieldCount-1));
+    Value * idx = simd_and(index_vector, idxMask);
+    unsigned half_fw = fw/2;
+    unsigned field_count = mBitBlockWidth/half_fw;
+    // Build a ConstantVector of alternating 0 and 1 values.
+    SmallVector<Constant *, 16> Idxs(field_count);
+    for (unsigned int i = 0; i < field_count; i++) {
+        Idxs[i] = ConstantInt::get(getIntNTy(fw/2), i & 1);
     }
-    return IDISA_Builder::mvmd_shuffle(fw, a, index_vector);
+    Constant * splat01 = ConstantVector::get(Idxs);
+    
+    Value * half_fw_indexes = simd_or(idx, mvmd_slli(half_fw, idx, 1));
+    half_fw_indexes = simd_add(fw, simd_add(fw, half_fw_indexes, half_fw_indexes), splat01);
+    Value * rslt = mvmd_shuffle(half_fw, data_table, half_fw_indexes);
+    return rslt;
+  }
+  if (mBitBlockWidth == 128 && fw == 8) {
+    // Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::x86_ssse3_pshuf_b_128);
+    Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vtbl1);
+    llvm::errs() << "shuf8Func declared\n";
+    return CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_and(index_vector, simd_lomask(8)))});
+  }
+    // if ((mBitBlockWidth == 128) && (fw == 64)) {
+    //     // First create a vector with exchanged values of the 2 fields.
+    //     Constant * idx[2] = {ConstantInt::get(getInt32Ty(), 1), ConstantInt::get(getInt32Ty(), 0)};
+    //     Value * exchanged = CreateShuffleVector(a, UndefValue::get(fwVectorType(fw)), ConstantVector::get({idx, 2}));
+    //     // bits that change if the value in a needs to be exchanged.
+    //     Value * changed = simd_xor(a, exchanged);
+    //     // Now create a mask to select between original and exchanged values.
+    //     Constant * xchg[2] = {ConstantInt::get(getInt64Ty(), 1), ConstantInt::get(getInt64Ty(), 0)};
+    //     Value * xchg_vec = ConstantVector::get({xchg, 2});
+    //     Constant * oneSplat = ConstantVector::getSplat(2, ConstantInt::get(getInt64Ty(), 1));
+    //     Value * exchange_mask = simd_eq(fw, simd_and(index_vector, oneSplat), xchg_vec);
+    //     Value * rslt = simd_xor(simd_and(changed, exchange_mask), a);
+    //     return rslt;
+    // }
+    return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
 }
 
 // Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selector) {
