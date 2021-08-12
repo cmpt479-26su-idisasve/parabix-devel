@@ -79,6 +79,20 @@ Value * IDISA_ARM_Builder::hsimd_signmask(unsigned fw, Value * a) {
 
 // SSE2
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) {
+  if ((mBitBlockWidth == 128) && (fw == 64)) {
+    // First create a vector with exchanged values of the 2 fields.
+    Constant * idx[2] = {ConstantInt::get(getInt32Ty(), 1), ConstantInt::get(getInt32Ty(), 0)};
+    Value * exchanged = CreateShuffleVector(data_table, UndefValue::get(fwVectorType(fw)), ConstantVector::get({idx, 2}));
+    // bits that change if the value in a needs to be exchanged.
+    Value * changed = simd_xor(data_table, exchanged);
+    // Now create a mask to select between original and exchanged values.
+    Constant * xchg[2] = {ConstantInt::get(getInt64Ty(), 1), ConstantInt::get(getInt64Ty(), 0)};
+    Value * xchg_vec = ConstantVector::get({xchg, 2});
+    Constant * oneSplat = ConstantVector::getSplat(2, ConstantInt::get(getInt64Ty(), 1));
+    Value * exchange_mask = simd_eq(fw, simd_and(index_vector, oneSplat), xchg_vec);
+    Value * rslt = simd_xor(simd_and(changed, exchange_mask), data_table);
+    return rslt;
+  }
   if (mBitBlockWidth == 128 && fw > 8) {
     // Create a table for shuffling with smaller field widths.
     const unsigned fieldCount = mBitBlockWidth/fw;
@@ -89,7 +103,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
     // Build a ConstantVector of alternating 0 and 1 values.
     SmallVector<Constant *, 16> Idxs(field_count);
     for (unsigned int i = 0; i < field_count; i++) {
-        Idxs[i] = ConstantInt::get(getIntNTy(fw/2), i & 1);
+      Idxs[i] = ConstantInt::get(getIntNTy(fw/2), i & 1);
     }
     Constant * splat01 = ConstantVector::get(Idxs);
     
@@ -99,26 +113,29 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
     return rslt;
   }
   if (mBitBlockWidth == 128 && fw == 8) {
+    CallPrintRegister("data_table", data_table);
     // Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::x86_ssse3_pshuf_b_128);
-    Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vtbl1);
-    llvm::errs() << "shuf8Func declared\n";
-    return CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_and(index_vector, simd_lomask(8)))});
+    Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vtbl2); // arm_neon_vtbl1  arm_neon_vtbx1
+    // Value * dt_cast = fwCast(8, data_table);
+    Value * loBits = CreateHalfVectorLow(data_table);
+    Value * highBits = CreateHalfVectorHigh(data_table);
+    Value * loIdx = CreateHalfVectorLow(index_vector);
+    Value * highIdx = CreateHalfVectorHigh(index_vector);
+
+    Value * lowShuffle = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, loBits), fwCast(8, highBits), fwCast(8, simd_select_lo(fw, loIdx))});
+    // loBits->print(llvm::errs());
+    // llvm::errs() << "\n";
+    Value * highShuffle = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, loBits), fwCast(8, highBits), fwCast(8, simd_select_hi(fw, highIdx))});
+    // shuf8Func->getType()->print(llvm::errs());
+    // llvm::errs() << "shuf8Func declared\n";
+    // return CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_and(index_vector, simd_lomask(8))), fwCast(8, simd_and(index_vector, simd_lomask(8)))});
+    // Value * res = fwCast(8, CreateDoubleVector(fwCast(8, lowShuffle), fwCast(8, highShuffle)));
+    // res->print(llvm::errs());
+    // llvm::errs() << "\n";
+    // return res;
+    return fwCast(8, CreateDoubleVector(lowShuffle, highShuffle));
   }
-    // if ((mBitBlockWidth == 128) && (fw == 64)) {
-    //     // First create a vector with exchanged values of the 2 fields.
-    //     Constant * idx[2] = {ConstantInt::get(getInt32Ty(), 1), ConstantInt::get(getInt32Ty(), 0)};
-    //     Value * exchanged = CreateShuffleVector(a, UndefValue::get(fwVectorType(fw)), ConstantVector::get({idx, 2}));
-    //     // bits that change if the value in a needs to be exchanged.
-    //     Value * changed = simd_xor(a, exchanged);
-    //     // Now create a mask to select between original and exchanged values.
-    //     Constant * xchg[2] = {ConstantInt::get(getInt64Ty(), 1), ConstantInt::get(getInt64Ty(), 0)};
-    //     Value * xchg_vec = ConstantVector::get({xchg, 2});
-    //     Constant * oneSplat = ConstantVector::getSplat(2, ConstantInt::get(getInt64Ty(), 1));
-    //     Value * exchange_mask = simd_eq(fw, simd_and(index_vector, oneSplat), xchg_vec);
-    //     Value * rslt = simd_xor(simd_and(changed, exchange_mask), a);
-    //     return rslt;
-    // }
-    return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
+  return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
 }
 
 // Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selector) {
