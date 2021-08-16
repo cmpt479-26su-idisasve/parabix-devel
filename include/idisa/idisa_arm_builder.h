@@ -8,7 +8,7 @@
 
 namespace IDISA {
 
-const unsigned ARM_width = 32;
+const unsigned ARM_width = 128;
 
 class IDISA_ARM_Builder : public virtual IDISA_Builder {
 public:
@@ -18,10 +18,10 @@ public:
 
     }
     virtual std::string getBuilderUniqueName() override;
-    llvm::Value * neon_vld1x4();
+    // llvm::Value * neon_vld1x4();
     // llvm::Value * neon_shrq(llvm::Value * a);
     // llvm::Value * neon_shlq(llvm::Value * a, llvm::Value * b);
-    llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
+    // llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
     llvm::Value * esimd_mergeh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * esimd_mergel(unsigned fw, llvm::Value * a, llvm::Value * b) override;
 
