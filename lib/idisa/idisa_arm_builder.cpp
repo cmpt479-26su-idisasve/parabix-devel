@@ -62,7 +62,6 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
   if ((fw == 1) || (fw == 2)) {
     Constant * interleave_table = bit_interleave_byteshuffle_table(fw);
-    interleave_table->getType()->print(llvm::errs());
     // Merge the bytes.
     Value * byte_merge = esimd_mergeh(8, a, b);
     Value * low_bits = mvmd_shuffle(8, interleave_table, fwCast(8, simd_and(byte_merge, simd_lomask(8))));
