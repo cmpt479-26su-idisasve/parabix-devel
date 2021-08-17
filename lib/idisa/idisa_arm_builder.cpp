@@ -102,29 +102,64 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
   return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
 }
 
-// Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selector) {
-
-     //const int16x8_t t1 = vcombine_s16(a_.neon_i16, b_.neon_i16);
-      /* Set elements which are < 0 to 0 */
-     // const int16x8_t t2 = vandq_s16(t1, vreinterpretq_s16_u16(vcgezq_s16(t1)));
-      /* Vector with all s16 elements set to UINT8_MAX */
-     // const int16x8_t vmax = vmovq_n_s16(HEDLEY_STATIC_CAST(int16_t, UINT8_MAX));
-      /* Elements which are within the acceptable range */
-     // const int16x8_t le_max = vandq_s16(t2, vreinterpretq_s16_u16(vcleq_s16(t2, vmax)));
-     // const int16x8_t gt_max = vandq_s16(vmax, vreinterpretq_s16_u16(vcgtq_s16(t2, vmax)));
-      /* Final values as 16-bit integers */
-     // const int16x8_t values = vorrq_s16(le_max, gt_max);
-     // r_.neon_u8 = vmovn_u16(vreinterpretq_u16_s16(values));
-
-//}
-
-// Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selector) {
-
-// }
+Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selector) {
+  // SSE
+  if ((mBitBlockWidth == 128) && (fw == 64)) {
+    Constant * keep[2] = {ConstantInt::get(getInt64Ty(), 1), ConstantInt::get(getInt64Ty(), 3)};
+    Constant * keep_mask = ConstantVector::get({keep, 2});
+    Constant * shift[2] = {ConstantInt::get(getInt64Ty(), 2), ConstantInt::get(getInt64Ty(), 0)};
+    Constant * shifted_mask = ConstantVector::get({shift, 2});
+    Value * a_srli1 = mvmd_srli(64, a, 1);
+    Value * bdcst = simd_fill(64, CreateZExt(selector, getInt64Ty()));
+    Value * kept = simd_and(simd_eq(64, simd_and(keep_mask, bdcst), keep_mask), a);
+    Value * shifted = simd_and(a_srli1, simd_eq(64, shifted_mask, bdcst));
+    return simd_or(kept, shifted);
+    }
+    if ((mBitBlockWidth == 128) && (fw == 32)) {
+      Value * bdcst = simd_fill(32, CreateZExtOrTrunc(selector, getInt32Ty()));
+      Constant * fieldBit[4] =
+      {ConstantInt::get(getInt32Ty(), 1), ConstantInt::get(getInt32Ty(), 2),
+        ConstantInt::get(getInt32Ty(), 4), ConstantInt::get(getInt32Ty(), 8)};
+      Constant * fieldMask = ConstantVector::get({fieldBit, 4});
+      Value * a_selected = simd_and(simd_eq(32, fieldMask, simd_and(fieldMask, bdcst)), a);
+      Constant * rotateInwards[4] =
+      {ConstantInt::get(getInt32Ty(), 1), ConstantInt::get(getInt32Ty(), 0),
+        ConstantInt::get(getInt32Ty(), 3), ConstantInt::get(getInt32Ty(), 2)};
+      Constant * rotateVector = ConstantVector::get({rotateInwards, 4});
+      Value * rotated = CreateShuffleVector(fwCast(32, a_selected), UndefValue::get(fwVectorType(fw)), rotateVector);
+      Constant * rotate_bit[2] = {ConstantInt::get(getInt64Ty(), 2), ConstantInt::get(getInt64Ty(), 4)};
+      Constant * rotate_mask = ConstantVector::get({rotate_bit, 2});
+      Value * rotateControl = simd_eq(64, fwCast(64, simd_and(bdcst, rotate_mask)), allZeroes());
+      Value * centralResult = simd_if(1, rotateControl, rotated, a_selected);
+      Value * delete_marks_lo = CreateAnd(CreateNot(selector), ConstantInt::get(selector->getType(), 3));
+      Value * delCount_lo = CreateSub(delete_marks_lo, CreateLShr(delete_marks_lo, 1));
+      return mvmd_srl(32, centralResult, delCount_lo, true);
+    }
+    return IDISA_Builder::mvmd_compress(fw, a, selector);
+}
 
 // Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
-
+//   // SSE2
+//   if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
+//     Value * mask = simd_lomask(16);
+//     return hsimd_packus(fw, fwCast(16, simd_and(a, mask)), fwCast(16, simd_and(b, mask)));
+//   }
+//   // Otherwise use default logic.
+//   return IDISA_Builder::hsimd_packl(fw, a, b);
 // }
+
+Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
+  if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
+    Function * vqmovun_s16_func = Intrinsic::getDeclaration(getModule(), Intrinsic::aarch64_neon_uqxtn, VectorType::get(getInt8Ty(), 8));
+    Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, a));
+    Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, b));
+    return fwCast(8, CreateDoubleVector(sat_a, sat_b));
+    // return CreateCall(packuswb_func->getFunctionType(), packuswb_func, {simd_srli(16, a, 8), simd_srli(16, b, 8)});
+    // return IDISA_Builder::hsimd_packh(fw, a, b);
+  }
+  // Otherwise use default logic.
+  return IDISA_Builder::hsimd_packh(fw, a, b);
+}
 
 // Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
 
@@ -132,10 +167,6 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
 
 // // full shift producing {shiftout, shifted}
 // std::pair<Value *, Value *> IDISA_ARM_Builder::bitblock_advance(Value * a, Value * shiftin, unsigned shift) {
-
-// }
-
-// llvm::Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) {
 
 // }
 
