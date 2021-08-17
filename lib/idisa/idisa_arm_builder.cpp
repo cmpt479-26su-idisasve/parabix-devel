@@ -3,13 +3,11 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
 
-// #include <stdio.h>
-
 using namespace llvm;
 
 namespace IDISA {
 
-std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth != 64 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM";}
+std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM";}
 
 /* Creates a call to neon_vldq to shift 4 vector */
 // Value * IDISA_ARM_Builder::neon_vld1x4() {
@@ -77,27 +75,7 @@ std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth !=
 //   }
 // }
 
-// SSE2
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) {
-  // return fwCast(8, data_table);
-  CallPrintRegister("index_vector", index_vector);
-
-  llvm::errs() << fw;
-  llvm::errs() << "\n";
-  // if ((mBitBlockWidth == 128) && (fw == 64)) {
-  //   // First create a vector with exchanged values of the 2 fields.
-  //   Constant * idx[2] = {ConstantInt::get(getInt32Ty(), 1), ConstantInt::get(getInt32Ty(), 0)};
-  //   Value * exchanged = CreateShuffleVector(data_table, UndefValue::get(fwVectorType(fw)), ConstantVector::get({idx, 2}));
-  //   // bits that change if the value in a needs to be exchanged.
-  //   Value * changed = simd_xor(data_table, exchanged);
-  //   // Now create a mask to select between original and exchanged values.
-  //   Constant * xchg[2] = {ConstantInt::get(getInt64Ty(), 1), ConstantInt::get(getInt64Ty(), 0)};
-  //   Value * xchg_vec = ConstantVector::get({xchg, 2});
-  //   Constant * oneSplat = ConstantVector::getSplat(2, ConstantInt::get(getInt64Ty(), 1));
-  //   Value * exchange_mask = simd_eq(fw, simd_and(index_vector, oneSplat), xchg_vec);
-  //   Value * rslt = simd_xor(simd_and(changed, exchange_mask), data_table);
-  //   return rslt;
-  // }
   if (mBitBlockWidth == 128 && fw > 8) {
     // Create a table for shuffling with smaller field widths.
     const unsigned fieldCount = mBitBlockWidth/fw;
@@ -118,45 +96,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
     return rslt;
   }
   if (mBitBlockWidth == 128 && fw == 8) {
-    // // First create a vector with exchanged values of the 2 fields.
-    // Constant * idx[2] = {ConstantInt::get(getInt8Ty(), 1), ConstantInt::get(getInt8Ty(), 0)};
-    // Value * exchanged = CreateShuffleVector(data_table, UndefValue::get(fwVectorType(fw)), ConstantVector::get({idx, 2}));
-    // // bits that change if the value in a needs to be exchanged.
-    // Value * changed = simd_xor(data_table, exchanged);
-    // // Now create a mask to select between original and exchanged values.
-    // Constant * xchg[2] = {ConstantInt::get(getInt8Ty(), 1), ConstantInt::get(getInt8Ty(), 0)};
-    // Value * xchg_vec = ConstantVector::get({xchg, 2});
-    // Constant * oneSplat = ConstantVector::getSplat(2, ConstantInt::get(getInt8Ty(), 1));
-    // Value * exchange_mask = simd_eq(fw, simd_and(index_vector, oneSplat), xchg_vec);
-    // Value * rslt = simd_xor(simd_and(changed, exchange_mask), data_table);
-    // return rslt;
-
-    // CallPrintRegister("data_table", data_table);
-    // Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::x86_ssse3_pshuf_b_128);
-    llvm::errs() << "Before declaration\n";
-    Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1, VectorType::get(getInt8Ty(), 16)); // arm_neon_vtbl1  arm_neon_vtbx1 arm_neon_vtbl2 aarch64_neon_tbl1
-    // return fwCast(8, data_table);
-    llvm::errs() << "After declaration\n";
-    shuf8Func->getType()->print(llvm::errs());
-    llvm::errs() << "\n";
-    // Value * dt_cast = fwCast(8, data_table);
-    // Value * loBits = CreateHalfVectorLow(data_table);
-    // Value * highBits = CreateHalfVectorHigh(data_table);
-    // Value * loIdx = CreateHalfVectorLow(index_vector);
-    // Value * highIdx = CreateHalfVectorHigh(index_vector);
-
-    // Value * lowShuffle = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, loBits), fwCast(8, highBits), fwCast(8, simd_select_lo(fw, loIdx))});
-    // loBits->print(llvm::errs());
-    // llvm::errs() << "\n";
-    // Value * highShuffle = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, loBits), fwCast(8, highBits), fwCast(8, simd_select_hi(fw, highIdx))});
-    // shuf8Func->getType()->print(llvm::errs());
-    // llvm::errs() << "shuf8Func declared\n";
-    // return CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_and(index_vector, simd_lomask(8))), fwCast(8, simd_and(index_vector, simd_lomask(8)))});
-    // Value * res = fwCast(8, CreateDoubleVector(fwCast(8, lowShuffle), fwCast(8, highShuffle)));
-    // res->print(llvm::errs());
-    // llvm::errs() << "\n";
-    // return res;
-    // return fwCast(8, CreateDoubleVector(lowShuffle, highShuffle));
+    Function * shuf8Func = Intrinsic::getDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1, VectorType::get(getInt8Ty(), 16));
     return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_select_lo(fw, index_vector))}));
   }
   return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
@@ -200,11 +140,8 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
 // }
 
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
-  // return fwCast(8, a);
   if ((fw == 1) || (fw == 2)) {
     Constant * interleave_table = bit_interleave_byteshuffle_table(fw);
-    interleave_table->getType()->print(llvm::errs());
-    llvm::errs() << "\n";
     // Merge the bytes.
     Value * byte_merge = esimd_mergeh(8, a, b);
     Value * low_bits = mvmd_shuffle(8, interleave_table, fwCast(8, simd_and(byte_merge, simd_lomask(8))));
@@ -221,7 +158,6 @@ Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-  // return fwCast(8, a);
   if ((fw == 1) || (fw == 2)) {
     Constant * interleave_table = bit_interleave_byteshuffle_table(fw);
     // Merge the bytes.
