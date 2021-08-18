@@ -19,8 +19,6 @@ public:
     }
     virtual std::string getBuilderUniqueName() override;
     // llvm::Value * neon_vld1x4();
-    // llvm::Value * neon_shrq(llvm::Value * a);
-    // llvm::Value * neon_shlq(llvm::Value * a, llvm::Value * b);
     // llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
     llvm::Value * esimd_mergeh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * esimd_mergel(unsigned fw, llvm::Value * a, llvm::Value * b) override;
@@ -29,9 +27,9 @@ public:
     llvm::Value * mvmd_compress(unsigned fw, llvm::Value * a, llvm::Value * select_mask) override;
     // SSE2
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
-    // llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;
-    // llvm::Value * hsimd_packus(unsigned fw, llvm::Value * a, llvm::Value * b) override;
-    // std::pair<llvm::Value *, llvm::Value *> bitblock_advance(llvm::Value * a, llvm::Value * shiftin, unsigned shift) override;
+    llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;
+    llvm::Value * hsimd_packus(unsigned fw, llvm::Value * a, llvm::Value * b) override;
+    std::pair<llvm::Value *, llvm::Value *> bitblock_advance(llvm::Value * a, llvm::Value * shiftin, unsigned shift) override;
     llvm::Value * mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) override;
     // SSSE3
 

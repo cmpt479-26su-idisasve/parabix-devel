@@ -138,15 +138,15 @@ Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selecto
     return IDISA_Builder::mvmd_compress(fw, a, selector);
 }
 
-// Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
-//   // SSE2
-//   if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
-//     Value * mask = simd_lomask(16);
-//     return hsimd_packus(fw, fwCast(16, simd_and(a, mask)), fwCast(16, simd_and(b, mask)));
-//   }
-//   // Otherwise use default logic.
-//   return IDISA_Builder::hsimd_packl(fw, a, b);
-// }
+Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
+  // SSE2
+  if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
+    Value * mask = simd_lomask(16);
+    return hsimd_packus(fw, fwCast(16, simd_and(a, mask)), fwCast(16, simd_and(b, mask)));
+  }
+  // Otherwise use default logic.
+  return IDISA_Builder::hsimd_packl(fw, a, b);
+}
 
 Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
   if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
@@ -154,23 +154,83 @@ Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
     Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, simd_srli(16, a, 8));
     Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, simd_srli(16, b, 8));
     return fwCast(8, CreateDoubleVector(sat_a, sat_b));
-    // return CreateCall(packuswb_func->getFunctionType(), packuswb_func, {simd_srli(16, a, 8), simd_srli(16, b, 8)});
-    // return IDISA_Builder::hsimd_packh(fw, a, b);
   }
   // Otherwise use default logic.
   return IDISA_Builder::hsimd_packh(fw, a, b);
 }
 
-// Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
+Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
+  if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
+    Function * vqmovun_s16_func = Intrinsic::getDeclaration(getModule(), Intrinsic::aarch64_neon_uqxtn, VectorType::get(getInt8Ty(), 8));
+    Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, a));
+    Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, b));
+    return fwCast(8, CreateDoubleVector(sat_a, sat_b));
+  }
+  // Otherwise use default logic.
+  return IDISA_Builder::hsimd_packus(fw, a, b);
+}
 
-// }
+// full shift producing {shiftout, shifted}
 
-// // full shift producing {shiftout, shifted}
-// std::pair<Value *, Value *> IDISA_ARM_Builder::bitblock_advance(Value * a, Value * shiftin, unsigned shift) {
+#define SHIFT_FIELDWIDTH 64
+//#define LEAVE_CARRY_UNNORMALIZED
 
-// }
+#define CAST_SHIFT_OUT(shiftout) \
+  shiftTy == mBitBlockType ? bitCast(shiftout) : CreateTrunc(CreateBitCast(shiftout, getIntNTy(mBitBlockWidth)), shiftTy)
 
-// Value * IDISA_Builder::hsimd_partial_sum(unsigned fw, Value * a)
+// SSE2
+std::pair<Value *, Value *> IDISA_ARM_Builder::bitblock_advance(Value * a, Value * shiftin, unsigned shift) {
+  Value * shifted = nullptr;
+  Value * shiftout = nullptr;
+  Type * shiftTy = shiftin->getType();
+  if (LLVM_UNLIKELY(shift == 0)) {
+    return std::pair<Value *, Value *>(Constant::getNullValue(shiftTy), a);
+  }
+  Value * si = shiftin;
+  if (shiftTy != mBitBlockType) {
+    si = bitCast(CreateZExt(shiftin, getIntNTy(mBitBlockWidth)));
+  }
+  if (LLVM_UNLIKELY(shift == mBitBlockWidth)) {
+    return std::pair<Value *, Value *>(CreateBitCast(a, shiftTy), si);
+  }
+#ifndef LEAVE_CARRY_UNNORMALIZED
+  if (LLVM_UNLIKELY((shift % 8) == 0)) { // Use a single whole-byte shift, if possible.
+    shifted = bitCast(simd_or(mvmd_slli(8, a, shift / 8), si));
+    shiftout = bitCast(mvmd_srli(8, a, (mBitBlockWidth - shift) / 8));
+    return std::pair<Value *, Value *>(CAST_SHIFT_OUT(shiftout), shifted);
+  }
+  Value * shiftback = simd_srli(SHIFT_FIELDWIDTH, a, SHIFT_FIELDWIDTH - (shift % SHIFT_FIELDWIDTH));
+  Value * shiftfwd = simd_slli(SHIFT_FIELDWIDTH, a, shift % SHIFT_FIELDWIDTH);
+  if (LLVM_LIKELY(shift < SHIFT_FIELDWIDTH)) {
+    shiftout = mvmd_srli(SHIFT_FIELDWIDTH, shiftback, mBitBlockWidth/SHIFT_FIELDWIDTH - 1);
+    shifted = simd_or(simd_or(shiftfwd, si), mvmd_slli(SHIFT_FIELDWIDTH, shiftback, 1));
+  }
+  else {
+    shiftout = simd_or(shiftback, mvmd_srli(SHIFT_FIELDWIDTH, shiftfwd, 1));
+    shifted = simd_or(si, mvmd_slli(SHIFT_FIELDWIDTH, shiftfwd, (mBitBlockWidth - shift) / SHIFT_FIELDWIDTH));
+    if (shift < mBitBlockWidth - SHIFT_FIELDWIDTH) {
+      shiftout = mvmd_srli(SHIFT_FIELDWIDTH, shiftout, (mBitBlockWidth - shift) / SHIFT_FIELDWIDTH);
+      shifted = simd_or(shifted, mvmd_slli(SHIFT_FIELDWIDTH, shiftback, shift/SHIFT_FIELDWIDTH + 1));
+    }
+  }
+#endif
+#ifdef LEAVE_CARRY_UNNORMALIZED
+  shiftout = a;
+  if (LLVM_UNLIKELY((shift % 8) == 0)) { // Use a single whole-byte shift, if possible.
+    shifted = mvmd_dslli(8, a, shiftin, (mBitBlockWidth - shift) / 8);
+  }
+  else if (LLVM_LIKELY(shift < SHIFT_FIELDWIDTH)) {
+    Value * ahead = mvmd_dslli(SHIFT_FIELDWIDTH, a, shiftin, mBitBlockWidth / SHIFT_FIELDWIDTH - 1);
+    shifted = simd_or(simd_srli(SHIFT_FIELDWIDTH, ahead, SHIFT_FIELDWIDTH - shift), simd_slli(SHIFT_FIELDWIDTH, a, shift));
+  }
+  else {
+    throw std::runtime_error("Unsupported shift.");
+  }
+#endif
+  //CallPrintRegister("shifted", shifted);
+  //CallPrintRegister("shiftout", shiftout);
+  return std::pair<Value *, Value *>(CAST_SHIFT_OUT(shiftout), shifted);
+}
 
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
   if ((fw == 1) || (fw == 2)) {
