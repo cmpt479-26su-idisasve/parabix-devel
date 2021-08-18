@@ -151,8 +151,8 @@ Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selecto
 Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
   if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
     Function * vqmovun_s16_func = Intrinsic::getDeclaration(getModule(), Intrinsic::aarch64_neon_uqxtn, VectorType::get(getInt8Ty(), 8));
-    Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, a));
-    Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, b));
+    Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, simd_srli(16, a, 8));
+    Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, simd_srli(16, b, 8));
     return fwCast(8, CreateDoubleVector(sat_a, sat_b));
     // return CreateCall(packuswb_func->getFunctionType(), packuswb_func, {simd_srli(16, a, 8), simd_srli(16, b, 8)});
     // return IDISA_Builder::hsimd_packh(fw, a, b);
@@ -169,6 +169,8 @@ Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
 // std::pair<Value *, Value *> IDISA_ARM_Builder::bitblock_advance(Value * a, Value * shiftin, unsigned shift) {
 
 // }
+
+// Value * IDISA_Builder::hsimd_partial_sum(unsigned fw, Value * a)
 
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
   if ((fw == 1) || (fw == 2)) {
