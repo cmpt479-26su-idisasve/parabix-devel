@@ -9,71 +9,34 @@ namespace IDISA {
 
 std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM";}
 
-/* Creates a call to neon_vldq to shift 4 vector */
-// Value * IDISA_ARM_Builder::neon_vld1x4() {
-//   // create a function * to the vld1x4
-//   // Function * shiftl_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vld1, VectorType::get(getInt32Ty(), 4));
-//   // Function * shiftl_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vld4, {getInt32Ty()});
-//   // create a static vector of {0, 1, 2, 3} that represents the shift amounts
-//   std::vector<Constant *> shuffle_amount = {
-//     ConstantInt::get(getInt32Ty(), 0),
-//     ConstantInt::get(getInt32Ty(), 1),
-//     ConstantInt::get(getInt32Ty(), 2),
-//     ConstantInt::get(getInt32Ty(), 3)
-//   };
-//   Constant * llshuffle_amount = ConstantVector::get(shuffle_amount);
-//   // create a function call
-//   // return CreateCall(
-//   //   shiftl_f32func->getFunctionType(),
-//   //   shiftl_f32func,
-//   //   llshuffle_amount
-//   // );
-//   return llshuffle_amount;
-// }
-
-/* shift lefts everything */
-// Value * IDISA_ARM_Builder::neon_shlq(Value * a, Value * b) {
-//   Function * shiftl_u_f32func = Intrinsic::getDeclaration(getModule(), Intrinsic::arm_neon_vshiftu);
-//   return CreateCall(shiftl_u_f32func->getFunctionType(), shiftl_u_f32func, {a, b});
-// }
-
-// Value * IDISA_ARM_Builder::hsimd_signmask(unsigned fw, Value * a) {
-//    /*
-//    SIMDE implementation
-//    static const int32_t shift_amount[] = {0, 1, 2, 3};
-//    const int32x4_t shift = vld1q_s32(shift_amount);
-//    uint32x4_t tmp = vshrq_n_u32(a, 31);
-//    return HEDLEY_STATIC_CAST(LLVM::Value *, vaddvq_u32(vshlq_u32(tmp, shift)));
-//    */
-
-//   if (getVectorBitWidth(a) == ARM_width) {
-//     if (fw == 32) {
-//       // CallPrintRegister("a", fwCast(fw, a));
-//       /* shift operation */
-//       auto shift = neon_vld1x4();
-//       CallPrintRegister("shift", shift);
-//       llvm::errs() << "shift\n";
-//       // Value * temp = neon_shrq(a);
-//       Value * temp = CreateLShr(fwCast(fw, a), 31);
-//       llvm::errs() << "temp\n";
-//       // Value * shift_left_a = neon_shlq(temp, shift);
-//       Value * shift_left_a = CreateShl(temp, shift);
-//       llvm::errs() << "shift_left_a\n";
-
-//       /* finally add it to the vector */
-//       // Function * add_32func = Intrinsic::getDeclaration(
-//       //   getModule(),
-//       //   Intrinsic::arm_neon_vqaddu,
-//       //   VectorType::get(getInt32Ty(), getVectorBitWidth(shift_left_a))
-//       // );
-//       // Function * add_32func = CreateAddReduce(fwCast(fw, shift_left_a));
-//       // printf("%p\n", add_32func);
-//       // return CreateCall(add_32func->getFunctionType(), add_32func, shift_left_a);
-
-//       return CreateAddReduce(shift_left_a);
-//     }
-//   }
-// }
+Value * IDISA_ARM_Builder::hsimd_signmask(unsigned fw, Value * a) {
+  if (getVectorBitWidth(a) == ARM_width) {
+    std::vector<Constant *> shuffle_amount;
+    switch(fw) {
+      case 64:
+        for (int i = 0; i < 2; i++) {
+          shuffle_amount.push_back(ConstantInt::get(getInt64Ty(), i));
+        }
+        break;
+      case 32:
+        for (int i = 0; i < 4; i++) {
+          shuffle_amount.push_back(ConstantInt::get(getInt32Ty(), i));
+        }
+        break;
+      case 8:
+        for (int i = 0; i < 16; i++) {
+          shuffle_amount.push_back(ConstantInt::get(getInt8Ty(), i));
+        }
+        break;
+      default:
+        return IDISA_Builder::hsimd_signmask(fw, a);
+    }
+    Value * shift = ConstantVector::get(shuffle_amount);
+    Value * temp = CreateLShr(fwCast(fw, a), fw-1);
+    Value * shift_left_a = CreateShl(fwCast(fw, temp), shift);
+    return CreateAddReduce(fwCast(fw, shift_left_a));    
+  }
+}
 
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) {
   if (mBitBlockWidth == 128 && fw > 8) {
@@ -103,7 +66,6 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, llvm::Value * data_table, l
 }
 
 Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selector) {
-  // SSE
   if ((mBitBlockWidth == 128) && (fw == 64)) {
     Constant * keep[2] = {ConstantInt::get(getInt64Ty(), 1), ConstantInt::get(getInt64Ty(), 3)};
     Constant * keep_mask = ConstantVector::get({keep, 2});
@@ -139,7 +101,6 @@ Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * selecto
 }
 
 Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
-  // SSE2
   if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
     Value * mask = simd_lomask(16);
     return hsimd_packus(fw, fwCast(16, simd_and(a, mask)), fwCast(16, simd_and(b, mask)));
@@ -170,15 +131,11 @@ Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
   return IDISA_Builder::hsimd_packus(fw, a, b);
 }
 
-// full shift producing {shiftout, shifted}
-
 #define SHIFT_FIELDWIDTH 64
-//#define LEAVE_CARRY_UNNORMALIZED
 
 #define CAST_SHIFT_OUT(shiftout) \
   shiftTy == mBitBlockType ? bitCast(shiftout) : CreateTrunc(CreateBitCast(shiftout, getIntNTy(mBitBlockWidth)), shiftTy)
 
-// SSE2
 std::pair<Value *, Value *> IDISA_ARM_Builder::bitblock_advance(Value * a, Value * shiftin, unsigned shift) {
   Value * shifted = nullptr;
   Value * shiftout = nullptr;
@@ -227,8 +184,6 @@ std::pair<Value *, Value *> IDISA_ARM_Builder::bitblock_advance(Value * a, Value
     throw std::runtime_error("Unsupported shift.");
   }
 #endif
-  //CallPrintRegister("shifted", shifted);
-  //CallPrintRegister("shiftout", shiftout);
   return std::pair<Value *, Value *>(CAST_SHIFT_OUT(shiftout), shifted);
 }
 
@@ -246,7 +201,7 @@ Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
     high_bits = simd_or(simd_select_hi(16, high_bits), simd_slli(16, high_bits, 8-fw));
     return simd_or(low_bits, high_bits);
   }
-  // Otherwise use default SSE logic.
+  // Otherwise use default logic.
   return IDISA_Builder::esimd_mergeh(fw, a, b);
 }
 
@@ -264,7 +219,7 @@ Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
     high_bits = simd_or(simd_select_hi(16, high_bits), simd_slli(16, high_bits, 8-fw));
     return simd_or(low_bits, high_bits);
   }
-  // Otherwise use default SSE2 logic.
+  // Otherwise use default logic.
   return IDISA_Builder::esimd_mergel(fw, a, b);
 }
 
