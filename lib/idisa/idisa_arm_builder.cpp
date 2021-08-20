@@ -187,13 +187,13 @@ std::pair<Value *, Value *> IDISA_ARM_Builder::bitblock_advance(Value * a, Value
   return std::pair<Value *, Value *>(CAST_SHIFT_OUT(shiftout), shifted);
 }
 
+/* merge_h arm */
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
   if ((fw == 1) || (fw == 2)) {
     Constant * interleave_table = bit_interleave_byteshuffle_table(fw);
     // Merge the bytes.
     Value * byte_merge = esimd_mergeh(8, a, b);
     Value * low_bits = mvmd_shuffle(8, interleave_table, fwCast(8, simd_and(byte_merge, simd_lomask(8))));
-    // Value * low_bits = mvmd_shuffle(8, interleave_table, fwCast(8, simd_select_lo(8, byte_merge)));
     Value * high_bits = simd_slli(16, mvmd_shuffle(8, interleave_table, fwCast(8, simd_srli(8, byte_merge, 4))), fw);
     // For each 16-bit field, interleave the low bits of the two bytes.
     low_bits = simd_or(simd_select_lo(16, low_bits), simd_srli(16, low_bits, 8-fw));
@@ -205,13 +205,13 @@ Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
   return IDISA_Builder::esimd_mergeh(fw, a, b);
 }
 
+/* merge_l arm */
 Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
   if ((fw == 1) || (fw == 2)) {
     Constant * interleave_table = bit_interleave_byteshuffle_table(fw);
     // Merge the bytes.
     Value * byte_merge = esimd_mergel(8, a, b);
     Value * low_bits = mvmd_shuffle(8, interleave_table, fwCast(8, simd_and(byte_merge, simd_lomask(8))));
-    // Value * low_bits = mvmd_shuffle(8, interleave_table, fwCast(8, simd_select_lo(8, byte_merge)));
     Value * high_bits = simd_slli(16, mvmd_shuffle(8, interleave_table, fwCast(8, simd_srli(8, byte_merge, 4))), fw);
     // For each 16-bit field, interleave the low bits of the two bytes.
     low_bits = simd_or(simd_select_lo(16, low_bits), simd_srli(16, low_bits, 8-fw));
