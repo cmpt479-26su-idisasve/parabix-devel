@@ -248,11 +248,18 @@ void AddParabixVersionPrinter() {
 }
 
 void setTaskThreads(unsigned taskThreads) {
+    // printf("%d\n", taskThreads);
     TaskThreads = std::max(taskThreads, 1u);
 #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(4, 0, 0)
-    unsigned coresPerTask = llvm::sys::getHostNumPhysicalCores()/TaskThreads;
+    int cores = llvm::sys::getHostNumPhysicalCores();
+    unsigned coresPerTask;
+    if (cores < 0) {
+        coresPerTask = 2;
+    } else {
+        coresPerTask = cores/TaskThreads;
+    }
 #else
-    unsigned coresPerTask = 2;  // assumption
+    unsigned coresPerTask = 2; // assumption
 #endif
     SegmentThreads = std::min(coresPerTask, SegmentThreads);
 }
