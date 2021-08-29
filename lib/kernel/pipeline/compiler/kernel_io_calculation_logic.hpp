@@ -100,6 +100,9 @@ void PipelineCompiler::detemineMaximumNumberOfStrides(BuilderRef b) {
         const Rational strideRateFactor{MaximumNumOfStrides[mKernelId], MaximumNumOfStrides[FirstKernelInPartition]};
         mMaximumNumOfStrides = b->CreateMulRational(mNumOfPartitionStrides, strideRateFactor / mPartitionStrideRateScalingFactor);
     }
+    #ifdef PRINT_DEBUG_MESSAGES
+    debugPrint(b, + "%s_maximumNumOfStrides = %" PRIu64, mCurrentKernelName, mMaximumNumOfStrides);
+    #endif
 }
 
 
@@ -136,11 +139,10 @@ void PipelineCompiler::determineNumOfLinearStrides(BuilderRef b) {
         if (port.CanModifySegmentLength) {
             const auto streamSet = source(input, mBufferGraph);
             checkForSufficientInputData(b, port, streamSet);
-        } else {
-            getAccessibleInputItems(b, port);
+//        } else {
+//            getAccessibleInputItems(b, port);
         }
     }
-
 
     if (LLVM_LIKELY(hasAtLeastOneNonGreedyInput())) {
         for (const auto input : make_iterator_range(in_edges(mKernelId, mBufferGraph))) {
@@ -238,7 +240,8 @@ Value * PipelineCompiler::calculateTransferableItemCounts(BuilderRef b, Value * 
 
     Value * nonFinalNumOfLinearStrides = nullptr;
     if (LLVM_UNLIKELY(mIsPartitionRoot && StrideStepLength[mKernelId] > 1)) {
-        nonFinalNumOfLinearStrides = b->CreateRoundDown(numOfLinearStrides, b->getSize(StrideStepLength[mKernelId]));
+        ConstantInt * const STEP = b->getSize(StrideStepLength[mKernelId]);
+        nonFinalNumOfLinearStrides = b->CreateRoundDown(numOfLinearStrides, STEP);
     } else {
         nonFinalNumOfLinearStrides = numOfLinearStrides;
     }

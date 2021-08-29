@@ -436,6 +436,7 @@ Function * Kernel::addAllocateSharedInternalStreamSetsDeclaration(BuilderRef b) 
         const auto funcName = concat(getName(), ALLOCATE_SHARED_INTERNAL_STREAMSETS_SUFFIX, tmp);
         Module * const m = b->getModule();
         func = m->getFunction(funcName);
+
         if (LLVM_LIKELY(func == nullptr)) {
 
             SmallVector<Type *, 2> params;
@@ -851,7 +852,6 @@ Function * Kernel::addFinalizeDeclaration(BuilderRef b) const {
  * @brief addOrDeclareMainFunction
  ** ------------------------------------------------------------------------------------------------------------- */
 Function * Kernel::addOrDeclareMainFunction(BuilderRef b, const MainMethodGenerationType method) const {
-
     auto suppliedArgs = 1U;
     if (LLVM_LIKELY(isStateful())) {
         suppliedArgs += 1;
@@ -951,8 +951,7 @@ Function * Kernel::addOrDeclareMainFunction(BuilderRef b, const MainMethodGenera
 
     // allocate any internal stream sets
     if (LLVM_LIKELY(allocatesInternalStreamSets())) {
-        Function * const allocInternal = getAllocateSharedInternalStreamSetsFunction(b);
-        FunctionType * fTy = allocInternal->getFunctionType();
+        Function * const allocShared = getAllocateSharedInternalStreamSetsFunction(b);
         SmallVector<Value *, 2> allocArgs;
         if (LLVM_LIKELY(isStateful())) {
             allocArgs.push_back(sharedHandle);
@@ -960,16 +959,16 @@ Function * Kernel::addOrDeclareMainFunction(BuilderRef b, const MainMethodGenera
         // pass in the desired number of segments
         #warning fix this so BufferSegments is an argument to main
         allocArgs.push_back(b->getSize(codegen::BufferSegments));
-        b->CreateCall(fTy, allocInternal, allocArgs);
+        b->CreateCall(allocShared->getFunctionType(), allocShared, allocArgs);
         if (hasThreadLocal()) {
-            Function * const allocInternal = getAllocateThreadLocalInternalStreamSetsFunction(b);
+            Function * const allocThreadLocal = getAllocateThreadLocalInternalStreamSetsFunction(b);
             SmallVector<Value *, 3> allocArgs;
             if (LLVM_LIKELY(isStateful())) {
                 allocArgs.push_back(sharedHandle);
             }
             allocArgs.push_back(threadLocalHandle);
             allocArgs.push_back(ONE);
-            b->CreateCall(fTy, allocInternal, allocArgs);
+            b->CreateCall(allocThreadLocal->getFunctionType(), allocThreadLocal, allocArgs);
         }
     }
 
@@ -1069,7 +1068,9 @@ Value * Kernel::initializeThreadLocalInstance(BuilderRef b, Value * const handle
     if (hasThreadLocal()) {
         Function * const init = getInitializeThreadLocalFunction(b);
         if (handle) {
-            instance = b->CreateCall(init->getFunctionType(), init, handle);
+            FixedArray<Value *, 1> args;
+            args[0] = handle;
+            instance = b->CreateCall(init->getFunctionType(), init, args);
         } else {
             instance = b->CreateCall(init->getFunctionType(), init, {});
         }
@@ -1140,7 +1141,7 @@ Value * Kernel::constructFamilyKernels(BuilderRef b, InitArgs & hostArgs, const 
     }
     recursivelyConstructFamilyKernels(b, initArgs, params);
     Function * init = getInitializeFunction(b);
-    b->CreateCall(init->getFunctionType(), getInitializeFunction(b), initArgs);
+    b->CreateCall(init->getFunctionType(), init, initArgs);
     END_SCOPED_REGION
 
     if (LLVM_LIKELY(hasFamilyName())) {

@@ -91,13 +91,10 @@ inline void PipelineCompiler::addPipelineKernelProperties(BuilderRef b) {
 
     mTarget->addInternalScalar(sizeTy, EXPECTED_NUM_OF_STRIDES_MULTIPLIER, 0);
 
-    #ifdef PERMIT_BUFFER_MEMORY_REUSE
     if (LLVM_LIKELY(RequiredThreadLocalStreamSetMemory > 0)) {
         PointerType * const int8PtrTy = b->getInt8PtrTy();
         mTarget->addThreadLocalScalar(int8PtrTy, BASE_THREAD_LOCAL_STREAMSET_MEMORY, 0);
     }
-    #endif
-
     // NOTE: both the shared and thread local objects are parameters to the kernel.
     // They get automatically set by reading in the appropriate params.
 
@@ -332,16 +329,11 @@ void PipelineCompiler::generateInitializeMethod(BuilderRef b) {
                 const auto scalar = source(e, mScalarGraph);
                 args.push_back(getScalar(b, scalar));
             }
-            Value * const f = getKernelInitializeFunction(b);
-            if (LLVM_UNLIKELY(f == nullptr)) {
-                report_fatal_error(mKernel->getName() + " does not have an initialize method");
-            }
-
             for (auto i = 0U; i != args.size(); ++i) {
                 assert (isFromCurrentFunction(b, args[i], false));
             }
 
-            Value * const signal = b->CreateCall(f, args);
+            Value * const signal = callKernelInitializeFunction(b, args);
             Value * const terminatedOnInit = b->CreateICmpNE(signal, unterminated);
 
             if (terminated) {
@@ -386,11 +378,7 @@ void PipelineCompiler::generateInitializeThreadLocalMethod(BuilderRef b) {
         if (kernel->hasThreadLocal()) {
             setActiveKernel(b, i, true);
             assert (mKernel == kernel);
-            Value * const f = getKernelInitializeThreadLocalFunction(b);
-            if (LLVM_UNLIKELY(f == nullptr)) {
-                report_fatal_error(mKernel->getName() + " does not have an initialize method for its threadlocal state");
-            }
-            Value * const handle = b->CreateCall(f, mKernelSharedHandle);
+            Value * const handle = callKernelInitializeThreadLocalFunction(b, mKernelSharedHandle);
             b->CreateStore(handle, getThreadLocalHandlePtr(b, i));
         }
     }
@@ -401,7 +389,6 @@ void PipelineCompiler::generateInitializeThreadLocalMethod(BuilderRef b) {
  ** ------------------------------------------------------------------------------------------------------------- */
 void PipelineCompiler::generateAllocateThreadLocalInternalStreamSetsMethod(BuilderRef b, Value * const expectedNumOfStrides) {
     assert (mTarget->hasThreadLocal());
-    #ifdef PERMIT_BUFFER_MEMORY_REUSE
     if (LLVM_LIKELY(RequiredThreadLocalStreamSetMemory > 0)) {
         ConstantInt * const reqMemory = b->getSize(RequiredThreadLocalStreamSetMemory);
         Value * const memorySize = b->CreateMul(reqMemory, expectedNumOfStrides);
@@ -409,7 +396,6 @@ void PipelineCompiler::generateAllocateThreadLocalInternalStreamSetsMethod(Build
         PointerType * const int8PtrTy = b->getInt8PtrTy();
         b->setScalarField(BASE_THREAD_LOCAL_STREAMSET_MEMORY, b->CreatePointerCast(base, int8PtrTy));
     }
-    #endif
     allocateOwnedBuffers(b, expectedNumOfStrides, false);
     resetInternalBufferHandles();
 }
@@ -590,7 +576,6 @@ void PipelineCompiler::generateMultiThreadKernelMethod(BuilderRef b) {
 
     Value * const processThreadId = b->CreateCall(pthreadSelfFn->getFunctionType(), pthreadSelfFn, {});
 
-
     for (unsigned i = 0; i != additionalThreads; ++i) {
         if (mTarget->hasThreadLocal()) {
             threadLocal[i] = mTarget->initializeThreadLocalInstance(b, initialSharedState);
@@ -760,8 +745,7 @@ void PipelineCompiler::generateFinalizeMethod(BuilderRef b) {
         if (LLVM_LIKELY(mKernel->isStateful())) {
             params.push_back(mKernelSharedHandle);
         }
-        Value * finalizeFn = getKernelFinalizeFunction(b);
-        mScalarValue[i] = b->CreateCall(finalizeFn, params);
+        mScalarValue[i] = callKernelFinalizeFunction(b, params);
     }
     releaseOwnedBuffers(b, true);
     resetInternalBufferHandles();
@@ -900,11 +884,7 @@ void PipelineCompiler::generateFinalizeThreadLocalMethod(BuilderRef b) {
                 args.push_back(mKernelSharedHandle);
             }
             args.push_back(mKernelThreadLocalHandle);
-            Value * const f = getKernelFinalizeThreadLocalFunction(b);
-            if (LLVM_UNLIKELY(f == nullptr)) {
-                report_fatal_error(mKernel->getName() + " does not to have an finalize method for its threadlocal state");
-            }
-            b->CreateCall(f, args);
+            callKernelFinalizeThreadLocalFunction(b, args);
         }
     }
     #ifdef ENABLE_PAPI
@@ -914,11 +894,9 @@ void PipelineCompiler::generateFinalizeThreadLocalMethod(BuilderRef b) {
     // Since all of the nested kernels thread local state is contained within
     // this pipeline thread's thread local state, freeing the pipeline's will
     // also free the inner kernels.
-    #ifdef PERMIT_BUFFER_MEMORY_REUSE
     if (LLVM_LIKELY(RequiredThreadLocalStreamSetMemory > 0)) {
         b->CreateFree(b->getScalarField(BASE_THREAD_LOCAL_STREAMSET_MEMORY));
     }
-    #endif
     b->CreateFree(getThreadLocalHandle());
 }
 

@@ -263,15 +263,15 @@ void PipelineAnalysis::transcribeRelationshipGraph(const PartitionGraph & partit
         assert (partitionId < origPartitionCount);
         const PartitionData & P = partitionGraph[partitionId];
         const auto & R = P.Repetitions;
+        const KernelIdVector & K = P.Kernels;
+        assert (P.Repetitions.size() == K.size());
         if (R.empty()) {
             return 0U;
         }
-        const KernelIdVector & K = P.Kernels;
-        assert (P.Repetitions.size() == K.size());
         const auto k = std::find(K.begin(), K.end(), kernelId);
         assert (k != K.end());
         const auto j = std::distance(K.begin(), k);
-        const auto expected = R[j] * P.ExpectedRepetitions;
+        const auto & expected = R[j];
         assert (expected.numerator() > 0 && expected.denominator() == 1);
         return expected.numerator();
     };
@@ -319,8 +319,10 @@ void PipelineAnalysis::transcribeRelationshipGraph(const PartitionGraph & partit
 
     // our new partition count can exceed the original one by at most one
     PartitionCount = outputPartitionId + 1U;
+    #ifndef FORCE_EACH_KERNEL_INTO_UNIQUE_PARTITION
     assert (origPartitionCount <= PartitionCount);
     assert ((origPartitionCount + 1) >= PartitionCount);
+    #endif
 
     // Originally, if the pipeline kernel does not have external I/O, both the pipeline in/out
     // nodes would be placed into the same (ignored) set but this won't be true after scheduling.
@@ -791,6 +793,8 @@ void PipelineAnalysis::generateInitialPipelineGraph(BuilderRef b) {
     // Pipeline optimizations
     combineDuplicateKernels(b, kernels, Relationships);
     removeUnusedKernels(p_in, p_out, kernels, Relationships);
+
+
 
 }
 
