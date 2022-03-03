@@ -247,6 +247,32 @@ bool GrepEngine::matchesToEOLrequired () {
     return (mEngineKind == EngineKind::EmitMatches) || (mMaxCount != 1) || mInvertMatches;
 }
 
+// generate a vector of REs based on the minimum length of each alternative regular expressions
+void GrepEngine::generateColoredREs(){
+    if(const re::Alt * alt = dyn_cast<re::Alt>(mRE))
+    {
+        std::unordered_map<int, std::vector<re:: RE *>> reMap;
+        for( re::RE * re : *alt)
+        {
+            auto lengthRange = getLengthRange(re, &cc::Unicode);
+            auto it = reMap.find(lengthRange.first);
+            if(it != reMap.end())
+            {
+                it->second.push_back(re);
+            }else{
+                std::vector<re:: RE *> newInsert {re};
+                reMap.insert({lengthRange.first, newInsert});
+            }
+        }
+        for(auto res : reMap)
+        {
+            mColoredREs.push_back(re::makeAlt(res.second.begin(), res.second.end()) );
+        }
+    }else{
+        mColoredREs.push_back(mRE);
+    }
+}
+
 void GrepEngine::initRE(re::RE * re) {
     if (mEngineKind != EngineKind::EmitMatches) mColoring = false;
     if (mGrepRecordBreak == GrepRecordBreakKind::Unicode) {
@@ -314,6 +340,8 @@ void GrepEngine::initRE(re::RE * re) {
         }
     }
     re::gatherNames(mRE, mExternalNames);
+
+    generateColoredREs();
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
@@ -734,12 +762,29 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     prepareExternalStreams(E, SourceStream);
 
-    StreamSet * Matches = E->CreateStreamSet(1, 1);
-    if (UnicodeIndexing) {
-        UnicodeIndexedGrep(E, mRE, SourceStream, Matches);
-    } else {
-        U8indexedGrep(E, mRE, SourceStream, Matches);
+    const int numOfColoredREs = mColoredREs.size();
+    std::cout << "size of res: "<< numOfColoredREs << std::endl;
+    std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);
+
+    for(unsigned i = 0; i < numOfColoredREs; ++i)
+    {
+        StreamSet *const MatchResults = E->CreateStreamSet(1,1);
+        MatchResultsBuf[i] = MatchResults;
+        if (UnicodeIndexing) {
+            UnicodeIndexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
+        } else {
+            U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
+        }
     }
+
+    StreamSet * Matches = MatchResultsBuf[0];
+    if(MatchResultsBuf.size() > 1)
+    {
+        StreamSet * const MergedMatches = E->CreateStreamSet();
+        E->CreateKernelCall<StreamsMerge>(MatchResultsBuf, MergedMatches);
+        Matches = MergedMatches;
+    }
+
     StreamSet * MatchedLineEnds = Matches;
     if (hasComponent(mExternalComponents, Component::MoveMatchesToEOL)) {
         StreamSet * const MovedMatches = E->CreateStreamSet();

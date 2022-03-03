@@ -126,6 +126,7 @@ protected:
     bool hasComponent(Component compon_set, Component c);
     void setComponent(Component & compon_set, Component c);
     bool matchesToEOLrequired();
+    void generateColoredREs();
 
     // Transpose to basis bit streams, if required otherwise return the source byte stream.
     kernel::StreamSet * getBasis(const std::unique_ptr<kernel::ProgramBuilder> &P, kernel::StreamSet * ByteStream);
@@ -177,6 +178,7 @@ protected:
     GrepRecordBreakKind mGrepRecordBreak;
 
     re:: RE * mRE;
+    std::vector<re::RE*> mColoredREs;
     std::set<re::Name *> mExternalNames;
     re::CC * mBreakCC;
     re::RE * mPrefixRE;
