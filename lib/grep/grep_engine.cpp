@@ -763,7 +763,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
     prepareExternalStreams(E, SourceStream);
 
     const int numOfColoredREs = mColoredREs.size();
-    std::cout << "size of res: "<< numOfColoredREs << std::endl;
     std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);
 
     for(unsigned i = 0; i < numOfColoredREs; ++i)
