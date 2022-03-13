@@ -18,6 +18,7 @@
 #include <re/parse/GLOB_parser.h>
 #include <kernel/core/callback.h>
 #include <kernel/util/linebreak_kernel.h>
+#include <kernel/util/debug_display.h>
 #include <grep/grep_kernel.h>
 
 namespace re { class CC; }

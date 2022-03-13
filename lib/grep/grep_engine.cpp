@@ -341,7 +341,7 @@ void GrepEngine::initRE(re::RE * re) {
     }
     re::gatherNames(mRE, mExternalNames);
 
-    generateColoredREs();
+    if(mColoring) generateColoredREs();
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
