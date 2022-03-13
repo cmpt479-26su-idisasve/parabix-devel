@@ -52,6 +52,7 @@
 #include <re/transforms/to_utf8.h>
 #include <re/analysis/re_analysis.h>
 #include <re/analysis/re_name_gather.h>
+#include <re/analysis/re_local.h>
 #include <re/analysis/collect_ccs.h>
 #include <re/transforms/replaceCC.h>
 #include <re/transforms/re_multiplex.h>
@@ -341,7 +342,7 @@ void GrepEngine::initRE(re::RE * re) {
     }
     re::gatherNames(mRE, mExternalNames);
 
-    if(mColoring) generateColoredREs();
+    generateColoredREs();
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
@@ -802,7 +803,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         MatchedLineEnds = TruncatedMatches;
     }
 
-    if (mColoring && !mInvertMatches) {
+    if (mColoring && !mInvertMatches) {        
 
         StreamSet * MatchesByLine = E->CreateStreamSet(1, 1);
         FilterByMask(E, mLineBreakStream, MatchedLineEnds, MatchesByLine);
@@ -908,6 +909,8 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         }
     }
     //E->CreateKernelCall<StdOutKernel>(ColorizedBytes);
+    // std::cout << "displayAllCapturedData: " << std::endl;
+    // illustrator.displayAllCapturedData();
 }
 
 

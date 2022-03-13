@@ -175,4 +175,25 @@ CC * RE_Local::getFirstUniqueSymbol(RE * const re) {
     return const_cast<CC *>(re_first);
 }
 
+bool RE_Local::noInterCCFromFirstNLast(RE *re)
+{
+    const CC * const re_first  = first(re);
+    const CC * const re_final  = final(re);
+    if(re_first)
+    {
+        FollowMap follows;
+        follow(re, follows);
+        for (const auto & entry : follows) {
+            if (entry.second->intersects(*re_first)) {
+                return false;
+            }
+            if (entry.first->intersects(*re_final))
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 }
