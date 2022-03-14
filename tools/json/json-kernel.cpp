@@ -261,7 +261,7 @@ void JSONFindKwAndExtraneousChars::generatePabloMethod() {
     pb.createAssign(pb.createExtract(combinedOut, pb.getInteger(Combined::values)), allValues);
 }
 
-void JSONParser::generatePabloMethod() {
+void JSONParserArr::generatePabloMethod() {
     PabloBuilder pb(getEntryScope());
     BixNumCompiler bnc(pb);
 
@@ -274,15 +274,11 @@ void JSONParser::generatePabloMethod() {
     PabloAST * valueToken = pb.createLookahead(allValues, 1);
     PabloAST * anyToken = pb.createOr(symbols, valueToken);
 
-    PabloAST * lCurly = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::lCurly]);
     PabloAST * rCurly = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::rCurly]);
     PabloAST * lBracket = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::lBracket]);
     PabloAST * rBracket = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::rBracket]);
     PabloAST * comma = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::comma]);
-    PabloAST * colon = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::colon]);
     PabloAST * ws = getInputStreamSet("lexIn")[Lex::ws];
-    PabloAST * str = pb.createAnd(valueToken, getInputStreamSet("lexIn")[Lex::dQuote]);
-    PabloAST * valueTokenMinusStr = pb.createXor(valueToken, str);
 
     Var * const syntaxErr = getOutputStreamVar("syntaxErr");
 
@@ -357,6 +353,34 @@ void JSONParser::generatePabloMethod() {
         if (genSingleBlock) { break; }
     }
 
+    PabloAST * allErrs = pb.createOr(errSimpleValue, errArray);
+    pb.createAssign(pb.createExtract(syntaxErr, pb.getInteger(0)), allErrs);
+}
+
+void JSONParserObj::generatePabloMethod() {
+    PabloBuilder pb(getEntryScope());
+    BixNumCompiler bnc(pb);
+
+    bool genSingleBlock = mOnlyDepth > -1;
+    BixNum ND = getInputStreamSet("ND");
+
+    PabloAST * symbols = getInputStreamSet("combinedLexs")[Combined::symbols];
+    PabloAST * validRBrak = getInputStreamSet("combinedLexs")[Combined::rBrak];
+    PabloAST * allValues = getInputStreamSet("combinedLexs")[Combined::values];
+    PabloAST * valueToken = pb.createLookahead(allValues, 1);
+    PabloAST * anyToken = pb.createOr(symbols, valueToken);
+
+    PabloAST * lCurly = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::lCurly]);
+    PabloAST * rCurly = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::rCurly]);
+    PabloAST * rBracket = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::rBracket]);
+    PabloAST * comma = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::comma]);
+    PabloAST * colon = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::colon]);
+    PabloAST * ws = getInputStreamSet("lexIn")[Lex::ws];
+    PabloAST * str = pb.createAnd(valueToken, getInputStreamSet("lexIn")[Lex::dQuote]);
+    PabloAST * valueTokenMinusStr = pb.createXor(valueToken, str);
+
+    Var * const syntaxErr = getOutputStreamVar("syntaxErr");
+
     // parsing objects
     Var * const errObj = pb.createVar("errObj", pb.createZeroes());
     for (int i = mMaxDepth; i >= 0; --i) {
@@ -422,7 +446,5 @@ void JSONParser::generatePabloMethod() {
         if (genSingleBlock) { break; }
     }
 
-    PabloAST * allErrs = pb.createOr3(errSimpleValue, errArray, errObj);
-
-    pb.createAssign(pb.createExtract(syntaxErr, pb.getInteger(0)), allErrs);
+    pb.createAssign(pb.createExtract(syntaxErr, pb.getInteger(0)), errObj);
 }
