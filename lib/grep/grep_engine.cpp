@@ -567,8 +567,10 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
             options->setRE(toUTF8(re));
         }
     }
+    //P->CreateKernelCall<DebugDisplayKernel>("MatchResults", MatchResults);
     addExternalStreams(P, options, re);
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
+
     if (hasComponent(mExternalComponents, Component::MatchSpans)) {
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
     }
@@ -774,6 +776,48 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
             UnicodeIndexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
         } else {
             U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
+            if(mColoring && re::RE_Local::noInterCCFromFirstNLast(mColoredREs[i]))
+            {
+                std::cout << "True" << std::endl;
+                // get first CC matches
+                std::vector<StreamSet *>EndPointMatchResultsBuf(2);
+                auto firstCC = re::RE_Local::getFirstCCAsRE(mColoredREs[i]);
+                StreamSet *const firstCCMatchResults = E->CreateStreamSet(1,1);
+                U8indexedGrep(E, firstCC, SourceStream, firstCCMatchResults);
+                EndPointMatchResultsBuf[0] = firstCCMatchResults;
+
+                auto lastCC  = re::RE_Local::getLastCCAsRE(mColoredREs[i]);
+                StreamSet *const lastCCMatchResults = E->CreateStreamSet(1,1);
+                U8indexedGrep(E, lastCC, SourceStream, lastCCMatchResults);
+                EndPointMatchResultsBuf[1] = lastCCMatchResults;
+
+                StreamSet * const MergedMatches = E->CreateStreamSet();
+                E->CreateKernelCall<StreamsMerge>(EndPointMatchResultsBuf, MergedMatches);
+                E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", MergedMatches);
+                E->CreateKernelCall<DebugDisplayKernel>("MatchResults1", MatchResults);
+
+                StreamSet * MatchesByBraket = E->CreateStreamSet(1, 1);
+                FilterByMask(E, MergedMatches, MatchResults, MatchesByBraket);
+                E->CreateKernelCall<DebugDisplayKernel>("MatchesByBraket", MatchesByBraket);
+
+                StreamSet * MatchStartsByBraket = E->CreateStreamSet(1, 1);
+                E->CreateKernelCall<LookAheadKernel>(1, MatchesByBraket, MatchStartsByBraket);
+                E->CreateKernelCall<DebugDisplayKernel>("MatchStartsByBraket", MatchStartsByBraket);
+
+                StreamSet * MatchStarts = E->CreateStreamSet(1, 1);
+                SpreadByMask(E, MergedMatches, MatchStartsByBraket, MatchStarts);
+                E->CreateKernelCall<DebugDisplayKernel>("MatchStarts", MatchStarts);
+
+                StreamSet *MatchOverall = E->CreateStreamSet(1, 1);
+                E->CreateKernelCall<U8Spans>(MatchStarts, MatchResults, MatchOverall);
+                E->CreateKernelCall<DebugDisplayKernel>("MatchOverall", MatchOverall);
+
+                StreamSet *MatchOverallFinal = E->CreateStreamSet(1, 1);
+                std::vector<StreamSet *> AllMatchResultsBuf {MatchOverall, MatchResults};
+                E->CreateKernelCall<StreamsMerge>(AllMatchResultsBuf, MatchOverallFinal);
+                E->CreateKernelCall<DebugDisplayKernel>("MatchOverallFinal", MatchOverallFinal);
+                MatchResultsBuf[i] = MatchOverallFinal;
+            }
         }
     }
 
@@ -784,6 +828,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         E->CreateKernelCall<StreamsMerge>(MatchResultsBuf, MergedMatches);
         Matches = MergedMatches;
     }
+    // E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", Matches);
 
     StreamSet * MatchedLineEnds = Matches;
     if (hasComponent(mExternalComponents, Component::MoveMatchesToEOL)) {

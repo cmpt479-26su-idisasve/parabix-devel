@@ -9,6 +9,11 @@ struct RE_Local {
     static CC * getFirstUniqueSymbol(RE * re);
 
     static bool noInterCCFromFirstNLast(RE *re);
+
+    static RE * getFirstCCAsRE(RE* re);
+
+    static RE * getLastCCAsRE(RE* re);
+
 };
 
 }

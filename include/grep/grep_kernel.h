@@ -93,6 +93,15 @@ private:
     void generateDoBlockMethod(BuilderRef iBuilder) override;
 };
 
+class LookAheadKernel: public pablo::PabloKernel  {
+public:
+    LookAheadKernel(BuilderRef iBuilder, unsigned length, StreamSet * MatchesByBraket, StreamSet * MatchStartsByBraket);
+protected:
+    void generatePabloMethod() override;
+    unsigned mLookAheadLength;
+};
+
+
 class FixedMatchSpansKernel : public pablo::PabloKernel {
 public:
     FixedMatchSpansKernel(BuilderRef builder, unsigned length, StreamSet * MatchFollows, StreamSet * MatchSpans);

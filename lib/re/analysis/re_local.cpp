@@ -10,8 +10,11 @@
 #include <re/analysis/nullable.h>
 #include <re/analysis/re_analysis.h>
 #include <re/transforms/re_transformer.h>
+#include <re/transforms/to_utf8.h>
 #include <boost/container/flat_map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+#include <iostream>
+
 
 using namespace boost::container;
 using namespace llvm;
@@ -183,6 +186,7 @@ bool RE_Local::noInterCCFromFirstNLast(RE *re)
     {
         FollowMap follows;
         follow(re, follows);
+        if(follows.size() == 0) return false;
         for (const auto & entry : follows) {
             if (entry.second->intersects(*re_first)) {
                 return false;
@@ -194,6 +198,56 @@ bool RE_Local::noInterCCFromFirstNLast(RE *re)
         }
     }
     return true;
+}
+
+RE * RE_Local::getFirstCCAsRE(RE* re)
+{
+    if (const Seq * seq = dyn_cast<Seq>(re)) { 
+        return makeSeq(seq->begin(), seq->begin()+1);
+    }else if (const Alt * alt = dyn_cast<Alt>(re)){
+        vector<RE*> firstReVec;
+        // std::cout << "Alt: " <<  std::endl;
+        std::vector<RE*> vec;
+        for(const RE* altRE : * alt)
+        {
+            // std::cout << "Alt a: " <<  std::endl;
+            if(const Seq * seq = dyn_cast<Seq>(altRE))
+            {
+                // std::cout << "Seq a: " <<  std::endl;
+                auto fir = makeSeq(seq->begin(), seq->begin()+1);
+                vec.push_back(fir);
+            }
+        }
+        return makeAlt(vec.begin(), vec.end());
+    }
+    return nullptr;
+}
+
+RE * RE_Local::getLastCCAsRE(RE* re)
+{
+    if (const Seq * seq = dyn_cast<Seq>(re)) { 
+        return makeSeq(seq->end()-1, seq->end());
+        //std::cout << first(i)->canonicalName() << std::endl;;
+
+    }else if (const Alt * alt = dyn_cast<Alt>(re)){
+        vector<RE*> firstReVec;
+        // std::cout << "Alt: " <<  std::endl;
+        std::vector<RE*> vec;
+        for(const RE* altRE : * alt)
+        {
+            // std::cout << "Alt a: " <<  std::endl;
+            if(const Seq * seq = dyn_cast<Seq>(altRE))
+            {
+                // std::cout << "Seq a: " <<  std::endl;
+                auto fir = makeSeq(seq->end()-1, seq->end());
+                vec.push_back(fir);
+            }
+        }
+
+        return makeAlt(vec.begin(), vec.end());
+        // std::cout << first(i)->canonicalName() << std::endl;;
+    }
+    return nullptr;
 }
 
 }

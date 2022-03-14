@@ -416,6 +416,24 @@ InvertMatchesKernel::InvertMatchesKernel(BuilderRef b, StreamSet * Matches, Stre
 
 }
 
+LookAheadKernel::LookAheadKernel (BuilderRef iBuilder, unsigned length, StreamSet * MatchesByBraket, StreamSet * MatchStartsByBraket)
+: PabloKernel(iBuilder, "MatchesByBraket" + std::to_string(MatchesByBraket->getNumElements()),
+// inputs
+{Binding{"matchesByBraket", MatchesByBraket, FixedRate(1), LookAhead(round_up_to_blocksize(length))}},
+// output
+{Binding{"matchStartsByBraket", MatchStartsByBraket}}),
+mLookAheadLength(length) {}
+
+void LookAheadKernel::generatePabloMethod(){
+    PabloBuilder pb(getEntryScope());
+    PabloAST * matchesByBraket = pb.createExtract(getInputStreamVar("matchesByBraket"), pb.getInteger(0));
+    Var * matchStartsByBraket = getOutputStreamVar("matchStartsByBraket");
+    // starts of all the matches
+    PabloAST * lookAhead = pb.createLookahead(matchesByBraket, mLookAheadLength);
+    pb.createAssign(pb.createExtract(matchStartsByBraket, 0), lookAhead);
+}
+
+
 FixedMatchSpansKernel::FixedMatchSpansKernel(BuilderRef b, unsigned length, StreamSet * MatchResults, StreamSet * MatchSpans)
 : PabloKernel(b, "FixedMatchSpansKernel" + std::to_string(MatchResults->getNumElements()) + "x1_by" + std::to_string(length),
 {Binding{"MatchResults", MatchResults, FixedRate(1), LookAhead(round_up_to_blocksize(length))}}, {Binding{"MatchSpans", MatchSpans}}),
