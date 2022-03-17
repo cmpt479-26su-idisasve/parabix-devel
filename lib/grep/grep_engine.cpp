@@ -248,6 +248,7 @@ bool GrepEngine::matchesToEOLrequired () {
     return (mEngineKind == EngineKind::EmitMatches) || (mMaxCount != 1) || mInvertMatches;
 }
 
+<<<<<<< HEAD
 // generate a vector of REs based on the minimum length of each alternative regular expressions
 void GrepEngine::generateColoredREs(){
     if(const re::Alt * alt = dyn_cast<re::Alt>(mRE))
@@ -274,6 +275,8 @@ void GrepEngine::generateColoredREs(){
     }
 }
 
+=======
+>>>>>>> be6a94ab478391b2dbaab415537bf3924ad0b228
 void GrepEngine::initRE(re::RE * re) {
     if (mEngineKind != EngineKind::EmitMatches) mColoring = false;
     if (mGrepRecordBreak == GrepRecordBreakKind::Unicode) {
@@ -341,8 +344,11 @@ void GrepEngine::initRE(re::RE * re) {
         }
     }
     re::gatherNames(mRE, mExternalNames);
+<<<<<<< HEAD
 
     generateColoredREs();
+=======
+>>>>>>> be6a94ab478391b2dbaab415537bf3924ad0b228
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
@@ -765,6 +771,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     prepareExternalStreams(E, SourceStream);
 
+<<<<<<< HEAD
     const int numOfColoredREs = mColoredREs.size();
     std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);
 
@@ -828,6 +835,13 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         StreamSet * const MergedMatches = E->CreateStreamSet();
         E->CreateKernelCall<StreamsMerge>(MatchResultsBuf, MergedMatches);
         Matches = MergedMatches;
+=======
+    StreamSet * Matches = E->CreateStreamSet(1, 1);
+    if (UnicodeIndexing) {
+        UnicodeIndexedGrep(E, mRE, SourceStream, Matches);
+    } else {
+        U8indexedGrep(E, mRE, SourceStream, Matches);
+>>>>>>> be6a94ab478391b2dbaab415537bf3924ad0b228
     }
     // E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", Matches);
 
