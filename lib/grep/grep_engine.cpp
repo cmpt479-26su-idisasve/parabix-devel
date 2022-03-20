@@ -139,7 +139,9 @@ GrepEngine::GrepEngine(BaseDriver &driver) :
     mGCB_stream(nullptr),
     mWordBoundary_stream(nullptr),
     mUTF8_Transformer(re::NameTransformationMode::None),
-    mEngineThread(pthread_self()) {}
+    mEngineThread(pthread_self()),
+    mIllustrator(new kernel::ParabixIllustrator(256)),
+    mDisplayCapturedData(false) {}
 
 GrepEngine::~GrepEngine() { }
 
@@ -248,7 +250,6 @@ bool GrepEngine::matchesToEOLrequired () {
     return (mEngineKind == EngineKind::EmitMatches) || (mMaxCount != 1) || mInvertMatches;
 }
 
-<<<<<<< HEAD
 // generate a vector of REs based on the minimum length of each alternative regular expressions
 void GrepEngine::generateColoredREs(){
     if(const re::Alt * alt = dyn_cast<re::Alt>(mRE))
@@ -275,8 +276,6 @@ void GrepEngine::generateColoredREs(){
     }
 }
 
-=======
->>>>>>> be6a94ab478391b2dbaab415537bf3924ad0b228
 void GrepEngine::initRE(re::RE * re) {
     if (mEngineKind != EngineKind::EmitMatches) mColoring = false;
     if (mGrepRecordBreak == GrepRecordBreakKind::Unicode) {
@@ -344,11 +343,8 @@ void GrepEngine::initRE(re::RE * re) {
         }
     }
     re::gatherNames(mRE, mExternalNames);
-<<<<<<< HEAD
 
     generateColoredREs();
-=======
->>>>>>> be6a94ab478391b2dbaab415537bf3924ad0b228
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
@@ -573,7 +569,6 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
             options->setRE(toUTF8(re));
         }
     }
-    //P->CreateKernelCall<DebugDisplayKernel>("MatchResults", MatchResults);
     addExternalStreams(P, options, re);
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
 
@@ -771,7 +766,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     prepareExternalStreams(E, SourceStream);
 
-<<<<<<< HEAD
     const int numOfColoredREs = mColoredREs.size();
     std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);
 
@@ -781,15 +775,69 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         MatchResultsBuf[i] = MatchResults;
         if (UnicodeIndexing) {
             UnicodeIndexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
+
         } else {
             U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
-            if(mColoring && re::RE_Local::noInterCCFromFirstNLast(mColoredREs[i]))
+            int lengthOfP = 0;
+            re::RE * re_P = re::RE_Local::findREsMatchAPQ(mColoredREs[i], lengthOfP);
+            if(mColoring && re_P)
+            {
+                StreamSet *const matchesToPResult = E->CreateStreamSet(1,1);
+                U8indexedGrep(E, re_P, SourceStream, matchesToPResult);
+                mIllustrator->captureBitstream(E, "matchesToPResult", matchesToPResult);
+                mIllustrator->captureBitstream(E, "MatchResults", MatchResults);
+
+                std::vector<StreamSet *> maskStreamF {matchesToPResult, MatchResults};
+                StreamSet * const MergedMatchesMaskF = E->CreateStreamSet();
+                E->CreateKernelCall<StreamsMerge>(maskStreamF, MergedMatchesMaskF);
+                mIllustrator->captureBitstream(E, "MergedMatchesMaskF", MergedMatchesMaskF);
+
+                StreamSet * filterByMaskResultC = E->CreateStreamSet(1, 1);
+                FilterByMask(E, MergedMatchesMaskF, MatchResults, filterByMaskResultC);
+                mIllustrator->captureBitstream(E, "filterByMaskResultC", filterByMaskResultC);
+
+                StreamSet * LookAheadC = E->CreateStreamSet(1, 1);
+                E->CreateKernelCall<LookAheadKernel>(1, filterByMaskResultC, LookAheadC);
+
+                StreamSet * MatchStreamP0 = E->CreateStreamSet(1, 1);
+                E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);
+                mIllustrator->captureBitstream(E, "MatchStreamP0", MatchStreamP0);
+
+                StreamSet * MatchStreamE0 = E->CreateStreamSet(1, 1);
+                E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0);
+                mIllustrator->captureBitstream(E, "MatchStreamE0", MatchStreamE0);
+
+                StreamSet * MatchStreamE1 = E->CreateStreamSet(1, 1);
+                SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1);
+                mIllustrator->captureBitstream(E, "MatchStreamE1", MatchStreamE1);
+
+                StreamSet * MatchStreamP1 = E->CreateStreamSet(1, 1);
+                SpreadByMask( E, MergedMatchesMaskF, MatchStreamP0 ,MatchStreamP1);
+                mIllustrator->captureBitstream(E, "MatchStreamP1", MatchStreamP1);
+
+                StreamSet * LookAheadP1 = E->CreateStreamSet(1, 1);
+                E->CreateKernelCall<LookAheadKernel>(lengthOfP-1, MatchStreamP1, LookAheadP1);
+                mIllustrator->captureBitstream(E, "LookAheadP1", LookAheadP1);
+                mDisplayCapturedData = true;
+
+                StreamSet *MatchOverall = E->CreateStreamSet(1, 1);
+                E->CreateKernelCall<U8Spans>(LookAheadP1, MatchStreamE1, MatchOverall);
+                mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
+                MatchResultsBuf[i] = MatchOverall;
+
+
+
+            }
+            else if(mColoring && re::RE_Local::noInterCCFromFirstNLast(mColoredREs[i]))
             {
                 //Get first&last CC as REs
                 auto firstCCAsRE = re::RE_Local::getFirstCCAsRE(mColoredREs[i]);
                 auto lastCCAsRE  = re::RE_Local::getLastCCAsRE(mColoredREs[i]);
                 if(firstCCAsRE && lastCCAsRE){
-                    
+
+                    mIllustrator->captureBitstream(E, "MatchResults", MatchResults);
+                    mIllustrator->captureBitstream(E, "SourceStream", SourceStream);
+                                       
                     StreamSet *const firstCCMatchResults = E->CreateStreamSet(1,1);
                     U8indexedGrep(E, firstCCAsRE, SourceStream, firstCCMatchResults);
 
@@ -799,29 +847,22 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
                     StreamSet * const MergedMatches = E->CreateStreamSet();
                     E->CreateKernelCall<StreamsMerge>(EndPointMatchResultsBuf, MergedMatches);
-                    //E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", MergedMatches);
-                    //E->CreateKernelCall<DebugDisplayKernel>("MatchResults1", MatchResults);
 
                     StreamSet * MatchesByBraket = E->CreateStreamSet(1, 1);
                     FilterByMask(E, MergedMatches, MatchResults, MatchesByBraket);
-                    //E->CreateKernelCall<DebugDisplayKernel>("MatchesByBraket", MatchesByBraket);
 
                     StreamSet * MatchStartsByBraket = E->CreateStreamSet(1, 1);
                     E->CreateKernelCall<LookAheadKernel>(1, MatchesByBraket, MatchStartsByBraket);
-                    //E->CreateKernelCall<DebugDisplayKernel>("MatchStartsByBraket", MatchStartsByBraket);
 
                     StreamSet * MatchStarts = E->CreateStreamSet(1, 1);
                     SpreadByMask(E, MergedMatches, MatchStartsByBraket, MatchStarts);
-                    //E->CreateKernelCall<DebugDisplayKernel>("MatchStarts", MatchStarts);
 
                     StreamSet *MatchOverall = E->CreateStreamSet(1, 1);
                     E->CreateKernelCall<U8Spans>(MatchStarts, MatchResults, MatchOverall);
-                    //E->CreateKernelCall<DebugDisplayKernel>("MatchOverall", MatchOverall);
 
                     StreamSet *MatchOverallFinal = E->CreateStreamSet(1, 1);
                     std::vector<StreamSet *> AllMatchResultsBuf {MatchOverall, MatchResults};
                     E->CreateKernelCall<StreamsMerge>(AllMatchResultsBuf, MatchOverallFinal);
-                    // E->CreateKernelCall<DebugDisplayKernel>("MatchOverallFinal", MatchOverallFinal);
                     MatchResultsBuf[i] = MatchOverallFinal;
                 }
                 
@@ -835,13 +876,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         StreamSet * const MergedMatches = E->CreateStreamSet();
         E->CreateKernelCall<StreamsMerge>(MatchResultsBuf, MergedMatches);
         Matches = MergedMatches;
-=======
-    StreamSet * Matches = E->CreateStreamSet(1, 1);
-    if (UnicodeIndexing) {
-        UnicodeIndexedGrep(E, mRE, SourceStream, Matches);
-    } else {
-        U8indexedGrep(E, mRE, SourceStream, Matches);
->>>>>>> be6a94ab478391b2dbaab415537bf3924ad0b228
     }
     // E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", Matches);
 
@@ -982,12 +1016,16 @@ void EmitMatchesEngine::grepCodeGen() {
                 {Binding{idb->getSizeTy(), "useMMap"},
                 Binding{idb->getInt32Ty(), "fileDescriptor"},
                 Binding{idb->getIntAddrTy(), "callbackObject"},
-                Binding{idb->getSizeTy(), "maxCount"}}
+                Binding{idb->getSizeTy(), "maxCount"},
+                Binding{idb->getIntAddrTy(), "illustratorAddr"}}
                 ,// output
-                {Binding{idb->getInt64Ty(), "countResult"}});
+                {Binding{idb->getInt64Ty(), "countResult"}}
+                );
 
     Scalar * const useMMap = E1->getInputScalar("useMMap");
     Scalar * const fileDescriptor = E1->getInputScalar("fileDescriptor");
+    Scalar * const illustratorAddr = E1->getInputScalar("illustratorAddr");
+    mIllustrator->registerIllustrator(illustratorAddr);
     StreamSet * const ByteStream = E1->CreateStreamSet(1, ENCODING_BITS);
     E1->CreateKernelCall<FDSourceKernel>(useMMap, fileDescriptor, ByteStream);
     grepPipeline(E1, ByteStream);
@@ -1079,7 +1117,7 @@ void MatchOnlyEngine::showResult(uint64_t grepResult, const std::string & fileNa
 
 uint64_t EmitMatchesEngine::doGrep(const std::vector<std::string> & fileNames, std::ostringstream & strm) {
     if (fileNames.size() == 1) {
-        typedef uint64_t (*GrepFunctionType)(bool useMMap, int32_t fileDescriptor, EmitMatch *, size_t maxCount);
+        typedef uint64_t (*GrepFunctionType)(bool useMMap, int32_t fileDescriptor, EmitMatch *, size_t maxCount, kernel::ParabixIllustrator * illustrator);
         auto f = reinterpret_cast<GrepFunctionType>(mMainMethod);
         EmitMatch accum(mShowFileNames, mShowLineNumbers, ((mBeforeContext > 0) || (mAfterContext > 0)), mInitialTab);
         accum.setStringStream(&strm);
@@ -1095,7 +1133,10 @@ uint64_t EmitMatchesEngine::doGrep(const std::vector<std::string> & fileNames, s
             accum.setFileLabel(fileNames[0]);
             useMMap = mPreferMMap && canMMap(fileNames[0]);
         }
-        f(useMMap, fileDescriptor, &accum, mMaxCount);
+        f(useMMap, fileDescriptor, &accum, mMaxCount, mIllustrator);
+        if(mDisplayCapturedData)
+            mIllustrator->displayAllCapturedData();
+
         close(fileDescriptor);
         if (accum.binaryFileSignalled()) {
             accum.mResultStr->clear();

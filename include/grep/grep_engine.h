@@ -179,10 +179,7 @@ protected:
     GrepRecordBreakKind mGrepRecordBreak;
 
     re:: RE * mRE;
-<<<<<<< HEAD
     std::vector<re::RE*> mColoredREs;
-=======
->>>>>>> be6a94ab478391b2dbaab415537bf3924ad0b228
     std::set<re::Name *> mExternalNames;
     re::CC * mBreakCC;
     re::RE * mPrefixRE;
@@ -197,6 +194,8 @@ protected:
     kernel::StreamSet * mWordBoundary_stream;
     re::UTF8_Transformer mUTF8_Transformer;
     pthread_t mEngineThread;
+    kernel::ParabixIllustrator * mIllustrator;
+    bool mDisplayCapturedData;
 };
 
 

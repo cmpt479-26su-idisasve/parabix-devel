@@ -426,11 +426,28 @@ mLookAheadLength(length) {}
 
 void LookAheadKernel::generatePabloMethod(){
     PabloBuilder pb(getEntryScope());
-    PabloAST * matchesByBraket = pb.createExtract(getInputStreamVar("matchesByBraket"), pb.getInteger(0));
+    //PabloAST * matchesByBraket = pb.createExtract(getInputStreamVar("matchesByBraket"), pb.getInteger(0));
+    PabloAST * matchesByBraket = getInputStreamSet("matchesByBraket")[0];
     Var * matchStartsByBraket = getOutputStreamVar("matchStartsByBraket");
     // starts of all the matches
     PabloAST * lookAhead = pb.createLookahead(matchesByBraket, mLookAheadLength);
     pb.createAssign(pb.createExtract(matchStartsByBraket, 0), lookAhead);
+}
+
+AndNotKernel::AndNotKernel (BuilderRef iBuilder, StreamSet * StreamOne, StreamSet * StreamTwo, StreamSet * StreamOutput)
+: PabloKernel(iBuilder, "MatchAnd"+std::to_string(StreamOne->getNumElements()),
+// inputs
+{Binding{"StreamOne", StreamOne}, Binding{"StreamTwo", StreamTwo}},
+// output
+{Binding{"StreamOutput", StreamOutput}}){}
+
+void AndNotKernel::generatePabloMethod(){
+    PabloBuilder pb(getEntryScope());
+    PabloAST * StreamOne = getInputStreamSet("StreamOne")[0];
+    PabloAST * StreamTwo = getInputStreamSet("StreamTwo")[0];
+    Var * StreamOutput = getOutputStreamVar("StreamOutput");
+    PabloAST * result = pb.createAnd(StreamOne, pb.createNot(StreamTwo), "result");
+    pb.createAssign(pb.createExtract(StreamOutput, 0), result);
 }
 
 

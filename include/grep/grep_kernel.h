@@ -101,6 +101,13 @@ protected:
     unsigned mLookAheadLength;
 };
 
+class AndNotKernel: public pablo::PabloKernel{
+public:
+    AndNotKernel(BuilderRef iBuilder, StreamSet * StreamOne, StreamSet * StreamTwo, StreamSet * StreamOutput);
+protected:
+    void generatePabloMethod() override;
+};
+ 
 
 class FixedMatchSpansKernel : public pablo::PabloKernel {
 public:

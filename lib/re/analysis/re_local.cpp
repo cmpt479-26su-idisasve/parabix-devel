@@ -9,9 +9,11 @@
 #include <re/adt/adt.h>
 #include <re/analysis/nullable.h>
 #include <re/analysis/re_analysis.h>
+#include <re/analysis/cc_sequence_search.h>
 #include <re/transforms/re_transformer.h>
 #include <boost/container/flat_map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
+#include <iostream>
 
 using namespace boost::container;
 using namespace llvm;
@@ -161,6 +163,74 @@ void follow(const RE * re, FollowMap & follows) {
     }
 }
 
+// E = APQ 
+// PQ = reExceptFirst
+RE * getRePQ(RE* re)
+{
+    if(const Seq * seq = dyn_cast<Seq>(re))
+    {
+        if(seq->size() > 1)
+        {
+            return makeSeq(seq->begin()+1, seq->end());
+        }
+    }
+
+    return nullptr;
+}
+
+// Find AP in E = APQ  
+RE* getReAP(RE *re)
+{
+    RE * PQ = getRePQ(re);
+    RE * AP_RE = nullptr;
+    if(PQ == nullptr)  return nullptr;
+
+    if(const Seq * seq = dyn_cast<Seq>(re))
+    {
+        std::vector<CC *> CC_seq;
+        int endPoint = 0;
+        for(int i=0; i < seq->size()-1; ++i)
+        {
+            RE * item = (*seq)[i];
+            if (CC * cc = dyn_cast<CC>(item))
+            {
+                CC_seq.push_back(cc);
+                bool search = CC_Sequence_Search(CC_seq, PQ);
+                if(search) break;
+                else endPoint = i;
+            }else{
+                break;
+            }
+        }
+        AP_RE = makeSeq(CC_seq.begin(), CC_seq.begin()+endPoint+1);
+
+    }
+
+    return AP_RE;
+}
+
+RE* getReP(RE *re, int &length)
+{
+    RE * AP_RE = getReAP(re);
+    RE * P_RE = nullptr;
+    if(AP_RE == nullptr)  return nullptr;
+    if(const Seq * seq = dyn_cast<Seq>(AP_RE))
+    {
+       if(seq->size() > 1)
+       {
+           P_RE = makeSeq(seq->begin()+1, seq->end());
+           length = seq->size()-1;
+       }
+    }
+
+    return P_RE;
+}
+
+RE * RE_Local::findREsMatchAPQ(RE * re, int &length)
+{
+    return getReP(re, length);
+}
+
 CC * RE_Local::getFirstUniqueSymbol(RE * const re) {
     const CC * const re_first = first(re);
     if (re_first) {
@@ -238,5 +308,7 @@ RE * RE_Local::getLastCCAsRE(RE* re)
     }
     return nullptr;
 }
+
+
 
 }
