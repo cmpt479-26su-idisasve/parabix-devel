@@ -14,7 +14,7 @@ struct RE_Local {
 
     static RE * getLastCCAsRE(RE* re);
 
-    static RE * findREsMatchAPQ(RE * re, int& length);
+    static RE * getUniquePrefix(RE * re, int& length);
 };
 
 }

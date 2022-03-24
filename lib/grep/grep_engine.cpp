@@ -542,17 +542,18 @@ void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, r
     }
 }
 
-void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE * re, StreamSet * Source, StreamSet * Results) {
+void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE * re, StreamSet * Source, StreamSet * Results, bool doMatchSpans) {
     auto options = std::make_unique<GrepKernelOptions>(&cc::UTF8);
     auto lengths = getLengthRange(re, &cc::UTF8);
     options->setSource(Source);
     StreamSet * MatchResults = nullptr;
-    if (hasComponent(mExternalComponents, Component::MatchSpans)) {
+    if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
         MatchResults = P->CreateStreamSet(1, 1);
         options->setResults(MatchResults);
     } else {
         options->setResults(Results);
     }
+
     if (hasComponent(mExternalComponents, Component::UTF8index)) {
         options->setIndexingTransformer(&mUTF8_Transformer, mU8index);
         if (mSuffixRE != nullptr) {
@@ -571,8 +572,7 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
     }
     addExternalStreams(P, options, re);
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
-
-    if (hasComponent(mExternalComponents, Component::MatchSpans)) {
+    if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
     }
 }
@@ -760,6 +760,8 @@ void applyColorization(const std::unique_ptr<ProgramBuilder> & E,
 }
 
 void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, StreamSet * ByteStream, bool BatchMode) {
+    mIllustrator->captureByteData(E, "Source", ByteStream);
+
     StreamSet * SourceStream = getBasis(E, ByteStream);
 
     grepPrologue(E, SourceStream);
@@ -777,23 +779,31 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
             UnicodeIndexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
 
         } else {
-            U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
-            int lengthOfP = 0;
-            re::RE * re_P = re::RE_Local::findREsMatchAPQ(mColoredREs[i], lengthOfP);
-            if(mColoring && re_P)
-            {
-                StreamSet *const matchesToPResult = E->CreateStreamSet(1,1);
-                U8indexedGrep(E, re_P, SourceStream, matchesToPResult);
-                mIllustrator->captureBitstream(E, "matchesToPResult", matchesToPResult);
-                mIllustrator->captureBitstream(E, "MatchResults", MatchResults);
+            
+            int lengthOfUniquePrefix = 0;
+            re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(mColoredREs[i], lengthOfUniquePrefix);
 
-                std::vector<StreamSet *> maskStreamF {matchesToPResult, MatchResults};
+            if (mColoring && reUniquePrefix)
+            {  
+                U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults, false);
+                StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
+                U8indexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefix);
+
+                // mDisplayCapturedData = true;
+                StreamSet *const matchesResultEnd = E->CreateStreamSet(1,1);
+                E->CreateKernelCall<LookAheadKernel>(1, MatchResults, matchesResultEnd);
+
+                mIllustrator->captureBitstream(E, "matchesToPrefix", matchesToPrefix);
+                mIllustrator->captureBitstream(E, "MatchResultsFollowing", MatchResults);
+                mIllustrator->captureBitstream(E, "matchesResultEnd", matchesResultEnd);
+
+                std::vector<StreamSet *> maskStreamF {matchesToPrefix, matchesResultEnd};
                 StreamSet * const MergedMatchesMaskF = E->CreateStreamSet();
                 E->CreateKernelCall<StreamsMerge>(maskStreamF, MergedMatchesMaskF);
                 mIllustrator->captureBitstream(E, "MergedMatchesMaskF", MergedMatchesMaskF);
 
                 StreamSet * filterByMaskResultC = E->CreateStreamSet(1, 1);
-                FilterByMask(E, MergedMatchesMaskF, MatchResults, filterByMaskResultC);
+                FilterByMask(E, MergedMatchesMaskF, matchesResultEnd, filterByMaskResultC);
                 mIllustrator->captureBitstream(E, "filterByMaskResultC", filterByMaskResultC);
 
                 StreamSet * LookAheadC = E->CreateStreamSet(1, 1);
@@ -816,28 +826,25 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
                 mIllustrator->captureBitstream(E, "MatchStreamP1", MatchStreamP1);
 
                 StreamSet * LookAheadP1 = E->CreateStreamSet(1, 1);
-                E->CreateKernelCall<LookAheadKernel>(lengthOfP-1, MatchStreamP1, LookAheadP1);
+                E->CreateKernelCall<LookAheadKernel>(lengthOfUniquePrefix-1, MatchStreamP1, LookAheadP1);
                 mIllustrator->captureBitstream(E, "LookAheadP1", LookAheadP1);
-                mDisplayCapturedData = true;
+                
 
                 StreamSet *MatchOverall = E->CreateStreamSet(1, 1);
                 E->CreateKernelCall<U8Spans>(LookAheadP1, MatchStreamE1, MatchOverall);
                 mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
                 MatchResultsBuf[i] = MatchOverall;
-
-
-
-            }
-            else if(mColoring && re::RE_Local::noInterCCFromFirstNLast(mColoredREs[i]))
+            }else if(mColoring && re::RE_Local::noInterCCFromFirstNLast(mColoredREs[i]))
             {
                 //Get first&last CC as REs
+                U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
                 auto firstCCAsRE = re::RE_Local::getFirstCCAsRE(mColoredREs[i]);
                 auto lastCCAsRE  = re::RE_Local::getLastCCAsRE(mColoredREs[i]);
                 if(firstCCAsRE && lastCCAsRE){
 
                     mIllustrator->captureBitstream(E, "MatchResults", MatchResults);
                     mIllustrator->captureBitstream(E, "SourceStream", SourceStream);
-                                       
+                                    
                     StreamSet *const firstCCMatchResults = E->CreateStreamSet(1,1);
                     U8indexedGrep(E, firstCCAsRE, SourceStream, firstCCMatchResults);
 
@@ -865,7 +872,8 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
                     E->CreateKernelCall<StreamsMerge>(AllMatchResultsBuf, MatchOverallFinal);
                     MatchResultsBuf[i] = MatchOverallFinal;
                 }
-                
+            }else{
+                U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
             }
         }
     }

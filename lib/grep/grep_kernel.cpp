@@ -417,7 +417,7 @@ InvertMatchesKernel::InvertMatchesKernel(BuilderRef b, StreamSet * Matches, Stre
 }
 
 LookAheadKernel::LookAheadKernel (BuilderRef iBuilder, unsigned length, StreamSet * MatchesByBraket, StreamSet * MatchStartsByBraket)
-: PabloKernel(iBuilder, "MatchesByBraket" + std::to_string(MatchesByBraket->getNumElements()),
+: PabloKernel(iBuilder, "LookAheadKernel" + std::to_string(length),
 // inputs
 {Binding{"matchesByBraket", MatchesByBraket, FixedRate(1), LookAhead(round_up_to_blocksize(length))}},
 // output
@@ -435,7 +435,7 @@ void LookAheadKernel::generatePabloMethod(){
 }
 
 AndNotKernel::AndNotKernel (BuilderRef iBuilder, StreamSet * StreamOne, StreamSet * StreamTwo, StreamSet * StreamOutput)
-: PabloKernel(iBuilder, "MatchAnd"+std::to_string(StreamOne->getNumElements()),
+: PabloKernel(iBuilder, "AndNotKernel",
 // inputs
 {Binding{"StreamOne", StreamOne}, Binding{"StreamTwo", StreamTwo}},
 // output

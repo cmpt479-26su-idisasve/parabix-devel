@@ -163,9 +163,7 @@ void follow(const RE * re, FollowMap & follows) {
     }
 }
 
-// E = APQ 
-// PQ = reExceptFirst
-RE * getRePQ(RE* re)
+RE * getReExceptFirst(RE* re)
 {
     if(const Seq * seq = dyn_cast<Seq>(re))
     {
@@ -178,57 +176,52 @@ RE * getRePQ(RE* re)
     return nullptr;
 }
 
-// Find AP in E = APQ  
-RE* getReAP(RE *re)
+// E = APQ: A(single CC)
+// AP not occurrs in PQ 
+RE* getPrefixOccursOnce(RE *re, int &length)
 {
-    RE * PQ = getRePQ(re);
-    RE * AP_RE = nullptr;
-    if(PQ == nullptr)  return nullptr;
+    RE * re_except_first = getReExceptFirst(re);
+    if(re_except_first == nullptr)  return nullptr;
 
+    RE * prefix_AP = nullptr;   
     if(const Seq * seq = dyn_cast<Seq>(re))
     {
         std::vector<CC *> CC_seq;
-        int endPoint = 0;
+        int endPoint = -1;
+        bool isUniqueStart = false;
         for(int i=0; i < seq->size()-1; ++i)
         {
             RE * item = (*seq)[i];
             if (CC * cc = dyn_cast<CC>(item))
             {
                 CC_seq.push_back(cc);
-                bool search = CC_Sequence_Search(CC_seq, PQ);
-                if(search) break;
-                else endPoint = i;
+                bool search = CC_Sequence_Search(CC_seq, re_except_first);
+                if(search) {
+                    if(isUniqueStart) break;
+                    else continue;
+                    }
+                else {
+                    endPoint = i;
+                    isUniqueStart = true;
+                }
             }else{
                 break;
             }
         }
-        AP_RE = makeSeq(CC_seq.begin(), CC_seq.begin()+endPoint+1);
-
+        if(endPoint != -1)
+        {
+            prefix_AP = makeSeq(CC_seq.begin(), CC_seq.begin()+endPoint+1);
+        }
+        length = endPoint+1;
     }
 
-    return AP_RE;
+    return prefix_AP;
 }
 
-RE* getReP(RE *re, int &length)
-{
-    RE * AP_RE = getReAP(re);
-    RE * P_RE = nullptr;
-    if(AP_RE == nullptr)  return nullptr;
-    if(const Seq * seq = dyn_cast<Seq>(AP_RE))
-    {
-       if(seq->size() > 1)
-       {
-           P_RE = makeSeq(seq->begin()+1, seq->end());
-           length = seq->size()-1;
-       }
-    }
 
-    return P_RE;
-}
-
-RE * RE_Local::findREsMatchAPQ(RE * re, int &length)
+RE * RE_Local::getUniquePrefix(RE * re, int &length)
 {
-    return getReP(re, length);
+    return getPrefixOccursOnce(re, length);
 }
 
 CC * RE_Local::getFirstUniqueSymbol(RE * const re) {
