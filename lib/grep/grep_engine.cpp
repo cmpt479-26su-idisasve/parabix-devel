@@ -760,7 +760,6 @@ void applyColorization(const std::unique_ptr<ProgramBuilder> & E,
 }
 
 void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, StreamSet * ByteStream, bool BatchMode) {
-    mIllustrator->captureByteData(E, "Source", ByteStream);
 
     StreamSet * SourceStream = getBasis(E, ByteStream);
 
@@ -782,98 +781,67 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
             
             int lengthOfUniquePrefix = 0;
             re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(mColoredREs[i], lengthOfUniquePrefix);
+            auto reLengths = getLengthRange(mColoredREs[i], &cc::UTF8);
+            bool isFixLength = (reLengths.first == reLengths.second);
 
-            if (mColoring && reUniquePrefix)
+            if (!isFixLength && mColoring && reUniquePrefix)
             {  
-                U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults, false);
                 StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
                 U8indexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefix);
+                U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults, false);
 
-                // mDisplayCapturedData = true;
                 StreamSet *const matchesResultEnd = E->CreateStreamSet(1,1);
                 E->CreateKernelCall<LookAheadKernel>(1, MatchResults, matchesResultEnd);
-
-                mIllustrator->captureBitstream(E, "matchesToPrefix", matchesToPrefix);
-                mIllustrator->captureBitstream(E, "MatchResultsFollowing", MatchResults);
-                mIllustrator->captureBitstream(E, "matchesResultEnd", matchesResultEnd);
 
                 std::vector<StreamSet *> maskStreamF {matchesToPrefix, matchesResultEnd};
                 StreamSet * const MergedMatchesMaskF = E->CreateStreamSet();
                 E->CreateKernelCall<StreamsMerge>(maskStreamF, MergedMatchesMaskF);
-                mIllustrator->captureBitstream(E, "MergedMatchesMaskF", MergedMatchesMaskF);
 
                 StreamSet * filterByMaskResultC = E->CreateStreamSet(1, 1);
                 FilterByMask(E, MergedMatchesMaskF, matchesResultEnd, filterByMaskResultC);
-                mIllustrator->captureBitstream(E, "filterByMaskResultC", filterByMaskResultC);
-
                 StreamSet * LookAheadC = E->CreateStreamSet(1, 1);
                 E->CreateKernelCall<LookAheadKernel>(1, filterByMaskResultC, LookAheadC);
-
                 StreamSet * MatchStreamP0 = E->CreateStreamSet(1, 1);
-                E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);
-                mIllustrator->captureBitstream(E, "MatchStreamP0", MatchStreamP0);
-
+                E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);      
                 StreamSet * MatchStreamE0 = E->CreateStreamSet(1, 1);
-                E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0);
-                mIllustrator->captureBitstream(E, "MatchStreamE0", MatchStreamE0);
-
+                E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0);              
                 StreamSet * MatchStreamE1 = E->CreateStreamSet(1, 1);
-                SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1);
-                mIllustrator->captureBitstream(E, "MatchStreamE1", MatchStreamE1);
-
+                SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1);           
                 StreamSet * MatchStreamP1 = E->CreateStreamSet(1, 1);
                 SpreadByMask( E, MergedMatchesMaskF, MatchStreamP0 ,MatchStreamP1);
-                mIllustrator->captureBitstream(E, "MatchStreamP1", MatchStreamP1);
-
+                
                 StreamSet * LookAheadP1 = E->CreateStreamSet(1, 1);
                 E->CreateKernelCall<LookAheadKernel>(lengthOfUniquePrefix-1, MatchStreamP1, LookAheadP1);
-                mIllustrator->captureBitstream(E, "LookAheadP1", LookAheadP1);
                 
-
                 StreamSet *MatchOverall = E->CreateStreamSet(1, 1);
                 E->CreateKernelCall<U8Spans>(LookAheadP1, MatchStreamE1, MatchOverall);
-                mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
+                
                 MatchResultsBuf[i] = MatchOverall;
-            }else if(mColoring && re::RE_Local::noInterCCFromFirstNLast(mColoredREs[i]))
-            {
-                //Get first&last CC as REs
-                U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
-                auto firstCCAsRE = re::RE_Local::getFirstCCAsRE(mColoredREs[i]);
-                auto lastCCAsRE  = re::RE_Local::getLastCCAsRE(mColoredREs[i]);
-                if(firstCCAsRE && lastCCAsRE){
-
-                    mIllustrator->captureBitstream(E, "MatchResults", MatchResults);
-                    mIllustrator->captureBitstream(E, "SourceStream", SourceStream);
-                                    
-                    StreamSet *const firstCCMatchResults = E->CreateStreamSet(1,1);
-                    U8indexedGrep(E, firstCCAsRE, SourceStream, firstCCMatchResults);
-
-                    StreamSet *const lastCCMatchResults = E->CreateStreamSet(1,1);
-                    U8indexedGrep(E, lastCCAsRE, SourceStream, lastCCMatchResults);
-                    std::vector<StreamSet *> EndPointMatchResultsBuf {firstCCMatchResults, lastCCMatchResults};
-
-                    StreamSet * const MergedMatches = E->CreateStreamSet();
-                    E->CreateKernelCall<StreamsMerge>(EndPointMatchResultsBuf, MergedMatches);
-
-                    StreamSet * MatchesByBraket = E->CreateStreamSet(1, 1);
-                    FilterByMask(E, MergedMatches, MatchResults, MatchesByBraket);
-
-                    StreamSet * MatchStartsByBraket = E->CreateStreamSet(1, 1);
-                    E->CreateKernelCall<LookAheadKernel>(1, MatchesByBraket, MatchStartsByBraket);
-
-                    StreamSet * MatchStarts = E->CreateStreamSet(1, 1);
-                    SpreadByMask(E, MergedMatches, MatchStartsByBraket, MatchStarts);
-
-                    StreamSet *MatchOverall = E->CreateStreamSet(1, 1);
-                    E->CreateKernelCall<U8Spans>(MatchStarts, MatchResults, MatchOverall);
-
-                    StreamSet *MatchOverallFinal = E->CreateStreamSet(1, 1);
-                    std::vector<StreamSet *> AllMatchResultsBuf {MatchOverall, MatchResults};
-                    E->CreateKernelCall<StreamsMerge>(AllMatchResultsBuf, MatchOverallFinal);
-                    MatchResultsBuf[i] = MatchOverallFinal;
+                if(mDisplayCapturedData)
+                {
+                    mIllustrator->captureByteData(E, "Source", ByteStream);
+                    mIllustrator->captureBitstream(E, "matchesToPrefix", matchesToPrefix);
+                    mIllustrator->captureBitstream(E, "MatchResultsFollowing", MatchResults);
+                    mIllustrator->captureBitstream(E, "matchesResultEnd", matchesResultEnd);
+                    // mIllustrator->captureBitstream(E, "MergedMatchesMaskF", MergedMatchesMaskF);
+                    // mIllustrator->captureBitstream(E, "filterByMaskResultC", filterByMaskResultC);
+                    // mIllustrator->captureBitstream(E, "MatchStreamP0", MatchStreamP0);
+                    // mIllustrator->captureBitstream(E, "MatchStreamE0", MatchStreamE0);
+                    // mIllustrator->captureBitstream(E, "MatchStreamE1", MatchStreamE1);
+                    // mIllustrator->captureBitstream(E, "MatchStreamP1", MatchStreamP1);
+                    // mIllustrator->captureBitstream(E, "LookAheadP1", LookAheadP1);
+                    // mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
                 }
+                
             }else{
                 U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
+                mDisplayCapturedData = true;
+                if(mDisplayCapturedData)
+                {
+                    mIllustrator->captureByteData(E, "Source", ByteStream);
+                    mIllustrator->captureBitstream(E, "MatchResults", MatchResults);
+                }
+
             }
         }
     }
@@ -1046,12 +1014,15 @@ void EmitMatchesEngine::grepCodeGen() {
                     {Binding{idb->getInt8PtrTy(), "buffer"},
                     Binding{idb->getSizeTy(), "length"},
                     Binding{idb->getIntAddrTy(), "callbackObject"},
-                    Binding{idb->getSizeTy(), "maxCount"}}
+                    Binding{idb->getSizeTy(), "maxCount"},
+                    Binding{idb->getIntAddrTy(), "illustratorAddr"}}
                     ,// output
                     {Binding{idb->getInt64Ty(), "countResult"}});
 
         Scalar * const buffer = E2->getInputScalar("buffer");
         Scalar * const length = E2->getInputScalar("length");
+        Scalar * const illustratorAddr2 = E2->getInputScalar("illustratorAddr");
+        mIllustrator->registerIllustrator(illustratorAddr2);
         StreamSet * const InternalBytes = E2->CreateStreamSet(1, 8);
         E2->CreateKernelCall<MemorySourceKernel>(buffer, length, InternalBytes);
         grepPipeline(E2, InternalBytes, /* BatchMode = */ true);
@@ -1155,7 +1126,7 @@ uint64_t EmitMatchesEngine::doGrep(const std::vector<std::string> & fileNames, s
     } else {
         //llvm::errs() << "filenames.size() = " << fileNames.size() << "\n";
         //for (auto & name : fileNames) { llvm::errs() << name << "\n";}
-        typedef uint64_t (*GrepBatchFunctionType)(char * buffer, size_t length, EmitMatch *, size_t maxCount);
+        typedef uint64_t (*GrepBatchFunctionType)(char * buffer, size_t length, EmitMatch *, size_t maxCount, kernel::ParabixIllustrator * illustrator);
         auto f = reinterpret_cast<GrepBatchFunctionType>(mBatchMethod);
         EmitMatch accum(mShowFileNames, mShowLineNumbers, ((mBeforeContext > 0) || (mAfterContext > 0)), mInitialTab);
         accum.setStringStream(&strm);
@@ -1217,8 +1188,10 @@ uint64_t EmitMatchesEngine::doGrep(const std::vector<std::string> & fileNames, s
             for (unsigned i = 0; i < accum.mFileStartLineNumbers.size(); i++) {
                 accum.mFileStartLineNumbers[i] = ~static_cast<size_t>(0);
             }
-            f(accum.mBatchBuffer, current_start_position, &accum, mMaxCount);
+            f(accum.mBatchBuffer, current_start_position, &accum, mMaxCount, mIllustrator);
         }
+        if(mDisplayCapturedData)
+            mIllustrator->displayAllCapturedData();
         alloc.deallocate(accum.mBatchBuffer, 0);
         if (accum.mLineCount > 0) grepMatchFound = true;
         return accum.mLineCount;

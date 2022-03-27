@@ -13,7 +13,6 @@
 #include <re/transforms/re_transformer.h>
 #include <boost/container/flat_map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
-#include <iostream>
 
 using namespace boost::container;
 using namespace llvm;
@@ -214,7 +213,7 @@ RE* getPrefixOccursOnce(RE *re, int &length)
         }
         length = endPoint+1;
     }
-
+    
     return prefix_AP;
 }
 
