@@ -15,6 +15,8 @@ struct RE_Local {
     static RE * getLastCCAsRE(RE* re);
 
     static RE * getUniquePrefix(RE * re, int& length);
+
+    static void reAnalyze(RE* re);
 };
 
 }

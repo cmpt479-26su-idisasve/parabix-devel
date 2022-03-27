@@ -571,10 +571,14 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
         }
     }
     addExternalStreams(P, options, re);
+
+    //mIllustrator->captureBitstream(P, "Result", MatchResults);
+    
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
     if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
     }
+    
 }
 
 StreamSet * GrepEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & P, StreamSet * InputStream) {
@@ -775,10 +779,20 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         StreamSet *const MatchResults = E->CreateStreamSet(1,1);
         MatchResultsBuf[i] = MatchResults;
         if (UnicodeIndexing) {
+            std::cout << "Unicode" <<std::endl;
             UnicodeIndexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
+            mDisplayCapturedData = true;
+            if(mDisplayCapturedData)
+            {
+                mIllustrator->captureByteData(E, "Source", ByteStream);
+                mIllustrator->captureBitstream(E, "MatchResults", MatchResults);
+            }
+
 
         } else {
-            
+            //std::cout << "Not Unicode" <<std::endl;
+            //re::RE_Local::reAnalyze(mColoredREs[i]);
+
             int lengthOfUniquePrefix = 0;
             re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(mColoredREs[i], lengthOfUniquePrefix);
             auto reLengths = getLengthRange(mColoredREs[i], &cc::UTF8);
@@ -786,6 +800,8 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
             if (!isFixLength && mColoring && reUniquePrefix)
             {  
+                //std::cout << "lengthOfUniquePrefix" << lengthOfUniquePrefix << std::endl;
+                mDisplayCapturedData = false;
                 StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
                 U8indexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefix);
                 U8indexedGrep(E, mColoredREs[i], SourceStream, MatchResults, false);

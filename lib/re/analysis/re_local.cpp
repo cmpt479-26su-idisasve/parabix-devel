@@ -13,7 +13,7 @@
 #include <re/transforms/re_transformer.h>
 #include <boost/container/flat_map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
-
+#include <iostream>
 using namespace boost::container;
 using namespace llvm;
 
@@ -191,10 +191,22 @@ RE* getPrefixOccursOnce(RE *re, int &length)
         for(int i=0; i < seq->size()-1; ++i)
         {
             RE * item = (*seq)[i];
-            if (CC * cc = dyn_cast<CC>(item))
+            if(const Alt * alt = dyn_cast<Alt>(item))
+            {
+                // Check if the beginning of the RE is a START
+                if(i==0){
+                    if(const Start *start = dyn_cast<Start>(*alt->begin()))
+                    {
+                        endPoint = 0;
+                    }
+                }
+                break;
+            }
+            else if (CC * cc = dyn_cast<CC>(item))
             {
                 CC_seq.push_back(cc);
                 bool search = CC_Sequence_Search(CC_seq, re_except_first);
+                std::cout<<"i = " << i <<" search: " << search << " CC:"<<  cc->canonicalName()<< std::endl;
                 if(search) {
                     if(isUniqueStart) break;
                     else continue;
@@ -203,13 +215,14 @@ RE* getPrefixOccursOnce(RE *re, int &length)
                     endPoint = i;
                     isUniqueStart = true;
                 }
-            }else{
+            }   
+            else{
                 break;
             }
         }
         if(endPoint != -1)
         {
-            prefix_AP = makeSeq(CC_seq.begin(), CC_seq.begin()+endPoint+1);
+            prefix_AP = makeSeq(seq->begin(), seq->begin()+endPoint+1);
         }
         length = endPoint+1;
     }
@@ -217,10 +230,64 @@ RE* getPrefixOccursOnce(RE *re, int &length)
     return prefix_AP;
 }
 
+// Used for debugging
+void analyze(RE* re)
+{
+    if(const Seq * seq = dyn_cast<Seq>(re))
+    {
+        for(int i=0; i < seq->size(); ++i)
+        {
+            std::cout<<"i = " << i ;
+            RE * item = (*seq)[i];
+            if (const CC * cc = dyn_cast<CC>(item))
+            {
+                std::cout<<"  CC " << std::endl ;
+            }else if(const Alt * alt = dyn_cast<Alt>(item))
+            {
+                std::cout<<"  Alt " << std::endl ;
+                int j=0;
+                if(const Start *start = dyn_cast<Start>(*alt->begin()))
+                {
+                    std::cout<<"  Start Start "  << std::endl ;
+                }
+                for (const RE * res : *alt) {
+                    std::cout<<"  Alt " <<  j++  ;
+                    if(const Start *start = dyn_cast<Start>(res))
+                    {
+                        std::cout<<"  Start "  << std::endl ;
+                    }else if(const CC * cc = dyn_cast<CC>(res))
+                    {
+                        std::cout<<"  CC " << std::endl ;
+                    }else if(const Assertion * as = dyn_cast<Assertion>(res))
+                    {
+                        std::cout<<"  Assertion " << std::endl ;
+                    }
+                    else{
+                        std::cout<< std::endl;
+                    }
+                }
+            }else if(const Name * name = dyn_cast<Name>(item))
+            {
+                std::cout<<"  Name " << std::endl ;
+            }else if(const Rep * name = dyn_cast<Rep>(item))
+            {
+                std::cout<<"  Rep " << std::endl ;
+            }else{
+                std::cout<< std::endl;
+            }
+        }
+    }
+}
+
 
 RE * RE_Local::getUniquePrefix(RE * re, int &length)
 {
     return getPrefixOccursOnce(re, length);
+}
+
+void RE_Local::reAnalyze(RE * re)
+{
+    return analyze(re);
 }
 
 CC * RE_Local::getFirstUniqueSymbol(RE * const re) {
