@@ -95,14 +95,13 @@ class JSONKeywordEndMarker : public pablo::PabloKernel {
 public:
     JSONKeywordEndMarker(const std::unique_ptr<KernelBuilder> & b,
                       StreamSet * const basis,
-                      StreamSet * const lexIn, StreamSet * const strSpan,
+                      StreamSet * const lexIn,
                       StreamSet * kwMarker)
     : pablo::PabloKernel(b,
                          "jsonKeywordMarker",
                          {
                             Binding{"basis", basis},
                             Binding{"lexIn", lexIn},
-                            Binding{"strSpan", strSpan}
                          },
                          {
                             Binding{"kwEndMarker", kwMarker},

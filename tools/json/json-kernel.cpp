@@ -105,23 +105,21 @@ void JSONKeywordEndMarker::generatePabloMethod() {
     PabloBuilder pb(getEntryScope());
     std::vector<PabloAST *> basis = getInputStreamSet("basis");
     cc::Parabix_CC_Compiler_Builder ccc(getEntryScope(), basis);
-    PabloAST * strSpan = getInputStreamSet("strSpan")[0];
     Var * const kwEndMarker = getOutputStreamVar("kwEndMarker");
 
-    PabloAST * notStrSpan = pb.createNot(strSpan);
-    PabloAST * N = pb.createAnd(notStrSpan, getInputStreamSet("lexIn")[Lex::n]);
-    PabloAST * T = pb.createAnd(notStrSpan, getInputStreamSet("lexIn")[Lex::t]);
-    PabloAST * F = pb.createAnd(notStrSpan, getInputStreamSet("lexIn")[Lex::f]);
+    PabloAST * N = getInputStreamSet("lexIn")[Lex::n];
+    PabloAST * T = getInputStreamSet("lexIn")[Lex::t];
+    PabloAST * F = getInputStreamSet("lexIn")[Lex::f];
 
     // null
-    PabloAST * U = ccc.compileCC(re::makeByte(0x75));
-    PabloAST * L = ccc.compileCC(re::makeByte(0x6C));
+    PabloAST * U = ccc.compileCC(re::makeByte('u'));
+    PabloAST * L = ccc.compileCC(re::makeByte('l'));
     // true
-    PabloAST * R = ccc.compileCC(re::makeByte(0x72));
-    PabloAST * E = ccc.compileCC(re::makeByte(0x65));
+    PabloAST * R = ccc.compileCC(re::makeByte('r'));
+    PabloAST * E = ccc.compileCC(re::makeByte('e'));
     // false
-    PabloAST * A = ccc.compileCC(re::makeByte(0x61));
-    PabloAST * S = ccc.compileCC(re::makeByte(0x73));
+    PabloAST * A = ccc.compileCC(re::makeByte('a'));
+    PabloAST * S = ccc.compileCC(re::makeByte('s'));
 
     PabloAST * advNU = pb.createAnd(U, pb.createAdvance(N, 1));
     PabloAST * advNUL = pb.createAnd(L, pb.createAdvance(advNU, 1));
