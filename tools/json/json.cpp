@@ -108,17 +108,11 @@ jsonFunctionType json_parsing_gen(
     );
 
     // 3. Lexical analysis on basis stream
-    StreamSet * const lexStream = P->CreateStreamSet(14);
-    P->CreateKernelCall<PabloSourceKernel>(
-        parser,
-        jsonPabloSrc,
-        "ClassifyBytes",
-        Bindings { // Input Stream Bindings
-            Binding {"basis", u8basis}
-        },
-        Bindings { // Output Stream Bindings
-            Binding {"lex", lexStream}
-        }
+    StreamSet * const lexStream = P->CreateStreamSet(12);
+    P->CreateKernelCall<JSONClassifyBytes>(
+        u8basis,
+        stringSpan,
+        lexStream
     );
 
     // 4. Mark end of keywords (true, false, null)
@@ -204,6 +198,7 @@ jsonFunctionType json_parsing_gen(
 
         P->CreateKernelCall<JSONParserObj>(
             lexStream,
+            stringMarker,
             combinedLexers,
             encDepth,
             syntaxObjErr,
@@ -212,7 +207,7 @@ jsonFunctionType json_parsing_gen(
         );
 
         // 10. Output error in case JSON is not valid
-        StreamSet * const Errors = P->CreateStreamSet(5, 1);
+        StreamSet * const Errors = P->CreateStreamSet(6, 1);
         // Important: make sure all the streams inside StreamsMerge have Add1, otherwise it fails
         P->CreateKernelCall<StreamsMerge>(
             std::vector<StreamSet *>{extraErr, utf8Err, numberErr, depthErr, syntaxArrErr, syntaxObjErr},

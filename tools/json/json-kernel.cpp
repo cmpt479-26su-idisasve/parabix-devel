@@ -74,6 +74,33 @@ void JSONStringMarker::generatePabloMethod() {
     pb.createAssign(pb.createExtract(strSpan, pb.getInteger(0)), inSpan);
 }
 
+void JSONClassifyBytes::generatePabloMethod() {
+    PabloBuilder pb(getEntryScope());
+    std::vector<PabloAST *> basis = getInputStreamSet("basis");
+    cc::Parabix_CC_Compiler_Builder ccc(getEntryScope(), basis);
+    PabloAST * notStrSpan = pb.createNot(getInputStreamSet("strSpan")[0]);
+
+    Var * const lexStream = getOutputStreamVar("lexStream");
+
+    auto makeFn = [&ccc](auto c){ return ccc.compileCC(re::makeByte(c)); };
+
+    PabloAST * digit = ccc.compileCC(re::makeByte('0', '9'));
+    PabloAST * ws = pb.createOr(pb.createOr3(makeFn(' '), makeFn('\n'), makeFn('\r')), makeFn('\t'));
+
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::lCurly)), pb.createAnd(notStrSpan, makeFn('{')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::rCurly)), pb.createAnd(notStrSpan, makeFn('}')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::lBracket)), pb.createAnd(notStrSpan, makeFn('[')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::rBracket)), pb.createAnd(notStrSpan, makeFn(']')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::colon)), pb.createAnd(notStrSpan, makeFn(':')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::comma)), pb.createAnd(notStrSpan, makeFn(',')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::hyphen)), pb.createAnd(notStrSpan, makeFn('-')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::digit)), pb.createAnd(notStrSpan, digit));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::n)), pb.createAnd(notStrSpan, makeFn('n')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::f)), pb.createAnd(notStrSpan, makeFn('f')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::t)), pb.createAnd(notStrSpan, makeFn('t')));
+    pb.createAssign(pb.createExtract(lexStream, pb.getInteger(Lex::ws)), pb.createAnd(notStrSpan, ws));
+}
+
 void JSONKeywordEndMarker::generatePabloMethod() {
     PabloBuilder pb(getEntryScope());
     std::vector<PabloAST *> basis = getInputStreamSet("basis");
@@ -379,7 +406,7 @@ void JSONParserObj::generatePabloMethod() {
     PabloAST * comma = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::comma]);
     PabloAST * colon = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::colon]);
     PabloAST * ws = getInputStreamSet("lexIn")[Lex::ws];
-    PabloAST * str = pb.createAnd(valueToken, getInputStreamSet("lexIn")[Lex::dQuote]);
+    PabloAST * str = pb.createAnd(valueToken, getInputStreamSet("strMarker")[0]);
     PabloAST * valueTokenMinusStr = pb.createXor(valueToken, str);
 
     Var * const syntaxErr = getOutputStreamVar("syntaxErr");
