@@ -218,13 +218,13 @@ void JSONFindKwAndExtraneousChars::generatePabloMethod() {
     Var * const nbrErr = getOutputStreamVar("extraErr");
     Var * const combinedOut = getOutputStreamVar("combinedLexs");
 
-    PabloAST * sanitizelCurly = sanitizeLexInput(pb, strSpan, getInputStreamSet("lexIn")[Lex::lCurly]);
-    PabloAST * sanitizerCurly = sanitizeLexInput(pb, strSpan, getInputStreamSet("lexIn")[Lex::rCurly]);
-    PabloAST * sanitizelBracket = sanitizeLexInput(pb, strSpan, getInputStreamSet("lexIn")[Lex::lBracket]);
-    PabloAST * sanitizerBracket = sanitizeLexInput(pb, strSpan, getInputStreamSet("lexIn")[Lex::rBracket]);
-    PabloAST * sanitizeColon = sanitizeLexInput(pb, strSpan, getInputStreamSet("lexIn")[Lex::colon]);
-    PabloAST * sanitizeComma = sanitizeLexInput(pb, strSpan, getInputStreamSet("lexIn")[Lex::comma]);
-    PabloAST * sanitizeHyphen = sanitizeLexInput(pb, strSpan, getInputStreamSet("lexIn")[Lex::hyphen]);
+    PabloAST * sanitizelCurly = getInputStreamSet("lexIn")[Lex::lCurly];
+    PabloAST * sanitizerCurly = getInputStreamSet("lexIn")[Lex::rCurly];
+    PabloAST * sanitizelBracket = getInputStreamSet("lexIn")[Lex::lBracket];
+    PabloAST * sanitizerBracket = getInputStreamSet("lexIn")[Lex::rBracket];
+    PabloAST * sanitizeColon = getInputStreamSet("lexIn")[Lex::colon];
+    PabloAST * sanitizeComma = getInputStreamSet("lexIn")[Lex::comma];
+    PabloAST * sanitizeHyphen = getInputStreamSet("lexIn")[Lex::hyphen];
 
     PabloAST * first3Lex = pb.createOr3(sanitizelCurly, sanitizerCurly, sanitizelBracket);
     PabloAST * last3Lex = pb.createOr3(sanitizerBracket, sanitizeColon, sanitizeComma);
