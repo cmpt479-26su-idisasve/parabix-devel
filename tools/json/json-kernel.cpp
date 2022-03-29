@@ -161,21 +161,19 @@ void JSONNumberSpan::generatePabloMethod() {
     PabloBuilder pb(getEntryScope());
     std::vector<PabloAST *> basis = getInputStreamSet("basis");
     cc::Parabix_CC_Compiler_Builder ccc(getEntryScope(), basis);
-    PabloAST * hyphenIn = getInputStreamSet("lexIn")[Lex::hyphen];
-    PabloAST * digitIn = getInputStreamSet("lexIn")[Lex::digit];
+    PabloAST * hyphen = getInputStreamSet("lexIn")[Lex::hyphen];
+    PabloAST * digit = getInputStreamSet("lexIn")[Lex::digit];
 
     PabloAST * strSpan = getInputStreamSet("strSpan")[0];
     Var * const nbrLex = getOutputStreamVar("nbrLex");
     Var * const nbrSpan = getOutputStreamVar("nbrSpan");
     Var * const nbrErr = getOutputStreamVar("nbrErr");
 
-    PabloAST * alleE = pb.createOr(ccc.compileCC(re::makeByte(0x45)), ccc.compileCC(re::makeByte(0x65)));
-    PabloAST * allDot = ccc.compileCC(re::makeByte(0x2E));
-    PabloAST * allPlusMinus = pb.createOr(hyphenIn, ccc.compileCC(re::makeByte(0x2B)));
+    PabloAST * alleE = pb.createOr(ccc.compileCC(re::makeByte('e')), ccc.compileCC(re::makeByte('E')));
+    PabloAST * allDot = ccc.compileCC(re::makeByte('.'));
+    PabloAST * allPlusMinus = pb.createOr(hyphen, ccc.compileCC(re::makeByte('+')));
 
     PabloAST * notStrSpan = pb.createNot(strSpan);
-    PabloAST * hyphen = pb.createAnd(notStrSpan, hyphenIn);
-    PabloAST * digit = pb.createAnd(notStrSpan, digitIn);
     PabloAST * alleEAfterDigit = pb.createAnd(pb.createAdvance(digit, 1), alleE);
     PabloAST * eE = pb.createAnd(notStrSpan, alleEAfterDigit);
     PabloAST * allDotAfterDigit = pb.createAnd(pb.createAdvance(digit, 1), allDot);
