@@ -55,11 +55,11 @@ enum Combined {
 class JSONStringMarker : public pablo::PabloKernel {
 public:
     JSONStringMarker(const std::unique_ptr<KernelBuilder> & b,
-                     StreamSet * const lexIn,
+                     StreamSet * const basis,
                      StreamSet * strMarker, StreamSet * strSpan)
     : pablo::PabloKernel(b,
                          "jsonStrMarker",
-                         {Binding{"lexIn", lexIn}},
+                         {Binding{"basis", basis}},
                          {Binding{"marker", strMarker}, Binding{"span", strSpan}}) {}
     bool isCachable() const override { return true; }
     bool hasSignature() const override { return false; }

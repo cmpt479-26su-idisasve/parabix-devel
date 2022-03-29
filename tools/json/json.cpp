@@ -97,7 +97,17 @@ jsonFunctionType json_parsing_gen(
     StreamSet * const u8basis = P->CreateStreamSet(8);
     P->CreateKernelCall<S2PKernel>(codeUnitStream, u8basis);
 
-    // 1. Lexical analysis on basis stream
+    // 1. Find string marker (without backslashes)
+    // 2. and make string span
+    StreamSet * const stringMarker = P->CreateStreamSet(1);
+    StreamSet * const stringSpan = P->CreateStreamSet(1);
+    P->CreateKernelCall<JSONStringMarker>(
+        u8basis,
+        stringMarker,
+        stringSpan
+    );
+
+    // 3. Lexical analysis on basis stream
     StreamSet * const lexStream = P->CreateStreamSet(14);
     P->CreateKernelCall<PabloSourceKernel>(
         parser,
@@ -109,16 +119,6 @@ jsonFunctionType json_parsing_gen(
         Bindings { // Output Stream Bindings
             Binding {"lex", lexStream}
         }
-    );
-
-    // 2. Find string marker (without backslashes)
-    // 3. and make string span
-    StreamSet * const stringMarker = P->CreateStreamSet(1);
-    StreamSet * const stringSpan = P->CreateStreamSet(1);
-    P->CreateKernelCall<JSONStringMarker>(
-        lexStream,
-        stringMarker,
-        stringSpan
     );
 
     // 4. Mark end of keywords (true, false, null)

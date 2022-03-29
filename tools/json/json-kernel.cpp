@@ -25,10 +25,13 @@ static PabloAST * sanitizeLexInput(PabloBuilder & pb, PabloAST * span, PabloAST 
 
 void JSONStringMarker::generatePabloMethod() {
     PabloBuilder pb(getEntryScope());
-    PabloAST * dQuotes = getInputStreamSet("lexIn")[Lex::dQuote];
-    PabloAST * backslash = getInputStreamSet("lexIn")[Lex::backslash];
+    std::vector<PabloAST *> basis = getInputStreamSet("basis");
+    cc::Parabix_CC_Compiler_Builder ccc(getEntryScope(), basis);
     Var * const strMarker = getOutputStreamVar("marker");
     Var * const strSpan = getOutputStreamVar("span");
+
+    PabloAST * dQuotes = ccc.compileCC(re::makeByte('"'));
+    PabloAST * backslash = ccc.compileCC(re::makeByte('\\'));
 
     // keeping the names as the ones in paper PGJS (Lemire)
     PabloAST * B = backslash;
@@ -36,7 +39,7 @@ void JSONStringMarker::generatePabloMethod() {
     PabloAST * O = pb.createRepeat(1, pb.getInteger(0x5555555555555555, 64)); // constant
 
     // identify 'starts' - backslashes not preceded by backslashes
-    // paper does S = B & ~(B << 1), but we can't Advance(-1)
+    // paper does S = B & ~(B << 1)
     PabloAST * notB = pb.createNot(B);
     PabloAST * S = pb.createAnd(B, pb.createAdvance(notB, 1));
     
