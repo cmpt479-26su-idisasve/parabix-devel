@@ -206,7 +206,7 @@ RE* getPrefixOccursOnce(RE *re, int &length)
             {
                 CC_seq.push_back(cc);
                 bool search = CC_Sequence_Search(CC_seq, re_except_first);
-                std::cout<<"i = " << i <<" search: " << search << " CC:"<<  cc->canonicalName()<< std::endl;
+                //std::cout<<"i = " << i <<" search: " << search << " CC:"<<  cc->canonicalName()<< std::endl;
                 if(search) {
                     if(isUniqueStart) break;
                     else continue;
