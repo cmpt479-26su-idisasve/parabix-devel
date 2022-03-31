@@ -396,6 +396,7 @@ void JSONParserObj::generatePabloMethod() {
 
     PabloAST * symbols = getInputStreamSet("combinedLexs")[Combined::symbols];
     PabloAST * validRBrak = getInputStreamSet("combinedLexs")[Combined::rBrak];
+    PabloAST * validLBrak = getInputStreamSet("combinedLexs")[Combined::lBrak];
     PabloAST * allValues = getInputStreamSet("combinedLexs")[Combined::values];
     PabloAST * valueToken = pb.createLookahead(allValues, 1);
     PabloAST * anyToken = pb.createOr(symbols, valueToken);
@@ -408,11 +409,27 @@ void JSONParserObj::generatePabloMethod() {
     PabloAST * ws = getInputStreamSet("lexIn")[Lex::ws];
     PabloAST * str = pb.createAnd(valueToken, getInputStreamSet("strMarker")[0]);
     PabloAST * valueTokenMinusStr = pb.createXor(valueToken, str);
+    PabloAST * zeroND = bnc.EQ(ND, 0);
 
     Var * const syntaxErr = getOutputStreamVar("syntaxErr");
 
     // parsing objects
-    Var * const errObj = pb.createVar("errObj", pb.createZeroes());
+    
+    // process str as key and value
+    PabloAST * validStr = pb.createAnd(str, pb.createNot(zeroND));
+    PabloAST * afterTokenStr = pb.createAdvance(validStr, 1);
+    PabloAST * tokenNextStr = pb.createScanThru(afterTokenStr, ws);
+    PabloAST * commaColonRBrak = pb.createOr3(comma, colon, pb.createOr(validRBrak, zeroND));
+    PabloAST * errAfterValue = pb.createAnd(tokenNextStr, pb.createNot(commaColonRBrak));
+
+    // Every colon must be followed by a value
+    PabloAST * validBeginValues = pb.createAnd(pb.createOr(valueToken, validLBrak), pb.createNot(zeroND));
+    PabloAST * scanAnyTkAfterColon = pb.createScanTo(pb.createAdvance(colon, 1), anyToken);
+    PabloAST * errAfterColon = pb.createAnd(scanAnyTkAfterColon, pb.createNot(validBeginValues));
+
+    PabloAST * errElement = pb.createOr(errAfterColon, errAfterValue);
+    Var * const errObj = pb.createVar("errObj", errElement);
+
     for (int i = mMaxDepth; i >= 1; --i) {
         PabloAST * atDepth = bnc.EQ(ND, genSingleBlock ? mOnlyDepth : i);
         PabloAST * nested = bnc.UGT(ND, genSingleBlock ? mOnlyDepth : i);
@@ -431,46 +448,20 @@ void JSONParserObj::generatePabloMethod() {
                 { objStart, objEnd }
             );
 
-            // Now validate that every value or nested item is followed
-            // either by a comma or a the end rBracket.
-            PabloAST * nestedSpan = it.createAnd(nested, objSpan);
-            PabloAST * afterNested = it.createAnd(it.createAdvance(nestedSpan, 1), atDepth);
-
-            // process all values that are not str
-            PabloAST * valueMinusStrAtDepth = it.createAnd(atDepth, valueTokenMinusStr);
-            PabloAST * afterTokenMinusStr = it.createAdvance(it.createAnd(valueMinusStrAtDepth, objSpan), 1);
-            PabloAST * tokenNextMinusStr = it.createScanThru(it.createOr(afterNested, afterTokenMinusStr), ws);
-            PabloAST * commaRCurly = it.createOr(comma, rCurly);
-            PabloAST * errAfterValueMinusStr = it.createAnd(tokenNextMinusStr, it.createNot(commaRCurly));
-
-            // process str as both key and value
-            PabloAST * strAtDepth = it.createAnd3(str, atDepth, objSpan);
-            PabloAST * afterTokenStr = it.createAdvance(it.createAnd(strAtDepth, objSpan), 1);
-            PabloAST * tokenNextStr = it.createScanThru(it.createOr(afterNested, afterTokenStr), ws);
-            PabloAST * commaColonRCurly = it.createOr(commaRCurly, colon);
-            PabloAST * errAfterValueStr = it.createAnd(tokenNextStr, it.createNot(commaColonRCurly));
-
-            PabloAST * errAfterValue = it.createOr(errAfterValueStr, errAfterValueMinusStr);
-
-            // Every colon must be followed by a value
-            PabloAST * colonAtDepth = it.createAnd3(colon, atDepth, objSpan);
-            PabloAST * nestedOrVTk = it.createOr(nested, valueToken);
-            PabloAST * scanAnyTkAfterColon = it.createScanTo(it.createAdvance(colonAtDepth, 1), anyToken);
-            PabloAST * errAfterColon = it.createAnd(scanAnyTkAfterColon, it.createNot(nestedOrVTk));
-
-            // Every comma must be followed by a key string
+            // Every comma in an object must be followed by a key string
+            PabloAST * strAtDepth = it.createAnd(str, atDepth);
             PabloAST * commaAtDepth = it.createAnd3(comma, atDepth, objSpan);
             PabloAST * scanAnyTkAfterComma = it.createScanTo(it.createAdvance(commaAtDepth, 1), anyToken);
             PabloAST * errAfterComma = it.createAnd(scanAnyTkAfterComma, it.createNot(strAtDepth));
 
             // After the lCurly we must have either a value or an rCurly.
+            PabloAST * nestedOrVTk = it.createOr(nested, valueToken);
             PabloAST * nestedOrVTkRCurly = it.createOr(nestedOrVTk, rCurly);
             PabloAST * scanAnyTkAfterObjStart = it.createScanTo(it.createAdvance(objStart, 1), anyToken);
             PabloAST * errAfterLCurly = it.createAnd(scanAnyTkAfterObjStart, it.createNot(nestedOrVTkRCurly));
 
-            PabloAST * errCurly = it.createOr(errorAtEnd, errAfterLCurly);
-            PabloAST * errElement = it.createOr3(errAfterColon, errAfterComma, errAfterValue);
-            it.createAssign(errObj, it.createOr3(errObj, errCurly, errElement));
+            PabloAST * errCurly = it.createOr3(errorAtEnd, errAfterLCurly, errAfterComma);
+            it.createAssign(errObj, it.createOr(errObj, errCurly));
         }
 
         if (genSingleBlock) { break; }
