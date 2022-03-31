@@ -121,35 +121,40 @@ void JSONKeywordEndMarker::generatePabloMethod() {
     PabloAST * A = ccc.compileCC(re::makeByte('a'));
     PabloAST * S = ccc.compileCC(re::makeByte('s'));
 
-    PabloAST * advNU = pb.createAnd(U, pb.createAdvance(N, 1));
-    PabloAST * advNUL = pb.createAnd(L, pb.createAdvance(advNU, 1));
     Var * seqNULL = pb.createVar("null", pb.createZeroes());
-    auto itNUL = pb.createScope();
-    pb.createIf(advNUL, itNUL);
-    {
-        PabloAST * advNULL = itNUL.createAnd(L, itNUL.createAdvance(advNUL, 1));
-        itNUL.createAssign(seqNULL, advNULL);
-    }
-
-    PabloAST * advTR = pb.createAnd(R, pb.createAdvance(T, 1));
-    PabloAST * advTRU = pb.createAnd(U, pb.createAdvance(advTR, 1));
     Var * seqTRUE = pb.createVar("true", pb.createZeroes());
-    auto itTRU = pb.createScope();
-    pb.createIf(advTRU, itTRU);
-    {
-        PabloAST * advTRUE = pb.createAnd(E, pb.createAdvance(advTRU, 1));
-        itTRU.createAssign(seqTRUE, advTRUE);
-    }
-
-    PabloAST * advFA = pb.createAnd(A, pb.createAdvance(F, 1));
-    PabloAST * advFAL = pb.createAnd(L, pb.createAdvance(advFA, 1));
-    PabloAST * advFALS = pb.createAnd(S, pb.createAdvance(advFAL, 1));
     Var * seqFALSE = pb.createVar("false", pb.createZeroes());
-    auto itFALS = pb.createScope();
-    pb.createIf(advFALS, itFALS);
+
+    auto it = pb.createScope();
+    pb.createIf(pb.createOr3(N, T, F), it);
     {
-        PabloAST * advFALSE = pb.createAnd(E, pb.createAdvance(advFALS, 1));
-        itFALS.createAssign(seqFALSE, advFALSE);
+        PabloAST * advNU = it.createAnd(U, it.createAdvance(N, 1));
+        PabloAST * advNUL = it.createAnd(L, it.createAdvance(advNU, 1));
+        auto itNUL = it.createScope();
+        it.createIf(advNUL, itNUL);
+        {
+            PabloAST * advNULL = itNUL.createAnd(L, itNUL.createAdvance(advNUL, 1));
+            itNUL.createAssign(seqNULL, advNULL);
+        }
+
+        PabloAST * advTR = it.createAnd(R, it.createAdvance(T, 1));
+        PabloAST * advTRU = it.createAnd(U, it.createAdvance(advTR, 1));
+        auto itTRU = it.createScope();
+        it.createIf(advTRU, itTRU);
+        {
+            PabloAST * advTRUE = itTRU.createAnd(E, itTRU.createAdvance(advTRU, 1));
+            itTRU.createAssign(seqTRUE, advTRUE);
+        }
+
+        PabloAST * advFA = it.createAnd(A, it.createAdvance(F, 1));
+        PabloAST * advFAL = it.createAnd(L, it.createAdvance(advFA, 1));
+        PabloAST * advFALS = it.createAnd(S, it.createAdvance(advFAL, 1));
+        auto itFALS = it.createScope();
+        it.createIf(advFALS, itFALS);
+        {
+            PabloAST * advFALSE = itFALS.createAnd(E, itFALS.createAdvance(advFALS, 1));
+            itFALS.createAssign(seqFALSE, advFALSE);
+        }
     }
 
     pb.createAssign(pb.createExtract(kwEndMarker, pb.getInteger(KwMarker::kwNullEnd)), seqNULL);
