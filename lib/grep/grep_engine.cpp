@@ -250,21 +250,31 @@ bool GrepEngine::matchesToEOLrequired () {
     return (mEngineKind == EngineKind::EmitMatches) || (mMaxCount != 1) || mInvertMatches;
 }
 
-// generate a vector of REs based on the minimum length of each alternative regular expressions
-void GrepEngine::generateColoredREs(){
+// Generate a vector of REs based on the length of each alternative regular expressions
+// If the regular expressions is fixed length, then group them together into one regular express
+// Otherwise, divide them into seperate regular expressions
+void GrepEngine::generateColoredREs(bool isUnicodeIndexing){
     if(const re::Alt * alt = dyn_cast<re::Alt>(mRE))
     {
         std::unordered_map<int, std::vector<re:: RE *>> reMap;
         for( re::RE * re : *alt)
         {
-            auto lengthRange = getLengthRange(re, &cc::Unicode);
-            auto it = reMap.find(lengthRange.first);
-            if(it != reMap.end())
-            {
-                it->second.push_back(re);
+            std::pair<int, int> lengthRange;
+            if(isUnicodeIndexing) lengthRange = getLengthRange(re, &cc::Unicode);
+            else lengthRange = getLengthRange(re, &cc::UTF8);
+
+            bool isFixedLength = (lengthRange.first == lengthRange.second);
+            if (isFixedLength) {
+                auto it = reMap.find(lengthRange.first);
+                if(it != reMap.end())
+                {
+                    it->second.push_back(re);
+                }else{
+                    std::vector<re:: RE *> newInsert {re};
+                    reMap.insert({lengthRange.first, newInsert});
+                }
             }else{
-                std::vector<re:: RE *> newInsert {re};
-                reMap.insert({lengthRange.first, newInsert});
+                mColoredREs.push_back(re);
             }
         }
         for(auto res : reMap)
@@ -344,7 +354,7 @@ void GrepEngine::initRE(re::RE * re) {
     }
     re::gatherNames(mRE, mExternalNames);
 
-    generateColoredREs();
+    generateColoredREs(UnicodeIndexing);
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
@@ -537,6 +547,15 @@ void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, r
         StreamSet * ExpandedSpans = P->CreateStreamSet(1, 1);
         SpreadByMask(P, u8initial, MatchSpans, ExpandedSpans);
         P->CreateKernelCall<U8Spans>(ExpandedSpans, mU8index, Results);
+        if(mDisplayCapturedData)
+        {
+            mIllustrator->captureBitstream(P, "u8initial", u8initial);
+            mIllustrator->captureBitstream(P, "mU8index", mU8index);
+            mIllustrator->captureBitstream(P, "MatchSpans", MatchSpans);
+            mIllustrator->captureBitstream(P, "ExpandedSpans", ExpandedSpans);
+
+        }
+
     } else {
         SpreadByMask(P, u8index1, MatchResults, Results);
     }
@@ -877,6 +896,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         E->CreateKernelCall<StreamsMerge>(MatchResultsBuf, MergedMatches);
         Matches = MergedMatches;
     }
+
     // E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", Matches);
 
     StreamSet * MatchedLineEnds = Matches;
