@@ -408,7 +408,6 @@ void JSONParserObj::generatePabloMethod() {
     PabloAST * colon = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::colon]);
     PabloAST * ws = getInputStreamSet("lexIn")[Lex::ws];
     PabloAST * str = pb.createAnd(valueToken, getInputStreamSet("strMarker")[0]);
-    PabloAST * valueTokenMinusStr = pb.createXor(valueToken, str);
     PabloAST * zeroND = bnc.EQ(ND, 0);
 
     Var * const syntaxErr = getOutputStreamVar("syntaxErr");
