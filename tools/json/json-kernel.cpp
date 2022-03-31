@@ -300,6 +300,7 @@ void JSONParserArr::generatePabloMethod() {
     BixNum ND = getInputStreamSet("ND");
 
     PabloAST * symbols = getInputStreamSet("combinedLexs")[Combined::symbols];
+    PabloAST * validLBrak = getInputStreamSet("combinedLexs")[Combined::lBrak];
     PabloAST * validRBrak = getInputStreamSet("combinedLexs")[Combined::rBrak];
     PabloAST * allValues = getInputStreamSet("combinedLexs")[Combined::values];
     PabloAST * valueToken = pb.createLookahead(allValues, 1);
@@ -310,6 +311,7 @@ void JSONParserArr::generatePabloMethod() {
     PabloAST * rBracket = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::rBracket]);
     PabloAST * comma = pb.createAnd(symbols, getInputStreamSet("lexIn")[Lex::comma]);
     PabloAST * ws = getInputStreamSet("lexIn")[Lex::ws];
+    PabloAST * str = pb.createAnd(valueToken, getInputStreamSet("strMarker")[0]);
 
     Var * const syntaxErr = getOutputStreamVar("syntaxErr");
 
@@ -336,12 +338,29 @@ void JSONParserArr::generatePabloMethod() {
     PabloAST * errSimpleValue = pb.createOr3(errValue, errSymbol, errEOF);
 
     // parsing arr
-    Var * const errArray = pb.createVar("errArray", pb.createZeroes());
-    for (int i = mMaxDepth; i >= 0; --i) {
+
+    // Validate that every value that is not a string is followed either by a comma or a the end validRBracket.
+    // String is a special case and is checked on kernel JSONParserObj
+    PabloAST * validEndValues = pb.createAnd(pb.createOr(valueToken, validRBrak), pb.createNot(zeroND));
+    PabloAST * validEndValuesMinusStr = pb.createAnd(validEndValues, pb.createNot(str));
+    PabloAST * afterToken = pb.createAdvance(validEndValuesMinusStr, 1);
+    PabloAST * tokenNext = pb.createScanThru(afterToken, ws);
+    PabloAST * notCommaRBracket = pb.createNot(pb.createOr3(comma, validRBrak, zeroND));
+    PabloAST * errAfterValue = pb.createAnd(tokenNext, notCommaRBracket);
+
+    // Every comma must be followed by a value
+    PabloAST * scanAnyTkAfterComma = pb.createScanTo(pb.createAdvance(comma, 1), anyToken);
+    PabloAST * validBeginValues = pb.createAnd(pb.createOr(valueToken, validLBrak), pb.createNot(zeroND));
+    PabloAST * errAfterComma = pb.createAnd(scanAnyTkAfterComma, pb.createNot(validBeginValues));
+
+    PabloAST * errElement = pb.createOr(errAfterComma, errAfterValue);
+    Var * const errArray = pb.createVar("errArray", errElement);
+
+    for (int i = mMaxDepth; i >= 1; --i) {
         PabloAST * atDepth = bnc.EQ(ND, genSingleBlock ? mOnlyDepth : i);
         PabloAST * nested = bnc.UGT(ND, genSingleBlock ? mOnlyDepth : i);
         PabloAST * arrayStart = pb.createAnd(atDepth, lBracket);
-        
+
         auto it = pb.createScope();
         pb.createIf(arrayStart, it);
         {
@@ -350,35 +369,15 @@ void JSONParserArr::generatePabloMethod() {
             // it must not finish in rCurly
             PabloAST * errorAtEnd = it.createAnd(arrayEnd, rCurly);
 
-            PabloAST * arraySpan = it.createIntrinsicCall(
-                Intrinsic::ExclusiveSpan,
-                { arrayStart, arrayEnd }
-            );
-
-            // Now validate that every value or nested item is followed
-            // either by a comma or a the end rBracket.
-            PabloAST * nestedSpan = it.createAnd(nested, arraySpan);
-            PabloAST * afterNested = it.createAnd(it.createAdvance(nestedSpan, 1), atDepth);
-            PabloAST * valueAtDepth = it.createAnd(atDepth, valueToken);
-            PabloAST * afterToken = it.createAdvance(it.createAnd(valueAtDepth, arraySpan), 1);
-            PabloAST * tokenNext = it.createScanThru(it.createOr(afterNested, afterToken), ws);
-            PabloAST * notCommaRBracket = it.createNot(it.createOr(comma, rBracket));
-            PabloAST * errAfterValue = it.createAnd(tokenNext, notCommaRBracket);
-
-            // Every comma must be followed by a value
-            PabloAST * commaAtDepth = it.createAnd3(comma, atDepth, arraySpan);
-            PabloAST * nestedOrVTk = it.createOr(nested, valueAtDepth);
-            PabloAST * scanAnyTkAfterComma = it.createScanTo(it.createAdvance(commaAtDepth, 1), anyToken);
-            PabloAST * errAfterComma = it.createAnd(scanAnyTkAfterComma, it.createNot(nestedOrVTk));
-
             // After the lBracket we must have either a value or an rBracket.
+            PabloAST * valueAtDepth = it.createAnd(atDepth, valueToken);
+            PabloAST * nestedOrVTk = it.createOr(nested, valueAtDepth);
             PabloAST * nestedOrVTkRBracket = it.createOr(nestedOrVTk, rBracket);
             PabloAST * scanAnyTkAfterArrStart = it.createScanTo(it.createAdvance(arrayStart, 1), anyToken);
             PabloAST * errAfterLBracket = it.createAnd(scanAnyTkAfterArrStart, it.createNot(nestedOrVTkRBracket));
 
             PabloAST * errBracket = it.createOr(errorAtEnd, errAfterLBracket);
-            PabloAST * errElement = it.createOr(errAfterComma, errAfterValue);
-            it.createAssign(errArray, it.createOr3(errArray, errBracket, errElement));
+            it.createAssign(errArray, it.createOr(errArray, errBracket));
         }
 
         if (genSingleBlock) { break; }
@@ -414,7 +413,7 @@ void JSONParserObj::generatePabloMethod() {
 
     // parsing objects
     Var * const errObj = pb.createVar("errObj", pb.createZeroes());
-    for (int i = mMaxDepth; i >= 0; --i) {
+    for (int i = mMaxDepth; i >= 1; --i) {
         PabloAST * atDepth = bnc.EQ(ND, genSingleBlock ? mOnlyDepth : i);
         PabloAST * nested = bnc.UGT(ND, genSingleBlock ? mOnlyDepth : i);
         PabloAST * objStart = pb.createAnd(atDepth, lCurly);
