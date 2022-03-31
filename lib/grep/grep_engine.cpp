@@ -734,6 +734,8 @@ kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_pt
     re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(re, lengthOfUniquePrefix);
     if(isUnicodeIdexing) reLengthRange = getLengthRange(re, &cc::Unicode);
     else reLengthRange = getLengthRange(re, &cc::UTF8);
+
+
     bool isFixLength = (reLengthRange.first == reLengthRange.second);
 
     if(!mColoring || !reUniquePrefix || isFixLength) return nullptr;
@@ -831,6 +833,7 @@ void applyColorization(const std::unique_ptr<ProgramBuilder> & E,
 void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, StreamSet * ByteStream, bool BatchMode) {
 
     StreamSet * SourceStream = getBasis(E, ByteStream);
+
     mDisplayCapturedData = false;    
     if(mDisplayCapturedData)
     {
@@ -849,18 +852,16 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         StreamSet *const MatchResults = E->CreateStreamSet(1,1);
         MatchResultsBuf[i] = MatchResults;
         if (UnicodeIndexing) {
-            std::cout << "Unicode" <<std::endl;
             auto overallResult = colorizeREwithPrefix( E, mColoredREs[i], SourceStream, UnicodeIndexing );
-            if(overallResult)
+            if(overallResult != nullptr) 
             {
                 MatchResultsBuf[i] =  overallResult;
             }else{
                 UnicodeIndexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
             }
         }else{
-            std::cout << "UTF8" <<std::endl;
-            auto overallResult = colorizeREwithPrefix( E, mColoredREs[i], SourceStream, !UnicodeIndexing );
-            if(overallResult)
+            auto overallResult = colorizeREwithPrefix( E, mColoredREs[i], SourceStream, UnicodeIndexing );
+            if(overallResult != nullptr)
             {
                 MatchResultsBuf[i] =  overallResult;
             }else{
