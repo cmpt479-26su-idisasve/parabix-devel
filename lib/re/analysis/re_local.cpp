@@ -195,14 +195,12 @@ RE* getPrefixOccursOnce(RE *re, int &length)
             {
                 // Check if the beginning of the RE is a START
                 if(i==0){
-                    if(const Start *start = dyn_cast<Start>(*alt->begin()))
-                    {
-                        endPoint = 0;
-                    }
+                if(const Start *start = dyn_cast<Start>(*alt->begin()))
+                {
+                    endPoint = 0;
                 }
-                break;
-            }
-            else if (CC * cc = dyn_cast<CC>(item))
+                }else break;
+            }else if (CC * cc = dyn_cast<CC>(item))
             {
                 CC_seq.push_back(cc);
                 bool search = CC_Sequence_Search(CC_seq, re_except_first);
@@ -215,8 +213,7 @@ RE* getPrefixOccursOnce(RE *re, int &length)
                     endPoint = i;
                     isUniqueStart = true;
                 }
-            }   
-            else{
+            }else{
                 break;
             }
         }
@@ -224,7 +221,9 @@ RE* getPrefixOccursOnce(RE *re, int &length)
         {
             prefix_AP = makeSeq(seq->begin(), seq->begin()+endPoint+1);
         }
-        length = endPoint+1;
+
+        // Calculate the length of Fixed Prefix in UTF8 
+        length = getLengthRange(prefix_AP,&cc::UTF8 ).first;
     }
     
     return prefix_AP;
@@ -246,12 +245,8 @@ void analyze(RE* re)
             {
                 std::cout<<"  Alt " << std::endl ;
                 int j=0;
-                if(const Start *start = dyn_cast<Start>(*alt->begin()))
-                {
-                    std::cout<<"  Start Start "  << std::endl ;
-                }
                 for (const RE * res : *alt) {
-                    std::cout<<"  Alt " <<  j++  ;
+                    std::cout<<"Alt " <<  j++  ;
                     if(const Start *start = dyn_cast<Start>(res))
                     {
                         std::cout<<"  Start "  << std::endl ;
@@ -260,7 +255,11 @@ void analyze(RE* re)
                         std::cout<<"  CC " << std::endl ;
                     }else if(const Assertion * as = dyn_cast<Assertion>(res))
                     {
-                        std::cout<<"  Assertion " << std::endl ;
+                        std::cout<<"  Assertion BOOM "  << std::endl ;
+                        auto asRe = as->getAsserted();
+                        if(const CC * cc = dyn_cast<CC>(asRe))
+                            std::cout << "Assertion CC: " << cc->canonicalName() << std::endl;
+                        
                     }
                     else{
                         std::cout<< std::endl;
