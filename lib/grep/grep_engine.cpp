@@ -539,26 +539,14 @@ void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, r
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
     StreamSet * u8index1 = P->CreateStreamSet(1, 1);
     P->CreateKernelCall<AddSentinel>(mU8index, u8index1);
-    if (hasComponent(mExternalComponents, Component::MatchSpans)) {
+    if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
         StreamSet * u8initial = P->CreateStreamSet(1, 1);
         P->CreateKernelCall<LineStartsKernel>(mU8index, u8initial);
         StreamSet * MatchSpans = P->CreateStreamSet(1, 1);
-        int length = 1;
-        // If only need the last position of the match, then there is no need to span further.
-        if(doMatchSpans) length = lengths.first;
-        P->CreateKernelCall<FixedMatchSpansKernel>(length, MatchResults, MatchSpans);
-        
+        P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, MatchSpans);
         StreamSet * ExpandedSpans = P->CreateStreamSet(1, 1);
         SpreadByMask(P, u8initial, MatchSpans, ExpandedSpans);
         P->CreateKernelCall<U8Spans>(ExpandedSpans, mU8index, Results);
-        if(mDisplayCapturedData)
-        {
-            mIllustrator->captureBitstream(P, "u8initial", u8initial);
-            mIllustrator->captureBitstream(P, "mU8index", mU8index);
-            mIllustrator->captureBitstream(P, "MatchSpans", MatchSpans);
-            mIllustrator->captureBitstream(P, "ExpandedSpans", ExpandedSpans);
-
-        }
 
     } else {
         SpreadByMask(P, u8index1, MatchResults, Results);
@@ -596,10 +584,20 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
     addExternalStreams(P, options, re);
 
     //mIllustrator->captureBitstream(P, "Result", MatchResults);
-    
+    // int length = 1;
+    // if(doMatchSpans) length = lengths.first;
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
-    if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
-        P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
+
+    if(mDisplayCapturedData)
+    {
+        mIllustrator->captureBitstream(P, "MatchResults_Test", Results);
+    }
+    
+    if ( doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
+        // if(doMatchSpans)
+            P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
+        // else
+        //     Results = MatchResults;
     }
     
 }
@@ -763,59 +761,75 @@ kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_pt
 
     if(!mColoring || !reUniquePrefix || isFixLength) return nullptr;
     
-    kernel::StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
-    kernel::StreamSet *const matchesFollowing = E->CreateStreamSet(1,1);
-    kernel::StreamSet *const matchesResultEnd = E->CreateStreamSet(1,1);
-    int lookAheadLengthAfterSourceMatch = 0;
+    kernel::StreamSet *const matchesToPrefixFollowing = E->CreateStreamSet(1,1);
+    kernel::StreamSet *const matchFollowing = E->CreateStreamSet(1,1);
     if(isUnicodeIdexing)
     {
-        UnicodeIndexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefix);
-        UnicodeIndexedGrep(E, re, SourceStream, matchesFollowing, false);
+        UnicodeIndexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefixFollowing, false);
+        UnicodeIndexedGrep(E, re, SourceStream, matchFollowing, false);
     }else{
-        lookAheadLengthAfterSourceMatch = 1;
-        U8indexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefix);
-        U8indexedGrep(E, re, SourceStream, matchesFollowing, false);
+        U8indexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefixFollowing, false);
+        U8indexedGrep(E, re, SourceStream, matchFollowing, false);
     }
+
+    kernel::StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
+    E->CreateKernelCall<LookAheadKernel>(lengthOfUniquePrefix, matchesToPrefixFollowing, matchesToPrefix);
     
-    E->CreateKernelCall<LookAheadKernel>(lookAheadLengthAfterSourceMatch, matchesFollowing, matchesResultEnd);
-    
-    std::vector<kernel::StreamSet *> maskStreamF {matchesToPrefix, matchesResultEnd};
+    std::vector<kernel::StreamSet *> maskStreamF {matchesToPrefix, matchFollowing};
     kernel::StreamSet * const MergedMatchesMaskF = E->CreateStreamSet();
     E->CreateKernelCall<StreamsMerge>(maskStreamF, MergedMatchesMaskF);
 
     kernel::StreamSet * filterByMaskResultC = E->CreateStreamSet(1, 1);
-    FilterByMask(E, MergedMatchesMaskF, matchesResultEnd, filterByMaskResultC);
+    FilterByMask(E, MergedMatchesMaskF, matchFollowing, filterByMaskResultC);
     kernel::StreamSet * LookAheadC = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<LookAheadKernel>(1, filterByMaskResultC, LookAheadC);
     kernel::StreamSet * MatchStreamP0 = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);      
     kernel::StreamSet * MatchStreamE0 = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0);              
+    E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0); 
+
     kernel::StreamSet * MatchStreamE1 = E->CreateStreamSet(1, 1);
     SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1);           
     kernel::StreamSet * MatchStreamP1 = E->CreateStreamSet(1, 1);
     SpreadByMask( E, MergedMatchesMaskF, MatchStreamP0 ,MatchStreamP1);
     
-    kernel::StreamSet * LookAheadP1 = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<LookAheadKernel>(lengthOfUniquePrefix-1, MatchStreamP1, LookAheadP1);
+    // kernel::StreamSet * LookAheadP1 = E->CreateStreamSet(1, 1);
+    // E->CreateKernelCall<LookAheadKernel>(lengthOfUniquePrefix-1, MatchStreamP1, LookAheadP1);
     
-    kernel::StreamSet *MatchOverall = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<U8Spans>(LookAheadP1, MatchStreamE1, MatchOverall);
+    kernel::StreamSet *const MatchAllWithFollowing = E->CreateStreamSet(1, 1);
+    //kernel::StreamSet *MatchOverall = nullptr;
+    E->CreateKernelCall<U8Spans>(MatchStreamP1, MatchStreamE1, MatchAllWithFollowing);
+
+
+    kernel::StreamSet *const MatchAllWithFollowingLookAhead = E->CreateStreamSet(1,1);
+    E->CreateKernelCall<LookAheadKernel>(1, MatchAllWithFollowing, MatchAllWithFollowingLookAhead);
+    
+    kernel::StreamSet *const matchFollowingNotColor = E->CreateStreamSet(1,1);
+    E->CreateKernelCall<AndNotKernel>( MatchAllWithFollowing, MatchAllWithFollowingLookAhead , matchFollowingNotColor); 
+
+    kernel::StreamSet *const MatchOverall = E->CreateStreamSet(1,1);
+    E->CreateKernelCall<AndNotKernel>( MatchAllWithFollowing, matchFollowingNotColor , MatchOverall); 
+
+    
+
     if(mDisplayCapturedData)
     {
-        mIllustrator->captureBitstream(E, "matchesToPrefix", matchesToPrefix);
-        // mIllustrator->captureBitstream(E, "MatchResultsFollowing", matchesFollowing);
-        mIllustrator->captureBitstream(E, "matchesResultEnd", matchesResultEnd);
+        mIllustrator->captureBitstream(E, "matchesToPrefixFollowing", matchesToPrefixFollowing);
+        mIllustrator->captureBitstream(E, "MatchResults_", matchFollowing);
+        // mIllustrator->captureBitstream(E, "matchesResultEnd", matchesResultEnd);
         mIllustrator->captureBitstream(E, "MergedMatchesMaskF", MergedMatchesMaskF);
         mIllustrator->captureBitstream(E, "filterByMaskResultC", filterByMaskResultC);
         mIllustrator->captureBitstream(E, "MatchStreamP0", MatchStreamP0);
         mIllustrator->captureBitstream(E, "MatchStreamE0", MatchStreamE0);
         mIllustrator->captureBitstream(E, "MatchStreamE1", MatchStreamE1);
         mIllustrator->captureBitstream(E, "MatchStreamP1", MatchStreamP1);
-        mIllustrator->captureBitstream(E, "LookAheadP1", LookAheadP1);
+        // mIllustrator->captureBitstream(E, "LookAheadP1", LookAheadP1);
+        mIllustrator->captureBitstream(E, "MatchAllWithFollowing", MatchAllWithFollowing);
+        mIllustrator->captureBitstream(E, "matchFollowingNotColor", matchFollowingNotColor);
         mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
-    }
 
+
+    }
     return MatchOverall;
 }
 
@@ -860,7 +874,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     StreamSet * SourceStream = getBasis(E, ByteStream);
 
-    mDisplayCapturedData = false;    
+    mDisplayCapturedData = true;    
     if(mDisplayCapturedData)
     {
         mIllustrator->captureByteData(E, "Source", ByteStream);
