@@ -737,17 +737,15 @@ void EmitMatch::finalize_match(char * buffer_end) {
 
 kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, StreamSet * SourceStream, bool isUnicodeIdexing )
 {
-    
-    int lengthOfUniquePrefix = 0;
     std::pair<int, int> reLengthRange;
-    re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(re, lengthOfUniquePrefix);
     if(isUnicodeIdexing) reLengthRange = getLengthRange(re, &cc::Unicode);
     else reLengthRange = getLengthRange(re, &cc::UTF8);
-
-
     bool isFixLength = (reLengthRange.first == reLengthRange.second);
+    if(!mColoring | isFixLength) return nullptr;
 
-    if(!mColoring || !reUniquePrefix || isFixLength) return nullptr;
+    int lengthOfUniquePrefix = 0;
+    re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(re, lengthOfUniquePrefix);
+    if(!reUniquePrefix) return nullptr;
     
     kernel::StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
     kernel::StreamSet *const matchFollowing = E->CreateStreamSet(1,1);
@@ -803,6 +801,7 @@ kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_pt
         mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
     }
     return MatchOverall;
+    
 }
 
 void applyColorization(const std::unique_ptr<ProgramBuilder> & E,
