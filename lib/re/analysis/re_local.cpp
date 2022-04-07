@@ -181,8 +181,8 @@ RE* getPrefixOccursOnce(RE *re, int &length)
 {
     RE * re_except_first = getReExceptFirst(re);
     if(re_except_first == nullptr)  return nullptr;
-
-    RE * prefix_AP = nullptr;   
+    RE * prefix_AP = nullptr;  
+    length = 0;
     if(const Seq * seq = dyn_cast<Seq>(re))
     {
         std::vector<CC *> CC_seq;
@@ -204,7 +204,6 @@ RE* getPrefixOccursOnce(RE *re, int &length)
             {
                 CC_seq.push_back(cc);
                 bool search = CC_Sequence_Search(CC_seq, re_except_first);
-                //std::cout<<"i = " << i <<" search: " << search << " CC:"<<  cc->canonicalName()<< std::endl;
                 if(search) {
                     if(isUniqueStart) break;
                     else continue;
@@ -213,6 +212,7 @@ RE* getPrefixOccursOnce(RE *re, int &length)
                     endPoint = i;
                     isUniqueStart = true;
                 }
+
             }else{
                 break;
             }
@@ -220,13 +220,14 @@ RE* getPrefixOccursOnce(RE *re, int &length)
         if(endPoint != -1)
         {
             prefix_AP = makeSeq(seq->begin(), seq->begin()+endPoint+1);
-        }
-
-        // Calculate the length of Fixed Prefix in UTF8 
-        length = getLengthRange(prefix_AP,&cc::UTF8 ).first;
+            // Calculate the length of Fixed Prefix in UTF8 
+            length = getLengthRange(prefix_AP,&cc::UTF8 ).first;
+        }        
     }
     
     return prefix_AP;
+
+    
 }
 
 // Used for debugging
