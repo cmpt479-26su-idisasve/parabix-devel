@@ -539,9 +539,10 @@ void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, r
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
     StreamSet * u8index1 = P->CreateStreamSet(1, 1);
     P->CreateKernelCall<AddSentinel>(mU8index, u8index1);
+    StreamSet * u8initial = P->CreateStreamSet(1, 1);
+    P->CreateKernelCall<LineStartsKernel>(mU8index, u8initial);
     if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
-        StreamSet * u8initial = P->CreateStreamSet(1, 1);
-        P->CreateKernelCall<LineStartsKernel>(mU8index, u8initial);
+        
         StreamSet * MatchSpans = P->CreateStreamSet(1, 1);
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, MatchSpans);
         StreamSet * ExpandedSpans = P->CreateStreamSet(1, 1);
@@ -549,7 +550,7 @@ void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, r
         P->CreateKernelCall<U8Spans>(ExpandedSpans, mU8index, Results);
 
     } else {
-        SpreadByMask(P, u8index1, MatchResults, Results);
+        SpreadByMask(P, u8initial, MatchResults, Results);
     }
 }
 
@@ -582,22 +583,9 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
         }
     }
     addExternalStreams(P, options, re);
-
-    //mIllustrator->captureBitstream(P, "Result", MatchResults);
-    // int length = 1;
-    // if(doMatchSpans) length = lengths.first;
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
-
-    if(mDisplayCapturedData)
-    {
-        mIllustrator->captureBitstream(P, "MatchResults_Test", Results);
-    }
-    
     if ( doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
-        // if(doMatchSpans)
-            P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
-        // else
-        //     Results = MatchResults;
+        P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
     }
     
 }
@@ -789,30 +777,22 @@ kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_pt
     SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1);           
     kernel::StreamSet * MatchStreamP1 = E->CreateStreamSet(1, 1);
     SpreadByMask( E, MergedMatchesMaskF, MatchStreamP0 ,MatchStreamP1);
+
+    // Look ahead E1 so the following character will be removed
+    kernel::StreamSet * LookAheadE1 = E->CreateStreamSet(1, 1);
+    E->CreateKernelCall<LookAheadKernel>(1, MatchStreamE1, LookAheadE1);
     
     kernel::StreamSet * LookAheadP1 = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<LookAheadKernel>(lengthOfUniquePrefix-1, MatchStreamP1, LookAheadP1);
-    
-    kernel::StreamSet *const MatchAllWithFollowing = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<U8Spans>(LookAheadP1, MatchStreamE1, MatchAllWithFollowing);
 
-
-    kernel::StreamSet *const MatchAllWithFollowingLookAhead = E->CreateStreamSet(1,1);
-    E->CreateKernelCall<LookAheadKernel>(1, MatchAllWithFollowing, MatchAllWithFollowingLookAhead);
-    
-    kernel::StreamSet *const matchFollowingNotColor = E->CreateStreamSet(1,1);
-    E->CreateKernelCall<AndNotKernel>( MatchAllWithFollowing, MatchAllWithFollowingLookAhead , matchFollowingNotColor); 
-
-    kernel::StreamSet *const MatchOverall = E->CreateStreamSet(1,1);
-    E->CreateKernelCall<AndNotKernel>( MatchAllWithFollowing, matchFollowingNotColor , MatchOverall); 
-
+    kernel::StreamSet *const MatchOverall = E->CreateStreamSet(1, 1);
+    E->CreateKernelCall<U8Spans>(LookAheadP1, LookAheadE1, MatchOverall);
     
 
     if(mDisplayCapturedData)
     {
         mIllustrator->captureBitstream(E, "matchesToPrefix", matchesToPrefix);
         mIllustrator->captureBitstream(E, "MatchResults_", matchFollowing);
-        // mIllustrator->captureBitstream(E, "matchesResultEnd", matchesResultEnd);
         mIllustrator->captureBitstream(E, "MergedMatchesMaskF", MergedMatchesMaskF);
         mIllustrator->captureBitstream(E, "filterByMaskResultC", filterByMaskResultC);
         mIllustrator->captureBitstream(E, "MatchStreamP0", MatchStreamP0);
@@ -820,11 +800,7 @@ kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_pt
         mIllustrator->captureBitstream(E, "MatchStreamE1", MatchStreamE1);
         mIllustrator->captureBitstream(E, "MatchStreamP1", MatchStreamP1);
         mIllustrator->captureBitstream(E, "LookAheadP1", LookAheadP1);
-        mIllustrator->captureBitstream(E, "MatchAllWithFollowing", MatchAllWithFollowing);
-        mIllustrator->captureBitstream(E, "matchFollowingNotColor", matchFollowingNotColor);
         mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
-
-
     }
     return MatchOverall;
 }
