@@ -127,7 +127,7 @@ protected:
     bool hasComponent(Component compon_set, Component c);
     void setComponent(Component & compon_set, Component c);
     bool matchesToEOLrequired();
-    void generateColoredREs(bool isUnicodeIdexing);
+    void generateColoredREs(bool isUnicodeIndexing);
 
     // Transpose to basis bit streams, if required otherwise return the source byte stream.
     kernel::StreamSet * getBasis(const std::unique_ptr<kernel::ProgramBuilder> &P, kernel::StreamSet * ByteStream);
@@ -251,7 +251,10 @@ public:
     void grepCodeGen() override;
 private:
     uint64_t doGrep(const std::vector<std::string> & fileNames, std::ostringstream & strm) override;
-    kernel::StreamSet * colorizeREwithPrefix(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIdexing );
+    kernel::StreamSet * generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
+    kernel::StreamSet * startAnchorColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
+    kernel::StreamSet * uniquePrefixColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
+
 };
 
 class CountOnlyEngine final : public GrepEngine {

@@ -735,21 +735,79 @@ void EmitMatch::finalize_match(char * buffer_end) {
     if (!mTerminated) *mResultStr << "\n";
 }
 
-kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, StreamSet * SourceStream, bool isUnicodeIdexing )
+kernel::StreamSet * EmitMatchesEngine::generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, StreamSet * SourceStream, bool isUnicodeIndexing )
 {
+    // Check if RE is fixed length
     std::pair<int, int> reLengthRange;
-    if(isUnicodeIdexing) reLengthRange = getLengthRange(re, &cc::Unicode);
+    if(isUnicodeIndexing) reLengthRange = getLengthRange(re, &cc::Unicode);
     else reLengthRange = getLengthRange(re, &cc::UTF8);
     bool isFixLength = (reLengthRange.first == reLengthRange.second);
     if(!mColoring | isFixLength) return nullptr;
 
+    // Check if RE has start anchor
+    bool has = re::hasStartAnchor(re);
+    std::cout<<"hasStartAnchor = " << has <<std::endl;
+    if(has)
+    {
+        return startAnchorColorization(E, re, SourceStream, isUnicodeIndexing);
+    }
+
+
+    // Check if RE contains unique prefix
+    return uniquePrefixColorization(E, re, SourceStream, isUnicodeIndexing );
+    
+    
+}
+
+kernel::StreamSet * EmitMatchesEngine::startAnchorColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing )
+{
+    StreamSet * matchFollowing = E->CreateStreamSet(1,1);
+    if(isUnicodeIndexing)
+        U8indexedGrep(E, re, SourceStream, matchFollowing, false);
+    else
+        UnicodeIndexedGrep(E, re, SourceStream, matchFollowing, false);
+
+
+    StreamSet * matchLineEnds = E->CreateStreamSet(1,1);
+    E->CreateKernelCall<MatchedLinesKernel>(matchFollowing, mLineBreakStream, matchLineEnds);
+
+    StreamSet * matchesByLine = E->CreateStreamSet(1, 1);
+    FilterByMask(E, mLineBreakStream, matchLineEnds, matchesByLine);
+
+    StreamSet * LineStartsTemp = E->CreateStreamSet(1, 1);
+    E->CreateKernelCall<LineStartsKernel>(mLineBreakStream, LineStartsTemp);
+
+    StreamSet * matchedLineStarts = E->CreateStreamSet(1, 1);
+    SpreadByMask(E, LineStartsTemp, matchesByLine, matchedLineStarts);
+
+    StreamSet * LookAheadMatchFollowing = E->CreateStreamSet(1, 1);
+    E->CreateKernelCall<LookAheadKernel>(1, matchFollowing, LookAheadMatchFollowing);
+
+    StreamSet * MatchAnchor = E->CreateStreamSet(1, 1);
+    E->CreateKernelCall<U8Spans>(matchedLineStarts, LookAheadMatchFollowing, MatchAnchor);
+    
+    if(mDisplayCapturedData){
+        mIllustrator->captureBitstream(E, "ResultTempt", matchFollowing);
+        mIllustrator->captureBitstream(E, "MatchesByLine", matchesByLine);
+        mIllustrator->captureBitstream(E, "LineStartsTemp", LineStartsTemp);
+        mIllustrator->captureBitstream(E, "MatchedLineStartsTemp", matchedLineStarts);
+        mIllustrator->captureBitstream(E, "MatchAnchor", MatchAnchor);
+    }
+
+    return MatchAnchor;
+    
+}
+
+
+kernel::StreamSet * EmitMatchesEngine::uniquePrefixColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing )
+{
     int lengthOfUniquePrefix = 0;
     re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(re, lengthOfUniquePrefix);
     if(!reUniquePrefix) return nullptr;
     
     kernel::StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
     kernel::StreamSet *const matchFollowing = E->CreateStreamSet(1,1);
-    if(isUnicodeIdexing)
+    if(isUnicodeIndexing)
     {
         UnicodeIndexedGrep(E, reUniquePrefix, SourceStream, matchesToPrefix);
         UnicodeIndexedGrep(E, re, SourceStream, matchFollowing, false);
@@ -801,8 +859,8 @@ kernel::StreamSet * EmitMatchesEngine::colorizeREwithPrefix(const std::unique_pt
         mIllustrator->captureBitstream(E, "MatchOverall", MatchOverall);
     }
     return MatchOverall;
-    
 }
+
 
 void applyColorization(const std::unique_ptr<ProgramBuilder> & E,
                                           StreamSet * MatchSpans,
@@ -845,7 +903,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     StreamSet * SourceStream = getBasis(E, ByteStream);
 
-    mDisplayCapturedData = false;    
+    mDisplayCapturedData = true;    
     if(mDisplayCapturedData)
     {
         mIllustrator->captureByteData(E, "Source", ByteStream);
@@ -863,7 +921,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         StreamSet *const MatchResults = E->CreateStreamSet(1,1);
         MatchResultsBuf[i] = MatchResults;
         if (UnicodeIndexing) {
-            auto overallResult = colorizeREwithPrefix( E, mColoredREs[i], SourceStream, UnicodeIndexing );
+            auto overallResult = generateColorization( E, mColoredREs[i], SourceStream, UnicodeIndexing );
             if(overallResult != nullptr) 
             {
                 MatchResultsBuf[i] =  overallResult;
@@ -871,7 +929,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
                 UnicodeIndexedGrep(E, mColoredREs[i], SourceStream, MatchResults);
             }
         }else{
-            auto overallResult = colorizeREwithPrefix( E, mColoredREs[i], SourceStream, UnicodeIndexing );
+            auto overallResult = generateColorization( E, mColoredREs[i], SourceStream, UnicodeIndexing );
             if(overallResult != nullptr)
             {
                 MatchResultsBuf[i] =  overallResult;
@@ -897,17 +955,20 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         E->CreateKernelCall<MatchedLinesKernel>(Matches, mLineBreakStream, MovedMatches);
         MatchedLineEnds = MovedMatches;
     }
+    
     if (mInvertMatches) {
         StreamSet * const InvertedMatches = E->CreateStreamSet();
         E->CreateKernelCall<InvertMatchesKernel>(MatchedLineEnds, mLineBreakStream, InvertedMatches);
         MatchedLineEnds = InvertedMatches;
     }
+
     if (mMaxCount > 0) {
         StreamSet * const TruncatedMatches = E->CreateStreamSet();
         Scalar * const maxCount = E->getInputScalar("maxCount");
         E->CreateKernelCall<UntilNkernel>(maxCount, MatchedLineEnds, TruncatedMatches);
         MatchedLineEnds = TruncatedMatches;
     }
+    
 
     if (mColoring && !mInvertMatches) {        
 
