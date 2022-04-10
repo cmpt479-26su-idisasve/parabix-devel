@@ -175,61 +175,6 @@ RE * getReExceptFirst(RE* re)
     return nullptr;
 }
 
-// E = APQ: A(single CC)
-// AP not occurrs in PQ 
-RE* getPrefixOccursOnce(RE *re, int &length)
-{
-    RE * re_except_first = getReExceptFirst(re);
-    if(re_except_first == nullptr)  return nullptr;
-    RE * prefix_AP = nullptr;  
-    length = 0;
-    if(const Seq * seq = dyn_cast<Seq>(re))
-    {
-        std::vector<CC *> CC_seq;
-        int endPoint = -1;
-        bool isUniqueStart = false;
-        for(int i=0; i < seq->size()-1; ++i)
-        {
-            RE * item = (*seq)[i];
-            if(const Alt * alt = dyn_cast<Alt>(item))
-            {
-                // Check if the beginning of the RE is a START
-                if(i==0){
-                if(const Start *start = dyn_cast<Start>(*alt->begin()))
-                {
-                    endPoint = 0;
-                }
-                }else break;
-            }else if (CC * cc = dyn_cast<CC>(item))
-            {
-                CC_seq.push_back(cc);
-                bool search = CC_Sequence_Search(CC_seq, re_except_first);
-                if(search) {
-                    if(isUniqueStart) break;
-                    else continue;
-                    }
-                else {
-                    endPoint = i;
-                    isUniqueStart = true;
-                }
-
-            }else{
-                break;
-            }
-        }
-        if(endPoint != -1)
-        {
-            prefix_AP = makeSeq(seq->begin(), seq->begin()+endPoint+1);
-            // Calculate the length of Fixed Prefix in UTF8 
-            length = getLengthRange(prefix_AP,&cc::UTF8 ).first;
-        }        
-    }
-    
-    return prefix_AP;
-
-    
-}
-
 // Used for debugging
 void analyze(RE* re)
 {
@@ -279,11 +224,60 @@ void analyze(RE* re)
     }
 }
 
-
-RE * RE_Local::getUniquePrefix(RE * re, int &length)
+// E = APQ: A(single CC)
+// AP not occurrs in PQ 
+RE * RE_Local::getUniquePrefix(RE *re, int &length)
 {
-    return getPrefixOccursOnce(re, length);
+    RE * re_except_first = getReExceptFirst(re);
+    if(re_except_first == nullptr)  return nullptr;
+    RE * prefix_AP = nullptr;  
+    length = 0;
+    if(const Seq * seq = dyn_cast<Seq>(re))
+    {
+        std::vector<CC *> CC_seq;
+        int endPoint = -1;
+        bool isUniqueStart = false;
+        for(int i=0; i < seq->size()-1; ++i)
+        {
+            RE * item = (*seq)[i];
+            if(const Alt * alt = dyn_cast<Alt>(item))
+            {
+                // Check if the beginning of the RE is a START
+                if(i==0){
+                if(const Start *start = dyn_cast<Start>(*alt->begin()))
+                {
+                    endPoint = 0;
+                }
+                }else break;
+            }else if (CC * cc = dyn_cast<CC>(item))
+            {
+                CC_seq.push_back(cc);
+                bool search = CC_Sequence_Search(CC_seq, re_except_first);
+                if(search) {
+                    if(isUniqueStart) break;
+                    else continue;
+                    }
+                else {
+                    endPoint = i;
+                    isUniqueStart = true;
+                }
+
+            }else{
+                break;
+            }
+        }
+        // Only extract if there consists unique prefix
+        if(endPoint != -1 && isUniqueStart)
+        {
+            prefix_AP = makeSeq(seq->begin(), seq->begin()+endPoint+1);
+            // Calculate the length of Fixed Prefix in UTF8 
+            length = getLengthRange(prefix_AP,&cc::UTF8 ).first;
+        }        
+    }
+    
+    return prefix_AP;
 }
+
 
 void RE_Local::reAnalyze(RE * re)
 {
