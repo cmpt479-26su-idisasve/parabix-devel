@@ -13,6 +13,7 @@
 #include <sstream>
 #include <atomic>
 #include <set>
+#include <unordered_map>
 #include <boost/filesystem.hpp>
 #include <re/cc/multiplex_CCs.h>
 #include <re/parse/GLOB_parser.h>
@@ -127,7 +128,7 @@ protected:
     bool hasComponent(Component compon_set, Component c);
     void setComponent(Component & compon_set, Component c);
     bool matchesToEOLrequired();
-    void generateColoredREs(bool isUnicodeIndexing);
+    void generateColoredREs(re::RE * inputRE, bool isUnicodeIndexing);
 
     // Transpose to basis bit streams, if required otherwise return the source byte stream.
     kernel::StreamSet * getBasis(const std::unique_ptr<kernel::ProgramBuilder> &P, kernel::StreamSet * ByteStream);
@@ -180,6 +181,7 @@ protected:
 
     re:: RE * mRE;
     std::vector<re::RE*> mColoredREs;
+    std::vector<bool> mColoredREsStartAnchor;
     std::set<re::Name *> mExternalNames;
     re::CC * mBreakCC;
     re::RE * mPrefixRE;
@@ -251,8 +253,11 @@ public:
     void grepCodeGen() override;
 private:
     uint64_t doGrep(const std::vector<std::string> & fileNames, std::ostringstream & strm) override;
-    kernel::StreamSet * generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
+
+    // Handle different colorization situations
+    kernel::StreamSet * generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing, std::unordered_map<int, kernel::StreamSet *> &ZeroFixedLengthMap, int index);
     kernel::StreamSet * startAnchorColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
+    kernel::StreamSet * zeroFixedLengthColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
     kernel::StreamSet * uniquePrefixColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
 
 };
