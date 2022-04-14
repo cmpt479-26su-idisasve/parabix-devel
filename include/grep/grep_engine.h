@@ -255,7 +255,7 @@ private:
     uint64_t doGrep(const std::vector<std::string> & fileNames, std::ostringstream & strm) override;
 
     // Handle different colorization situations
-    kernel::StreamSet * generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing, std::unordered_map<int, kernel::StreamSet *> &ZeroFixedLengthMap, int index);
+    kernel::StreamSet * generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing, int index);
     kernel::StreamSet * startAnchorColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
     kernel::StreamSet * zeroFixedLengthColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );
     kernel::StreamSet * uniquePrefixColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, kernel::StreamSet * SourceStream, bool isUnicodeIndexing );

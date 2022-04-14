@@ -266,6 +266,7 @@ void GrepEngine::generateColoredREs(re::RE * inputRE, bool isUnicodeIndexing){
             else lengthRange = getLengthRange(re, &cc::UTF8);
 
             bool isFixedLength = (lengthRange.first == lengthRange.second);
+            //if(isFixedLength && lengthRange.first==0) continue;
             if (isFixedLength) {
                 auto it = reMap.find(lengthRange.first);
                 if(it != reMap.end())
@@ -565,6 +566,8 @@ void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, r
 void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE * re, StreamSet * Source, StreamSet * Results, bool doMatchSpans) {
     auto options = std::make_unique<GrepKernelOptions>(&cc::UTF8);
     auto lengths = getLengthRange(re, &cc::UTF8);
+    bool isFixedLength = lengths.first == lengths.second;
+    doMatchSpans = doMatchSpans && isFixedLength && (lengths.first > 0);
     options->setSource(Source);
     StreamSet * MatchResults = nullptr;
     if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
@@ -593,6 +596,7 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
     addExternalStreams(P, options, re);
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
     if ( doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
+        std::cout << "Do Match Spans" << std::endl;
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
     }
     
@@ -817,7 +821,6 @@ kernel::StreamSet * EmitMatchesEngine::zeroFixedLengthColorization(const std::un
     // Make the result to all-zero 
     kernel::StreamSet *const FixedLengthZeroResult = E->CreateStreamSet(1,1);
     E->CreateKernelCall<AndNotKernel>( MatchResult, MatchResult ,FixedLengthZeroResult);  
-    
     if(mDisplayCapturedData)
     {
         mIllustrator->captureBitstream(E, "MatchResult", MatchResult);
@@ -889,7 +892,7 @@ kernel::StreamSet * EmitMatchesEngine::uniquePrefixColorization(const std::uniqu
     return MatchOverall;
 }
 
-kernel::StreamSet * EmitMatchesEngine::generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, StreamSet * SourceStream, bool isUnicodeIndexing, std::unordered_map<int, StreamSet *> &ZeroFixedLengthMap, int index)
+kernel::StreamSet * EmitMatchesEngine::generateColorization(const std::unique_ptr<kernel::ProgramBuilder> & E, re::RE * re, StreamSet * SourceStream, bool isUnicodeIndexing, int index)
 {
     // Check if RE is fixed length
     std::pair<int, int> reLengthRange;
@@ -898,14 +901,6 @@ kernel::StreamSet * EmitMatchesEngine::generateColorization(const std::unique_pt
     bool isFixedLength = (reLengthRange.first == reLengthRange.second);
 
     if(!mColoring ||( isFixedLength && reLengthRange.first >0 ))  return nullptr;
-
-    // Check if the length of RE is zero
-    // For example: "$"
-    if(isFixedLength && reLengthRange.first == 0)
-    {
-        ZeroFixedLengthMap.insert({index, zeroFixedLengthColorization(E,re,SourceStream, isUnicodeIndexing)});
-        return nullptr;
-    }
 
     // Handle regular expression with start anchor situation
     // For example: "^<\p{Letter}*" 
@@ -958,7 +953,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     StreamSet * SourceStream = getBasis(E, ByteStream);
 
-    mDisplayCapturedData = false;    
+    mDisplayCapturedData = true;    
     if(mDisplayCapturedData)
     {
         mIllustrator->captureByteData(E, "Source", ByteStream);
@@ -972,11 +967,12 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
     std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);
 
     // Add zero length result to the map
-    std::unordered_map<int, StreamSet *> ZeroFixedLengthMap;
+    //std::unordered_map<int, StreamSet *> ZeroFixedLengthMap;
+    std::vector<bool>ZeroLength(numOfColoredREs, false);
 
     for(unsigned i = 0; i < numOfColoredREs; ++i)
     {
-        auto overallResult = generateColorization(E, mColoredREs[i], SourceStream, UnicodeIndexing, ZeroFixedLengthMap, i) ;
+        auto overallResult = generateColorization(E, mColoredREs[i], SourceStream, UnicodeIndexing, i) ;
         if(overallResult != nullptr)
         {
             MatchResultsBuf[i] =  overallResult;
@@ -990,33 +986,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
             }
 
         }
-    }
-
-    // Handle regular expression with length of zero
-    StreamSet * MatchesWithZeroFixedLength;
-    bool isContainingZeroFixedLength = false;
-    if(mColoring && ZeroFixedLengthMap.size()>0)
-    {
-        isContainingZeroFixedLength = true;
-        std::vector<StreamSet *>MatchResultsBufTempt(numOfColoredREs);
-        for(unsigned i = 0; i < numOfColoredREs; ++i )
-        {
-            auto it = ZeroFixedLengthMap.find(i);
-            if(it != ZeroFixedLengthMap.end())
-            {
-                MatchResultsBufTempt[i] = it->second;
-            }else{
-                MatchResultsBufTempt[i] = MatchResultsBuf[i];
-            }
-        }
-        MatchesWithZeroFixedLength = MatchResultsBufTempt[0];
-        if(numOfColoredREs > 1)
-        {
-            StreamSet * const MergedMatches = E->CreateStreamSet();
-            E->CreateKernelCall<StreamsMerge>(MatchResultsBufTempt, MergedMatches);
-            MatchesWithZeroFixedLength = MergedMatches;
-        }
-    }
+    }    
 
     StreamSet * Matches = MatchResultsBuf[0];
     if(MatchResultsBuf.size() > 1)
@@ -1026,7 +996,13 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         Matches = MergedMatches;
     }
 
-    // E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", Matches);
+    if(mDisplayCapturedData)
+    {
+        mIllustrator->captureBitstream(E, "Matches", Matches);
+    }
+
+    // E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", Matches)
+    
 
     StreamSet * MatchedLineEnds = Matches;
     if (hasComponent(mExternalComponents, Component::MoveMatchesToEOL)) {
@@ -1046,7 +1022,8 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         Scalar * const maxCount = E->getInputScalar("maxCount");
         E->CreateKernelCall<UntilNkernel>(maxCount, MatchedLineEnds, TruncatedMatches);
         MatchedLineEnds = TruncatedMatches;
-    }
+    }   
+
     
 
     if (mColoring && !mInvertMatches) {        
@@ -1091,9 +1068,9 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         //E->CreateKernelCall<DebugDisplayKernel>("MatchedLineSpans", MatchedLineSpans);
 
         StreamSet * FilteredMatchSpans = E->CreateStreamSet(1, 1);
-        if(!isContainingZeroFixedLength) FilterByMask(E, MatchedLineSpans, Matches, FilteredMatchSpans);
-        else FilterByMask(E, MatchedLineSpans, MatchesWithZeroFixedLength, FilteredMatchSpans);
-        //FilterByMask(E, MatchedLineSpans, Matches, FilteredMatchSpans);
+        // if(!isContainingZeroFixedLength) FilterByMask(E, MatchedLineSpans, Matches, FilteredMatchSpans);
+        // else FilterByMask(E, MatchedLineSpans, MatchesWithZeroFixedLength, FilteredMatchSpans);
+        FilterByMask(E, MatchedLineSpans, Matches, FilteredMatchSpans);
         //E->CreateKernelCall<DebugDisplayKernel>("FilteredMatchSpans", FilteredMatchSpans);
 
         StreamSet * FilteredBasis = E->CreateStreamSet(8, 1);
@@ -1105,15 +1082,15 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
         StreamSet * ColorizedBasis = E->CreateStreamSet(8);
         applyColorization(E, FilteredMatchSpans, FilteredBasis, ColorizedBasis);
-        if(mDisplayCapturedData)
-        {
+        // if(mDisplayCapturedData)
+        // {
             
-            mIllustrator->captureBitstream(E, "Matches", Matches);
-            mIllustrator->captureBitstream(E, "FilteredBasis", FilteredBasis);
-            mIllustrator->captureBitstream(E, "FilteredMatchSpans", FilteredMatchSpans);
-            mIllustrator->captureBitstream(E, "MatchesWithZeroFixedLength", MatchesWithZeroFixedLength);
-            mIllustrator->captureBitstream(E, "ColorizedBasis", ColorizedBasis);
-        }
+        //     mIllustrator->captureBitstream(E, "Matches", Matches);
+        //     mIllustrator->captureBitstream(E, "FilteredBasis", FilteredBasis);
+        //     mIllustrator->captureBitstream(E, "FilteredMatchSpans", FilteredMatchSpans);
+        //     mIllustrator->captureBitstream(E, "MatchesWithZeroFixedLength", MatchesWithZeroFixedLength);
+        //     mIllustrator->captureBitstream(E, "ColorizedBasis", ColorizedBasis);
+        // }
 
         StreamSet * ColorizedBytes  = E->CreateStreamSet(1, 8);
         E->CreateKernelCall<P2SKernel>(ColorizedBasis, ColorizedBytes);
