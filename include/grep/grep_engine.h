@@ -182,6 +182,7 @@ protected:
     re:: RE * mRE;
     std::vector<re::RE*> mColoredREs;
     std::vector<bool> mColoredREsStartAnchor;
+    std::vector<bool>mToBeColored;
     std::set<re::Name *> mExternalNames;
     re::CC * mBreakCC;
     re::RE * mPrefixRE;

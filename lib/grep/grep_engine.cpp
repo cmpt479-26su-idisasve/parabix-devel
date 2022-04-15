@@ -279,6 +279,7 @@ void GrepEngine::generateColoredREs(re::RE * inputRE, bool isUnicodeIndexing){
             }else{
                 re::RE * oriRE = (*inputAlt)[i];
                 mColoredREsStartAnchor.push_back(re::hasStartAnchor(oriRE));
+                mToBeColored.push_back(true);
                 mColoredREs.push_back(re);
 
             }
@@ -287,11 +288,28 @@ void GrepEngine::generateColoredREs(re::RE * inputRE, bool isUnicodeIndexing){
         {
             mColoredREs.push_back(re::makeAlt(res.second.begin(), res.second.end()) );
             mColoredREsStartAnchor.push_back(false);
+            if(res.first==0) mToBeColored.push_back(false);
+            else mToBeColored.push_back(true);
+
         }
     }else{
         mColoredREs.push_back(mRE);
         mColoredREsStartAnchor.push_back(re::hasStartAnchor(inputRE));
+
+        // If RE is fixed length and length == 0, then do not color
+        std::pair<int, int> lengthRange;
+        if(isUnicodeIndexing) lengthRange = getLengthRange(mRE, &cc::Unicode);
+        else lengthRange = getLengthRange(mRE, &cc::UTF8);
+        bool isFixedLength = (lengthRange.first == lengthRange.second);
+        if(isFixedLength && lengthRange.first==0) mToBeColored.push_back(false);
+        else mToBeColored.push_back(true);
     }
+    // If all values in the mToBeColored vector is false, the make mColoring false
+    for(bool coloringStatus : mToBeColored)
+    {
+        if(coloringStatus) return;
+    }
+    mColoring = false;
 }
 
 void GrepEngine::initRE(re::RE * re) {
@@ -364,6 +382,7 @@ void GrepEngine::initRE(re::RE * re) {
     re::gatherNames(mRE, mExternalNames);
 
     generateColoredREs(re, UnicodeIndexing);
+
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
@@ -964,11 +983,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
     prepareExternalStreams(E, SourceStream);
 
     const int numOfColoredREs = mColoredREs.size();
-    std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);
-
-    // Add zero length result to the map
-    //std::unordered_map<int, StreamSet *> ZeroFixedLengthMap;
-    std::vector<bool>ZeroLength(numOfColoredREs, false);
+    std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);    
 
     for(unsigned i = 0; i < numOfColoredREs; ++i)
     {
@@ -987,6 +1002,24 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
         }
     }    
+
+    // Combine Match Results which need to be colored
+    StreamSet * MatchesColoring;
+    if(mColoring){
+        std::vector<StreamSet *>MatchColoringBuf;
+        for(unsigned i =  0; i < numOfColoredREs; i++)
+        {
+            if(mToBeColored[i]) MatchColoringBuf.push_back(MatchResultsBuf[i]);
+        }
+        MatchesColoring = MatchColoringBuf[0];
+        if(MatchColoringBuf.size() > 1)
+        {
+            StreamSet * const MergedMatches = E->CreateStreamSet();
+            E->CreateKernelCall<StreamsMerge>(MatchColoringBuf, MergedMatches);
+            MatchesColoring = MergedMatches;
+        }
+    }
+    
 
     StreamSet * Matches = MatchResultsBuf[0];
     if(MatchResultsBuf.size() > 1)
@@ -1023,8 +1056,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         E->CreateKernelCall<UntilNkernel>(maxCount, MatchedLineEnds, TruncatedMatches);
         MatchedLineEnds = TruncatedMatches;
     }   
-
-    
 
     if (mColoring && !mInvertMatches) {        
 
@@ -1070,7 +1101,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         StreamSet * FilteredMatchSpans = E->CreateStreamSet(1, 1);
         // if(!isContainingZeroFixedLength) FilterByMask(E, MatchedLineSpans, Matches, FilteredMatchSpans);
         // else FilterByMask(E, MatchedLineSpans, MatchesWithZeroFixedLength, FilteredMatchSpans);
-        FilterByMask(E, MatchedLineSpans, Matches, FilteredMatchSpans);
+        FilterByMask(E, MatchedLineSpans, MatchesColoring, FilteredMatchSpans);
         //E->CreateKernelCall<DebugDisplayKernel>("FilteredMatchSpans", FilteredMatchSpans);
 
         StreamSet * FilteredBasis = E->CreateStreamSet(8, 1);
@@ -1082,15 +1113,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
         StreamSet * ColorizedBasis = E->CreateStreamSet(8);
         applyColorization(E, FilteredMatchSpans, FilteredBasis, ColorizedBasis);
-        // if(mDisplayCapturedData)
-        // {
-            
-        //     mIllustrator->captureBitstream(E, "Matches", Matches);
-        //     mIllustrator->captureBitstream(E, "FilteredBasis", FilteredBasis);
-        //     mIllustrator->captureBitstream(E, "FilteredMatchSpans", FilteredMatchSpans);
-        //     mIllustrator->captureBitstream(E, "MatchesWithZeroFixedLength", MatchesWithZeroFixedLength);
-        //     mIllustrator->captureBitstream(E, "ColorizedBasis", ColorizedBasis);
-        // }
 
         StreamSet * ColorizedBytes  = E->CreateStreamSet(1, 8);
         E->CreateKernelCall<P2SKernel>(ColorizedBasis, ColorizedBytes);
