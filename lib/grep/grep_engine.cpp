@@ -545,7 +545,9 @@ void GrepEngine::addExternalStreams(const std::unique_ptr<ProgramBuilder> & P, s
 void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE * re, StreamSet * Source, StreamSet * Results, bool doMatchSpans) {
     auto options = std::make_unique<GrepKernelOptions>(&cc::Unicode);
     auto lengths = getLengthRange(re, &cc::Unicode);
+    bool isFixedLength = (lengths.first == lengths.second);
     const auto UnicodeSets = re::collectCCs(re, cc::Unicode);
+    doMatchSpans = doMatchSpans && isFixedLength && (lengths.first > 0);
     if (UnicodeSets.empty()) {
         // All inputs will be externals.   Do not register a source stream.
         options->setRE(re);
@@ -615,7 +617,6 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
     addExternalStreams(P, options, re);
     P->CreateKernelCall<ICGrepKernel>(std::move(options));
     if ( doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
-        std::cout << "Do Match Spans" << std::endl;
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
     }
     
@@ -972,7 +973,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     StreamSet * SourceStream = getBasis(E, ByteStream);
 
-    mDisplayCapturedData = true;    
+    mDisplayCapturedData = false;    
     if(mDisplayCapturedData)
     {
         mIllustrator->captureByteData(E, "Source", ByteStream);
@@ -1011,7 +1012,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         {
             if(mToBeColored[i]) MatchColoringBuf.push_back(MatchResultsBuf[i]);
         }
-        MatchesColoring = MatchColoringBuf[0];
+        if(MatchColoringBuf.size() > 0) MatchesColoring = MatchColoringBuf[0];
         if(MatchColoringBuf.size() > 1)
         {
             StreamSet * const MergedMatches = E->CreateStreamSet();
