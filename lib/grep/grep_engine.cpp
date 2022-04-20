@@ -253,48 +253,54 @@ bool GrepEngine::matchesToEOLrequired () {
 // Generate a vector of REs based on the length of each alternative regular expressions
 // If the regular expressions is fixed length, then group them together into one regular express
 // Otherwise, divide them into seperate regular expressions
-void GrepEngine::generateColoredREs(re::RE * inputRE, bool isUnicodeIndexing){
+void GrepEngine::generateColoredREs(bool isUnicodeIndexing){
     if(const re::Alt * alt = dyn_cast<re::Alt>(mRE))
     {
-        const re::Alt * inputAlt = dyn_cast<re::Alt>(inputRE);
-        std::unordered_map<int, std::vector<re:: RE *>> reMap;
-        for(int i=0; i< alt->size(); i++)
+        int altSize = alt->size();
+        if(altSize == 0)
         {
-            re::RE * re = (*alt)[i];
-            std::pair<int, int> lengthRange;
-            if(isUnicodeIndexing) lengthRange = getLengthRange(re, &cc::Unicode);
-            else lengthRange = getLengthRange(re, &cc::UTF8);
+            mColoredREs.push_back(mRE);
+            mColoredREsStartAnchor.push_back(false);
+            mToBeColored.push_back(false);
+        }else{
+            std::unordered_map<int, std::vector<re:: RE *>> reMap;
+            for(int i=0; i< alt->size(); i++)
+            {
+                re::RE * re = (*alt)[i];
+                std::pair<int, int> lengthRange;
+                if(isUnicodeIndexing) lengthRange = getLengthRange(re, &cc::Unicode);
+                else lengthRange = getLengthRange(re, &cc::UTF8);
 
-            bool isFixedLength = (lengthRange.first == lengthRange.second);
-            //if(isFixedLength && lengthRange.first==0) continue;
-            if (isFixedLength) {
-                auto it = reMap.find(lengthRange.first);
-                if(it != reMap.end())
-                {
-                    it->second.push_back(re);
+                bool isFixedLength = (lengthRange.first == lengthRange.second);
+                //if(isFixedLength && lengthRange.first==0) continue;
+                if (isFixedLength) {
+                    auto it = reMap.find(lengthRange.first);
+                    if(it != reMap.end())
+                    {
+                        it->second.push_back(re);
+                    }else{
+                        std::vector<re:: RE *> newInsert {re};
+                        reMap.insert({lengthRange.first, newInsert});
+                    }
                 }else{
-                    std::vector<re:: RE *> newInsert {re};
-                    reMap.insert({lengthRange.first, newInsert});
+                    mColoredREsStartAnchor.push_back(re::hasStartAnchor(re));
+                    mToBeColored.push_back(true);
+                    mColoredREs.push_back(re);
+
                 }
-            }else{
-                re::RE * oriRE = (*inputAlt)[i];
-                mColoredREsStartAnchor.push_back(re::hasStartAnchor(oriRE));
-                mToBeColored.push_back(true);
-                mColoredREs.push_back(re);
+            }
+            for(auto res : reMap)
+            {
+                mColoredREs.push_back(re::makeAlt(res.second.begin(), res.second.end()) );
+                mColoredREsStartAnchor.push_back(false);
+                if(res.first==0) mToBeColored.push_back(false);
+                else mToBeColored.push_back(true);
 
             }
         }
-        for(auto res : reMap)
-        {
-            mColoredREs.push_back(re::makeAlt(res.second.begin(), res.second.end()) );
-            mColoredREsStartAnchor.push_back(false);
-            if(res.first==0) mToBeColored.push_back(false);
-            else mToBeColored.push_back(true);
-
-        }
     }else{
         mColoredREs.push_back(mRE);
-        mColoredREsStartAnchor.push_back(re::hasStartAnchor(inputRE));
+        mColoredREsStartAnchor.push_back(re::hasStartAnchor(mRE));
 
         // If RE is fixed length and length == 0, then do not color
         std::pair<int, int> lengthRange;
@@ -338,7 +344,6 @@ void GrepEngine::initRE(re::RE * re) {
     mRE = re::exclude_CC(mRE, mBreakCC);
     if (!mColoring) mRE = remove_nullable_ends(mRE);
 
-    mRE = resolveAnchors(mRE, anchorRE);
     mRE = regular_expression_passes(mRE);
     mRE = name_variable_length_CCs(mRE);
     if (hasGraphemeClusterBoundary(mRE)) {
@@ -381,7 +386,11 @@ void GrepEngine::initRE(re::RE * re) {
     }
     re::gatherNames(mRE, mExternalNames);
 
-    generateColoredREs(re, UnicodeIndexing);
+    generateColoredREs(UnicodeIndexing);
+    mRE = resolveAnchors(mRE, anchorRE);
+    for(int i=0; i<mColoredREs.size(); i++)
+        mColoredREs[i] = resolveAnchors(mColoredREs[i], anchorRE);
+
 
 
     // For simple regular expressions with a small number of characters, we
