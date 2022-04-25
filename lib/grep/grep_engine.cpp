@@ -243,7 +243,7 @@ bool GrepEngine::matchesToEOLrequired () {
     // may be on the CR of a CRLF.
     if (mGrepRecordBreak == GrepRecordBreakKind::Unicode) return true;
     // If all REs are anchored to EOL already, then we can avoid moving them.
-    if (hasEndAnchor(mRE) && !mColoring) return false;
+    if (hasEndAnchor(mRE)) return false;
     //
     // Not all REs are anchored.   We can avoid moving matches, if we are
     // in MatchOnly mode (or CountOnly with MaxCount = 1) and no invert match inversion.
@@ -367,6 +367,12 @@ void GrepEngine::initRE(re::RE * re) {
     if ((mEngineKind == EngineKind::EmitMatches) && mColoring && !mInvertMatches) {
         setComponent(mExternalComponents, Component::MatchSpans);
     }
+
+    generateColoredREs(UnicodeIndexing);
+    mRE = resolveAnchors(mRE, anchorRE);
+    for(int i=0; i<mColoredREs.size(); i++)
+        mColoredREs[i] = resolveAnchors(mColoredREs[i], anchorRE);
+
     if (matchesToEOLrequired()) {
         // Move matches to EOL.   This may be achieved internally by modifying
         // the regular expression or externally.   The internal approach is more
@@ -385,13 +391,6 @@ void GrepEngine::initRE(re::RE * re) {
         }
     }
     re::gatherNames(mRE, mExternalNames);
-
-    generateColoredREs(UnicodeIndexing);
-    mRE = resolveAnchors(mRE, anchorRE);
-    for(int i=0; i<mColoredREs.size(); i++)
-        mColoredREs[i] = resolveAnchors(mColoredREs[i], anchorRE);
-
-
 
     // For simple regular expressions with a small number of characters, we
     // can bypass transposition and use the Direct CC compiler.
@@ -1043,9 +1042,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
     {
         mIllustrator->captureBitstream(E, "Matches", Matches);
     }
-
-    // E->CreateKernelCall<DebugDisplayKernel>("MergedMatches", Matches)
-    
 
     StreamSet * MatchedLineEnds = Matches;
     if (hasComponent(mExternalComponents, Component::MoveMatchesToEOL)) {
