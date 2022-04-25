@@ -240,16 +240,7 @@ RE * RE_Local::getUniquePrefix(RE *re, int &length)
         for(int i=0; i < seq->size()-1; ++i)
         {
             RE * item = (*seq)[i];
-            if(const Alt * alt = dyn_cast<Alt>(item))
-            {
-                // Check if the beginning of the RE is a START
-                if(i==0){
-                if(const Start *start = dyn_cast<Start>(*alt->begin()))
-                {
-                    endPoint = 0;
-                }
-                }else break;
-            }else if (CC * cc = dyn_cast<CC>(item))
+            if (CC * cc = dyn_cast<CC>(item))
             {
                 CC_seq.push_back(cc);
                 bool search = CC_Sequence_Search(CC_seq, re_except_first);
