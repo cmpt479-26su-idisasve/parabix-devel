@@ -3,17 +3,17 @@
 #include <array>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
+#include <pablo/pablo_kernel.h>
 #include <pablo/pe_var.h>
 #include <pablo/pe_zeroes.h>
 #include <pablo/pe_ones.h>
 #include <pablo/printer_pablos.h>
 #include <re/alphabet/alphabet.h>
+#include <re/cc/cc_compiler_target.h>
 #include <re/cc/cc_compiler.h>
 #include <re/adt/re_name.h>
 #include <re/adt/re_cc.h>
 #include <unicode/core/unicode_set.h>
-#include <unicode/utf/utf8_encoder.h>
-#include <unicode/utf/utf16_encoder.h>
 
 using namespace cc;
 using namespace re;
@@ -23,33 +23,6 @@ using namespace boost::container;
 
 namespace UCD {
 
-/** ------------------------------------------------------------------------------------------------------------- *
- * @brief UTF_16 UTF_8
- ** ------------------------------------------------------------------------------------------------------------- */
-inline codepoint_t encodingByte(const codepoint_t cp, const unsigned n, bool UTF_16) {
-    return UTF_16 ? UTF16_Encoder::encodingByte(cp, n) : UTF8_Encoder::encodingByte(cp, n);
-}
-
-inline unsigned length(const codepoint_t cp, bool UTF_16) {
-    return UTF_16 ? UTF16_Encoder::length(cp) : UTF8_Encoder::length(cp);
-}
-
-inline codepoint_t maxCodePoint(const unsigned length, bool UTF_16) {
-    return UTF_16 ?  UTF16_Encoder::maxCodePoint(length) : UTF8_Encoder::maxCodePoint(length);
-}
-
-inline bool isLowCodePointAfterByte(const codepoint_t cp, const unsigned n, bool UTF_16) {
-    return UTF_16 ? UTF16_Encoder::isLowCodePointAfterByte(cp, n) : UTF8_Encoder::isLowCodePointAfterByte(cp, n);
-}
-inline bool isHighCodePointAfterByte(const codepoint_t cp, const unsigned n, bool UTF_16) {
-    return UTF_16 ? UTF16_Encoder::isHighCodePointAfterByte(cp, n) : UTF8_Encoder::isHighCodePointAfterByte(cp, n);
-}
-inline codepoint_t minCodePointWithCommonBytes(const re::codepoint_t cp, const unsigned n, bool UTF_16) {
-    return UTF_16 ? UTF16_Encoder::minCodePointWithCommonBytes(cp, n) : UTF8_Encoder::minCodePointWithCommonBytes(cp, n);
-}
-inline codepoint_t maxCodePointWithCommonBytes(const re::codepoint_t cp, const unsigned n, bool UTF_16) {
-    return UTF_16 ? UTF16_Encoder::maxCodePointWithCommonBytes(cp, n) : UTF8_Encoder::maxCodePointWithCommonBytes(cp, n);
-}
 
 const UCDCompiler::RangeList UCDCompiler::defaultIfHierachy = {
     // Non-ASCII
@@ -148,8 +121,15 @@ void UCDCompiler::generateRange(const RangeList & ifRanges, PabloBuilder & entry
     // code sinking pass will move appropriately into an inner if block.
     CC *  suffix = makeByte(0x80, 0xBF);
     assert (!suffix->empty());
-    mSuffixVar = mCodeUnitCompiler.compileCC(suffix, entry);
-    generateRange(ifRanges, 0, UNICODE_MAX, entry);
+    if (mMask) {
+        auto nested = entry.createScope();
+        entry.createIf(mMask, nested);
+        mSuffixVar = mCodeUnitCompiler->compileCC(suffix, nested);
+        generateRange(ifRanges, 0, UNICODE_MAX, nested);
+    } else {
+        mSuffixVar = mCodeUnitCompiler->compileCC(suffix, entry);
+        generateRange(ifRanges, 0, UNICODE_MAX, entry);
+    }
 }
 
 /** ------------------------------------------------------------------------------------------------------------- *
@@ -237,55 +217,65 @@ void UCDCompiler::generateSubRanges(const codepoint_t lo, const codepoint_t hi, 
  *
  *
  * Generate remaining code to match UTF-8 code sequences within the codepoint set cpset, assuming that the code
- * matching the sequences up to byte number byte_no have been generated.
+ * matching the sequences up to byte number code_unit have been generated.
  ** ------------------------------------------------------------------------------------------------------------- */
-PabloAST * UCDCompiler::sequenceGenerator(const RangeList && ranges, const unsigned byte_no, PabloBuilder & builder, PabloAST * target, PabloAST * prefix) {
-    bool isUTF_16 = false;
+PabloAST * UCDCompiler::sequenceGenerator(const RangeList && ranges, const unsigned code_unit, PabloBuilder & builder, PabloAST * target, PabloAST * prefix) {
 
     if (LLVM_LIKELY(ranges.size() > 0)) {
 
         codepoint_t lo, hi;
         std::tie(lo, hi) = ranges[0];
 
-        const auto min = length(lo_codepoint(ranges.front()), isUTF_16);
-        const auto max = length(hi_codepoint(ranges.back()), isUTF_16);
+        const auto min = mEncoder.encoded_length(lo_codepoint(ranges.front()));
+        const auto max = mEncoder.encoded_length(hi_codepoint(ranges.back()));
 
         if (min != max) {
-            const auto mid = maxCodePoint(min, isUTF_16);
-            target = sequenceGenerator(std::move(rangeIntersect(ranges, lo, mid)), byte_no, builder, target, prefix);
-            target = sequenceGenerator(std::move(rangeIntersect(ranges, mid + 1, hi)), byte_no, builder, target, prefix);
-        } else if (min == byte_no) {
-            // We have a single byte remaining to match for all code points in this CC.
-            // Use the byte class compiler to generate matches for these codepoints.
-            PabloAST * var = mCodeUnitCompiler.compileCC(makeCC(byteDefinitions(ranges, byte_no, isUTF_16), &Byte), builder);
-            target = mCodeUnitCompiler.createUCDSequence(byte_no, target, var, makePrefix(lo, byte_no, builder, prefix), builder);
+            const auto mid = mEncoder.max_codepoint_of_length(min);
+            target = sequenceGenerator(std::move(rangeIntersect(ranges, lo, mid)), code_unit, builder, target, prefix);
+            target = sequenceGenerator(std::move(rangeIntersect(ranges, mid + 1, hi)), code_unit, builder, target, prefix);
+        } else if (min == code_unit) {
+            // We have a single code unit remaining to match for all code points in this CC.
+            // Use the character class compiler to generate matches for these codepoints.
+            PabloAST * var = mCodeUnitCompiler->compileCC(makeCC(byteDefinitions(ranges, code_unit), &Byte), builder);
+            PabloAST * prior = makePrefix(lo, code_unit, builder, prefix);
+            if (code_unit <= 1) {
+                target = builder.createOr(target, var);
+            } else {
+                target = builder.createOrAnd(target, var, builder.createAdvance(prior, 1));
+            }
         } else {
             for (auto rg : ranges) {
                 codepoint_t lo, hi;
                 std::tie(lo, hi) = rg;
-                const auto lo_byte = encodingByte(lo, byte_no, isUTF_16);
-                const auto hi_byte = encodingByte(hi, byte_no, isUTF_16);
-                if (lo_byte != hi_byte) {
-                    unsigned num = isUTF_16 ? 10 : 6;
-                    if (!isLowCodePointAfterByte(lo, byte_no, isUTF_16)) {
-                        const codepoint_t mid = lo | ((1 << (num * (min - byte_no))) - 1);
-                        target = sequenceGenerator(lo, mid, byte_no, builder, target, prefix);
-                        target = sequenceGenerator(mid + 1, hi, byte_no, builder, target, prefix);
-                    } else if (!isHighCodePointAfterByte(hi, byte_no, isUTF_16)) {
-                        const codepoint_t mid = hi & ~((1 << (num * (min - byte_no))) - 1);
-                        target = sequenceGenerator(lo, mid - 1, byte_no, builder, target, prefix);
-                        target = sequenceGenerator(mid, hi, byte_no, builder, target, prefix);
+                const auto lo_unit = mEncoder.nthCodeUnit(lo, code_unit);
+                const auto hi_unit = mEncoder.nthCodeUnit(hi, code_unit);
+                if (lo_unit != hi_unit) {
+                    if (!mEncoder.isLowCodePointAfterNthCodeUnit(lo, code_unit)) {
+                        codepoint_t mid = mEncoder.maxCodePointWithCommonCodeUnits(lo, code_unit);
+                        target = sequenceGenerator(lo, mid, code_unit, builder, target, prefix);
+                        target = sequenceGenerator(mid + 1, hi, code_unit, builder, target, prefix);
+                    } else if (!mEncoder.isHighCodePointAfterNthCodeUnit(hi, code_unit)) {
+                        codepoint_t mid = mEncoder.minCodePointWithCommonCodeUnits(hi, code_unit);
+                        target = sequenceGenerator(lo, mid - 1, code_unit, builder, target, prefix);
+                        target = sequenceGenerator(mid, hi, code_unit, builder, target, prefix);
                     } else { // we have a prefix group of type (a)
-                        PabloAST * var = mCodeUnitCompiler.compileCC(makeByte(lo_byte, hi_byte), builder);
-                        target = mCodeUnitCompiler.createUCDSequence(byte_no, length(lo, isUTF_16), target, var, prefix, mSuffixVar, builder);
+                        PabloAST * var = mCodeUnitCompiler->compileCC(makeByte(lo_unit, hi_unit), builder);
+                        unsigned len = mEncoder.encoded_length(lo);
+                        if (code_unit > 1) {
+                            var = builder.createAnd(builder.createAdvance(prefix, 1), var);
+                        }
+                        for (unsigned i = code_unit; i != len - 1; ++i) {
+                            var = builder.createAnd(mSuffixVar, builder.createAdvance(var, 1));
+                        }
+                        target = builder.createOrAnd(target, mSuffixVar, builder.createAdvance(var, 1));
                     }
-                } else { // lbyte == hbyte
-                    PabloAST * var = mCodeUnitCompiler.compileCC(makeByte(lo_byte, hi_byte), builder);
-                    if (byte_no > 1) {
+                } else { // lo_unit == hi_unit
+                    PabloAST * var = mCodeUnitCompiler->compileCC(makeByte(lo_unit, hi_unit), builder);
+                    if (code_unit > 1) {
                         var = builder.createAnd(builder.createAdvance(prefix ? prefix : var, 1), var);
                     }
-                    if (byte_no < length(lo, isUTF_16)) {
-                        target = sequenceGenerator(lo, hi, byte_no + 1, builder, target, var);
+                    if (code_unit < mEncoder.encoded_length(lo)) {
+                        target = sequenceGenerator(lo, hi, code_unit + 1, builder, target, var);
                     }
                 }
             }
@@ -297,8 +287,8 @@ PabloAST * UCDCompiler::sequenceGenerator(const RangeList && ranges, const unsig
 /** ------------------------------------------------------------------------------------------------------------- *
  * @brief sequenceGenerator
  ** ------------------------------------------------------------------------------------------------------------- */
-inline PabloAST * UCDCompiler::sequenceGenerator(const codepoint_t lo, const codepoint_t hi, const unsigned byte_no, PabloBuilder & builder, PabloAST * target, PabloAST * prefix) {
-    return sequenceGenerator({{ lo, hi }}, byte_no, builder, target, prefix);
+inline PabloAST * UCDCompiler::sequenceGenerator(const codepoint_t lo, const codepoint_t hi, const unsigned code_unit, PabloBuilder & builder, PabloAST * target, PabloAST * prefix) {
+    return sequenceGenerator({{ lo, hi }}, code_unit, builder, target, prefix);
 }
 
 /** ------------------------------------------------------------------------------------------------------------- *
@@ -311,37 +301,30 @@ inline PabloAST * UCDCompiler::ifTestCompiler(const codepoint_t lo, const codepo
 /** ------------------------------------------------------------------------------------------------------------- *
  * @brief ifTestCompiler
  ** ------------------------------------------------------------------------------------------------------------- */
-PabloAST * UCDCompiler::ifTestCompiler(const codepoint_t lo, const codepoint_t hi, const unsigned byte_no, PabloBuilder & builder, PabloAST * target) {
+PabloAST * UCDCompiler::ifTestCompiler(const codepoint_t lo, const codepoint_t hi, const unsigned code_unit, PabloBuilder & builder, PabloAST * target) {
 
-	bool isUTF_16 = false;
-    codepoint_t lo_byte = encodingByte(lo, byte_no, isUTF_16);
-    codepoint_t hi_byte = encodingByte(hi, byte_no, isUTF_16);
-    const bool at_lo_boundary = (lo == 0 || encodingByte(lo - 1, byte_no, isUTF_16) != lo_byte);
-    const bool at_hi_boundary = (hi == 0x10FFFF || encodingByte(hi + 1, byte_no, isUTF_16) != hi_byte);
+    codepoint_t lo_unit = mEncoder.nthCodeUnit(lo, code_unit);
+    codepoint_t hi_unit = mEncoder.nthCodeUnit(hi, code_unit);
+    const bool at_lo_boundary = (lo == 0 || mEncoder.nthCodeUnit(lo - 1, code_unit) != lo_unit);
+    const bool at_hi_boundary = (hi == 0x10FFFF || mEncoder.nthCodeUnit(hi + 1, code_unit) != hi_unit);
 
     if (at_lo_boundary && at_hi_boundary) {
-        if (!isUTF_16) {
-            if (lo_byte != hi_byte) {
-            if (lo == 0x80) lo_byte = 0xC0;
-            if (hi == 0x10FFFF) hi_byte = 0xFF;
-            }
-        }
-        PabloAST * cc = mCodeUnitCompiler.compileCC(makeByte(lo_byte, hi_byte), builder);
+        PabloAST * cc = mCodeUnitCompiler->compileCC(makeByte(lo_unit, hi_unit), builder);
         target = builder.createAnd(cc, target);
-    } else if (lo_byte == hi_byte) {
-        PabloAST * cc = mCodeUnitCompiler.compileCC(makeByte(lo_byte, hi_byte), builder);
+    } else if (lo_unit == hi_unit) {
+        PabloAST * cc = mCodeUnitCompiler->compileCC(makeByte(lo_unit, hi_unit), builder);
         target = builder.createAnd(cc, target);
         target = builder.createAdvance(target, 1);
-        target = ifTestCompiler(lo, hi, byte_no + 1, builder, target);
+        target = ifTestCompiler(lo, hi, code_unit + 1, builder, target);
     } else if (!at_hi_boundary) {
-        const auto mid = minCodePointWithCommonBytes(hi, byte_no, isUTF_16);
-        PabloAST * e1 = ifTestCompiler(lo, mid - 1, byte_no, builder, target);
-        PabloAST * e2 = ifTestCompiler(mid, hi, byte_no, builder, target);
+        const auto mid = mEncoder.minCodePointWithCommonCodeUnits(hi, code_unit);
+        PabloAST * e1 = ifTestCompiler(lo, mid - 1, code_unit, builder, target);
+        PabloAST * e2 = ifTestCompiler(mid, hi, code_unit, builder, target);
         target = builder.createOr(e1, e2);
     } else {
-        const auto mid = maxCodePointWithCommonBytes(lo, byte_no, isUTF_16);
-        PabloAST * e1 = ifTestCompiler(lo, mid, byte_no, builder, target);
-        PabloAST * e2 = ifTestCompiler(mid + 1, hi, byte_no, builder, target);
+        const auto mid = mEncoder.maxCodePointWithCommonCodeUnits(lo, code_unit);
+        PabloAST * e1 = ifTestCompiler(lo, mid, code_unit, builder, target);
+        PabloAST * e2 = ifTestCompiler(mid + 1, hi, code_unit, builder, target);
         target = builder.createOr(e1, e2);
     }
     return target;
@@ -352,15 +335,14 @@ PabloAST * UCDCompiler::ifTestCompiler(const codepoint_t lo, const codepoint_t h
  * @param ifRangeList
  *
  *
- * Ensure the sequence of preceding bytes is defined, up to, but not including the given byte_no
+ * Ensure the sequence of preceding bytes is defined, up to, but not including the given code_unit
  ** ------------------------------------------------------------------------------------------------------------- */
-PabloAST * UCDCompiler::makePrefix(const codepoint_t cp, const unsigned byte_no, PabloBuilder & builder, PabloAST * prefix) {
-    assert (byte_no >= 1 && byte_no <= 4);
-    assert (byte_no == 1 || prefix != nullptr);
-    bool isUTF_16 = false;
-    for (unsigned i = 1; i != byte_no; ++i) {
-        const CC * const cc = makeByte(encodingByte(cp, i, isUTF_16));
-        PabloAST * var = mCodeUnitCompiler.compileCC(cc, builder);
+PabloAST * UCDCompiler::makePrefix(const codepoint_t cp, const unsigned code_unit, PabloBuilder & builder, PabloAST * prefix) {
+    assert (code_unit >= 1 && code_unit <= 4);
+    assert (code_unit == 1 || prefix != nullptr);
+    for (unsigned i = 1; i != code_unit; ++i) {
+        const CC * const cc = makeByte(mEncoder.nthCodeUnit(cp, i));
+        PabloAST * var = mCodeUnitCompiler->compileCC(cc, builder);
         if (i > 1) {
             var = builder.createAnd(var, builder.createAdvance(prefix, 1));
         }
@@ -374,13 +356,13 @@ PabloAST * UCDCompiler::makePrefix(const codepoint_t cp, const unsigned byte_no,
  * @param ifRangeList
  *
  *
- * Ensure the sequence of preceding bytes is defined, up to, but not including the given byte_no
+ * Ensure the sequence of preceding bytes is defined, up to, but not including the given code_unit
  ** ------------------------------------------------------------------------------------------------------------- */
-UCDCompiler::RangeList UCDCompiler::byteDefinitions(const RangeList & list, const unsigned byte_no, bool isUTF_16) {
+UCDCompiler::RangeList UCDCompiler::byteDefinitions(const RangeList & list, const unsigned code_unit) {
     RangeList result;
     result.reserve(list.size());
     for (const auto & i : list) {
-        result.emplace_back(encodingByte(lo_codepoint(i), byte_no, isUTF_16), encodingByte(hi_codepoint(i), byte_no, isUTF_16));
+        result.emplace_back(mEncoder.nthCodeUnit(lo_codepoint(i), code_unit), mEncoder.nthCodeUnit(hi_codepoint(i), code_unit));
     }
     return result;
 }
@@ -481,10 +463,24 @@ void UCDCompiler::compile(IfHierarchy h) {
 /** ------------------------------------------------------------------------------------------------------------- *
  * @brief constructor
  ** ------------------------------------------------------------------------------------------------------------- */
-UCDCompiler::UCDCompiler(cc::CC_Compiler & ccCompiler, PabloBuilder & pb)
-: mCodeUnitCompiler(ccCompiler)
-, mPb(pb)
-, mSuffixVar(nullptr) {
- }
+UCDCompiler::UCDCompiler(Var * basis_var, pablo::PabloBuilder & pb, unsigned lookAhead, PabloAST * mask)
+: mPb(pb), mLookAhead(lookAhead), mMask(mask), mSuffixVar(nullptr) {
+    llvm::ArrayType * ty = cast<ArrayType>(basis_var->getType());
+    unsigned streamCount = ty->getArrayNumElements();
+    unsigned streamWidth = ty->getIntegerBitWidth();
+    if (streamCount == 1) {
+        mEncoder.setCodeUnitBits(streamWidth);
+        mCodeUnitCompiler =
+        std::make_unique<cc::Direct_CC_Compiler>(pb.getPabloBlock(), pb.createExtract(basis_var, pb.getInteger(0)));
+    } else {
+        mEncoder.setCodeUnitBits(streamCount);
+        std::vector<PabloAST *> basis_set(streamCount);
+        for (unsigned i = 0; i < streamCount; i++) {
+            basis_set[i] = pb.createExtract(basis_var, pb.getInteger(i));
+        }
+        mCodeUnitCompiler =
+        std::make_unique<cc::Parabix_CC_Compiler_Builder>(pb.getPabloBlock(), basis_set);
+    }
+}
 
 }

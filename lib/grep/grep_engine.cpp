@@ -46,14 +46,14 @@
 #include <re/adt/re_utility.h>
 #include <re/adt/printer_re.h>
 #include <re/alphabet/alphabet.h>
+#include <re/analysis/re_analysis.h>
+#include <re/analysis/re_local.h>
+#include <re/analysis/re_name_gather.h>
+#include <re/analysis/collect_ccs.h>
 #include <re/cc/cc_kernel.h>
 #include <re/cc/multiplex_CCs.h>
 #include <re/transforms/exclude_CC.h>
 #include <re/transforms/to_utf8.h>
-#include <re/analysis/re_analysis.h>
-#include <re/analysis/re_name_gather.h>
-#include <re/analysis/re_local.h>
-#include <re/analysis/collect_ccs.h>
 #include <re/transforms/replaceCC.h>
 #include <re/transforms/re_multiplex.h>
 #include <re/transforms/name_intro.h>
@@ -415,13 +415,7 @@ void GrepEngine::initRE(re::RE * re) {
 StreamSet * GrepEngine::getBasis(const std::unique_ptr<ProgramBuilder> & P, StreamSet * ByteStream) {
     if (hasComponent(mExternalComponents, Component::S2P)) {
         StreamSet * BasisBits = P->CreateStreamSet(ENCODING_BITS, 1);
-        if (PabloTransposition) {
-            P->CreateKernelCall<S2P_PabloKernel>(ByteStream, BasisBits);
-        } else if (SplitTransposition) {
-            Staged_S2P(P, ByteStream, BasisBits);
-        } else {
-            P->CreateKernelCall<S2PKernel>(ByteStream, BasisBits);
-        }
+        Selected_S2P(P, ByteStream, BasisBits);
         return BasisBits;
     }
     else return ByteStream;
@@ -580,7 +574,6 @@ void GrepEngine::UnicodeIndexedGrep(const std::unique_ptr<ProgramBuilder> & P, r
     StreamSet * u8initial = P->CreateStreamSet(1, 1);
     P->CreateKernelCall<LineStartsKernel>(mU8index, u8initial);
     if (doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
-        
         StreamSet * MatchSpans = P->CreateStreamSet(1, 1);
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, MatchSpans);
         StreamSet * ExpandedSpans = P->CreateStreamSet(1, 1);
@@ -627,7 +620,6 @@ void GrepEngine::U8indexedGrep(const std::unique_ptr<ProgramBuilder> & P, re::RE
     if ( doMatchSpans && hasComponent(mExternalComponents, Component::MatchSpans)) {
         P->CreateKernelCall<FixedMatchSpansKernel>(lengths.first, MatchResults, Results);
     }
-    
 }
 
 StreamSet * GrepEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & P, StreamSet * InputStream) {
@@ -809,12 +801,12 @@ kernel::StreamSet * EmitMatchesEngine::startAnchorColorization(const std::unique
     kernel::StreamSet * LookAheadC = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<LookAheadKernel>(1, filterByMaskResultC, LookAheadC);
     kernel::StreamSet * MatchStreamP0 = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);      
+    E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);
     kernel::StreamSet * MatchStreamE0 = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0); 
+    E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0);
 
     kernel::StreamSet * MatchStreamE1 = E->CreateStreamSet(1, 1);
-    SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1);           
+    SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1)
     kernel::StreamSet * MatchStreamP1 = E->CreateStreamSet(1, 1);
     SpreadByMask( E, MergedMatchesMaskF, MatchStreamP0 ,MatchStreamP1);
 
@@ -848,7 +840,7 @@ kernel::StreamSet * EmitMatchesEngine::zeroFixedLengthColorization(const std::un
     else U8indexedGrep(E, re, SourceStream, MatchResult);
     // Make the result to all-zero 
     kernel::StreamSet *const FixedLengthZeroResult = E->CreateStreamSet(1,1);
-    E->CreateKernelCall<AndNotKernel>( MatchResult, MatchResult ,FixedLengthZeroResult);  
+    E->CreateKernelCall<AndNotKernel>( MatchResult, MatchResult ,FixedLengthZeroResult)
     if(mDisplayCapturedData)
     {
         mIllustrator->captureBitstream(E, "MatchResult", MatchResult);
@@ -863,7 +855,6 @@ kernel::StreamSet * EmitMatchesEngine::uniquePrefixColorization(const std::uniqu
     int lengthOfUniquePrefix = 0;
     re::RE * reUniquePrefix = re::RE_Local::getUniquePrefix(re, lengthOfUniquePrefix);
     if(!reUniquePrefix) return nullptr;
-    
     kernel::StreamSet *const matchesToPrefix = E->CreateStreamSet(1,1);
     kernel::StreamSet *const matchFollowing = E->CreateStreamSet(1,1);
     if(isUnicodeIndexing)
@@ -884,25 +875,23 @@ kernel::StreamSet * EmitMatchesEngine::uniquePrefixColorization(const std::uniqu
     kernel::StreamSet * LookAheadC = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<LookAheadKernel>(1, filterByMaskResultC, LookAheadC);
     kernel::StreamSet * MatchStreamP0 = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);      
+    E->CreateKernelCall<AndNotKernel>( LookAheadC, filterByMaskResultC ,MatchStreamP0);
     kernel::StreamSet * MatchStreamE0 = E->CreateStreamSet(1, 1);
-    E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0); 
+    E->CreateKernelCall<AndNotKernel>( filterByMaskResultC, LookAheadC ,MatchStreamE0);
 
     kernel::StreamSet * MatchStreamE1 = E->CreateStreamSet(1, 1);
-    SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1);           
+    SpreadByMask( E, MergedMatchesMaskF, MatchStreamE0 ,MatchStreamE1)
     kernel::StreamSet * MatchStreamP1 = E->CreateStreamSet(1, 1);
     SpreadByMask( E, MergedMatchesMaskF, MatchStreamP0 ,MatchStreamP1);
 
     // Look ahead E1 so the following character will be removed
     kernel::StreamSet * LookAheadE1 = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<LookAheadKernel>(1, MatchStreamE1, LookAheadE1);
-    
     kernel::StreamSet * LookAheadP1 = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<LookAheadKernel>(lengthOfUniquePrefix-1, MatchStreamP1, LookAheadP1);
 
     kernel::StreamSet *const MatchOverall = E->CreateStreamSet(1, 1);
     E->CreateKernelCall<U8Spans>(LookAheadP1, LookAheadE1, MatchOverall);
-    
 
     if(mDisplayCapturedData)
     {
@@ -931,7 +920,7 @@ kernel::StreamSet * EmitMatchesEngine::generateColorization(const std::unique_pt
     if(!mColoring ||( isFixedLength && reLengthRange.first >0 ))  return nullptr;
 
     // Handle regular expression with start anchor situation
-    // For example: "^<\p{Letter}*" 
+    // For example: "^<\p{Letter}*"
     if( mColoredREsStartAnchor[index] ) return startAnchorColorization(E,re,SourceStream, isUnicodeIndexing);
 
     // Handle regular expression with unique prefix situation
@@ -981,7 +970,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
 
     StreamSet * SourceStream = getBasis(E, ByteStream);
 
-    mDisplayCapturedData = false;    
+    mDisplayCapturedData = false;
     if(mDisplayCapturedData)
     {
         mIllustrator->captureByteData(E, "Source", ByteStream);
@@ -992,7 +981,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
     prepareExternalStreams(E, SourceStream);
 
     const int numOfColoredREs = mColoredREs.size();
-    std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);    
+    std::vector<StreamSet *>MatchResultsBuf(numOfColoredREs);
 
     for(unsigned i = 0; i < numOfColoredREs; ++i)
     {
@@ -1010,7 +999,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
             }
 
         }
-    }    
+    }
 
     // Combine Match Results which need to be colored
     StreamSet * MatchesColoring;
@@ -1028,7 +1017,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
             MatchesColoring = MergedMatches;
         }
     }
-    
 
     StreamSet * Matches = MatchResultsBuf[0];
     if(MatchResultsBuf.size() > 1)
@@ -1049,7 +1037,6 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         E->CreateKernelCall<MatchedLinesKernel>(Matches, mLineBreakStream, MovedMatches);
         MatchedLineEnds = MovedMatches;
     }
-    
     if (mInvertMatches) {
         StreamSet * const InvertedMatches = E->CreateStreamSet();
         E->CreateKernelCall<InvertMatchesKernel>(MatchedLineEnds, mLineBreakStream, InvertedMatches);
@@ -1061,9 +1048,9 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         Scalar * const maxCount = E->getInputScalar("maxCount");
         E->CreateKernelCall<UntilNkernel>(maxCount, MatchedLineEnds, TruncatedMatches);
         MatchedLineEnds = TruncatedMatches;
-    }   
+    }
 
-    if (mColoring && !mInvertMatches) {        
+    if (mColoring && !mInvertMatches) {
 
         StreamSet * MatchesByLine = E->CreateStreamSet(1, 1);
         FilterByMask(E, mLineBreakStream, MatchedLineEnds, MatchesByLine);
@@ -1111,7 +1098,7 @@ void EmitMatchesEngine::grepPipeline(const std::unique_ptr<ProgramBuilder> & E, 
         //E->CreateKernelCall<DebugDisplayKernel>("FilteredMatchSpans", FilteredMatchSpans);
 
         StreamSet * FilteredBasis = E->CreateStreamSet(8, 1);
-        if (SplitTransposition) {
+        if (codegen::SplitTransposition) {
             Staged_S2P(E, Filtered, FilteredBasis);
         } else {
             E->CreateKernelCall<S2PKernel>(Filtered, FilteredBasis);
