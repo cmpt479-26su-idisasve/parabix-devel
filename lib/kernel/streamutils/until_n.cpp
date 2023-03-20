@@ -63,7 +63,7 @@ void UntilNkernel::generateMultiBlockLogic(BuilderRef b, llvm::Value * const num
         BasicBlock * const memZeroSegment = b->CreateBasicBlock("memZeroSegment");
         b->CreateCondBr(b->CreateICmpULT(observedSoFar, N), strideLoop, memZeroSegment);
         b->SetInsertPoint(memZeroSegment);
-        Value * outputPtr = b->getOutputStreamBlockPtr("bits", ZERO);
+        Value * outputPtr = b->getOutputStreamBlockPtr("uptoN", ZERO, ZERO);
         outputPtr = b->CreatePointerCast(outputPtr, b->getInt8PtrTy());
         Value * bytesToZero = b->CreateMul(numOfBlocks, BLOCK_BYTES);
         b->CreateMemZero(outputPtr, bytesToZero, /* alignment = */ b->getBitBlockWidth()/8);
@@ -79,7 +79,6 @@ void UntilNkernel::generateMultiBlockLogic(BuilderRef b, llvm::Value * const num
     BasicBlock * const iteratorLoop = b->CreateBasicBlock("iteratorLoop");
     BasicBlock * const checkForMatches = b->CreateBasicBlock("checkForMatches");
     b->CreateBr(iteratorLoop);
-
 
     // Construct the outer iterator mask indicating whether any markers are in the stream.
     b->SetInsertPoint(iteratorLoop);
@@ -168,7 +167,7 @@ void UntilNkernel::generateMultiBlockLogic(BuilderRef b, llvm::Value * const num
     Value * const maskedInputValue = b->CreateAnd(inputValue2, mask, "untilNmasked");
     b->storeOutputStreamBlock("uptoN", ZERO, blockIndex2, maskedInputValue);
     Value * const priorProducedItemCount = b->getProducedItemCount("uptoN");
-    const auto log2BlockWidth = std::log2<unsigned>(b->getBitBlockWidth());
+    const auto log2BlockWidth = std::log2(b->getBitBlockWidth());
     Value * positionOfNthItem = nullptr;
     if (mMode == UntilNkernel::Mode::TerminateAtN) {
         positionOfNthItem = b->CreateShl(blockIndex2, log2BlockWidth);
@@ -183,9 +182,9 @@ void UntilNkernel::generateMultiBlockLogic(BuilderRef b, llvm::Value * const num
     } else {
         Value * nextBlk = b->CreateAdd(blockIndex2, ONE);
         BasicBlock * const memZeroRemaining = b->CreateBasicBlock("memZeroRemaining");
-        b->CreateCondBr(b->CreateICmpULT(nextBlk, numOfBlocks), segmentDone, memZeroRemaining);
+        b->CreateCondBr(b->CreateICmpULT(nextBlk, numOfBlocks), memZeroRemaining, segmentDone);
         b->SetInsertPoint(memZeroRemaining);
-        Value * outputPtr = b->getOutputStreamBlockPtr("bits", ZERO, nextBlk);
+        Value * outputPtr = b->getOutputStreamBlockPtr("uptoN", ZERO, nextBlk);
         outputPtr = b->CreatePointerCast(outputPtr, b->getInt8PtrTy());
         Value * bytesToZero = b->CreateMul(b->CreateSub(numOfBlocks, nextBlk), BLOCK_BYTES);
         b->CreateMemZero(outputPtr, bytesToZero, /* alignment = */ b->getBitBlockWidth()/8);
