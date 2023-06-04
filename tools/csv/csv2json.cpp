@@ -117,7 +117,7 @@ StreamSet * CreateRepeatingBixNum(const std::unique_ptr<ProgramBuilder> & P, uns
     return P->CreateRepeatingStreamSet(1, templatePattern, TestDynamicRepeatingFile);
 }
 
-void MergeByMask(const std::unique_ptr<ProgramBuilder> & P,
+void MergeByMask01(const std::unique_ptr<ProgramBuilder> & P,
                  StreamSet * mask, StreamSet * a, StreamSet * b, StreamSet * merged) {
     unsigned elems = merged->getNumElements();
     if ((a->getNumElements() != elems) || (b->getNumElements() != elems)) {
@@ -247,13 +247,11 @@ CSVFunctionType generatePipeline(CPUDriver & pxDriver, std::vector<std::string> 
     StreamSet * TemplateBasis = CreateRepeatingBixNum(P, 8, templateBytes);
 
     StreamSet * FinalBasis = P->CreateStreamSet(8);
-    MergeByMask(P, BasisSpreadMask, filteredBasis, TemplateBasis, FinalBasis);
+    // MergeByMask01(P, BasisSpreadMask, filteredBasis, TemplateBasis, FinalBasis);
+    MergeByMask01(P, BasisSpreadMask, filteredBasis, TemplateBasis, FinalBasis);
     SHOW_BIXNUM(FinalBasis);
-
     StreamSet * Instantiated = P->CreateStreamSet(1, 8);
     P->CreateKernelCall<P2SKernel>(FinalBasis, Instantiated);
-
-    //  The StdOut kernel writes a byte stream to standard output.
     P->CreateKernelCall<StdOutKernel>(Instantiated);
     return reinterpret_cast<CSVFunctionType>(P->compile());
 }
