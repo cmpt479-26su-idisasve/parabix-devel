@@ -80,7 +80,17 @@ using namespace kernel;
 
 namespace grep {
 
-static cl::opt<bool> MaxLimitTerminationMode("maxlimit-termination-mode", cl::desc("force pipeline termination when maxlimit reached."), cl::init(true));
+using UntilNMode = UntilNkernel::Mode;
+
+static cl::opt<UntilNMode>
+MaxLimitTerminationMode("maxlimit-termination-mode",
+                  cl::init(UntilNMode::TerminateAtN),
+                  cl::desc("method of pipeline termination when -m=maxlimit is reached."),
+                  cl::values(clEnumValN(UntilNMode::ReportAcceptedLengthAtAndBeforeN, "report", "halt pipeline after maxlimit using truncated streamset"),
+                             clEnumValN(UntilNMode::TerminateAtN, "terminate", "halt pipeline after maxlimit using streamset copy"),
+                             clEnumValN(UntilNMode::ZeroAfterN, "zero", "fully process the file")
+                  CL_ENUM_VAL_SENTINEL));
+
 
 const auto ENCODING_BITS = 8;
 
@@ -367,6 +377,10 @@ void GrepEngine::initRE(re::RE * re) {
             llvm::report_fatal_error("Expected property expression");
         }
     }
+    if (mIndexAlphabet == &cc::UTF8) {
+        bool useInternalNaming = mLengthAlphabet == &cc::Unicode;
+        mRE = toUTF8(mRE, useInternalNaming);
+    }
     re::VariableLengthCCNamer CCnamer;
     mRE = CCnamer.transformRE(mRE);
     for (auto m : CCnamer.mNameMap) {
@@ -425,6 +439,26 @@ void GrepEngine::initRE(re::RE * re) {
             auto spanName = nameStr + "Span";
             mExternalTable.declareExternal(indexing, spanName, new MarkedSpanExternal(prefixStr, prefixLgth, nameStr, offset));
             mSpanNames.push_back(spanName);
+        }
+        re::Repeated_CC_Seq_Namer RCCSnamer;
+        mRE = RCCSnamer.transformRE(mRE);
+        for (auto m : RCCSnamer.mNameMap) {
+            std::string nameStr = m.first;
+            re::RE * namedRE = m.second;
+            auto r = new RE_External(this, namedRE, mIndexAlphabet);
+            mExternalTable.declareExternal(indexing, nameStr, r);
+            auto f = RCCSnamer.mInfoMap.find(nameStr);
+            if (f != RCCSnamer.mInfoMap.end()) {
+                const re::CC * varCC = f->second.first;
+                unsigned fixed= f->second.second;
+                auto maskName = nameStr + "mask";
+                auto e1 = new CCmask(mIndexAlphabet, varCC);
+                mExternalTable.declareExternal(indexing, maskName, e1);
+                auto spanName = nameStr + "Span";
+                auto e2 = new MaskedFixedSpanExternal(maskName, nameStr, fixed, grepOffset(namedRE));
+                mExternalTable.declareExternal(indexing, spanName, e2);
+                mSpanNames.push_back(spanName);
+            }
         }
     }
     if (mLengthAlphabet == &cc::Unicode) {
@@ -581,8 +615,6 @@ unsigned GrepEngine::RunGrep(ProgBuilderRef P, const cc::Alphabet * indexAlphabe
             indexStream = mU8index;
             options->setIndexing(indexStream);
         }
-        bool useInternalNaming = mLengthAlphabet == &cc::Unicode;
-        re = toUTF8(re, useInternalNaming);
     }
     options->setRE(re);
     auto indexing = mExternalTable.getStreamIndex(indexAlphabet->getCode());
@@ -629,9 +661,14 @@ StreamSet * GrepEngine::matchedLines(ProgBuilderRef P, StreamSet * initialMatche
         MatchedLineEnds = InvertedMatches;
     }
     if (mMaxCount > 0) {
-        StreamSet * const MaxCountLines = P->CreateStreamSet();
+        StreamSet * MaxCountLines = nullptr;
         Scalar * const maxCount = P->getInputScalar("maxCount");
-        UntilNkernel::Mode m = MaxLimitTerminationMode ? UntilNkernel::Mode::TerminateAtN : UntilNkernel::Mode::ZeroAfterN;
+        const UntilNMode m = MaxLimitTerminationMode;
+        if (m == UntilNMode::ReportAcceptedLengthAtAndBeforeN) {
+            MaxCountLines = P->CreateTruncatedStreamSet(MatchedLineEnds);
+        } else {
+            MaxCountLines = P->CreateStreamSet();
+        }
         P->CreateKernelCall<UntilNkernel>(maxCount, MatchedLineEnds, MaxCountLines, m);
         if (mIllustrator) mIllustrator->captureBitstream(P, "MaxCountLines", MaxCountLines);
         MatchedLineEnds = MaxCountLines;
@@ -1087,6 +1124,7 @@ std::string GrepEngine::linePrefix(std::string fileName) {
 
 // Default: do not show anything
 void GrepEngine::showResult(uint64_t grepResult, const std::string & fileName, std::ostringstream & strm) {
+
 }
 
 void CountOnlyEngine::showResult(uint64_t grepResult, const std::string & fileName, std::ostringstream & strm) {
