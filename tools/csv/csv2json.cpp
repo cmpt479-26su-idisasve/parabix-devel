@@ -61,6 +61,7 @@ static cl::opt<bool> HeaderSpecNamesFile("f", cl::desc("Interpret headers parame
 static cl::opt<std::string> HeaderSpec("headers", cl::desc("CSV column headers (explicit string or filename"), cl::init(""), cl::cat(CSV_Options));
 
 static cl::opt<bool> TestDynamicRepeatingFile("dyn", cl::desc("Test Dynamic Repeating StreamSet"), cl::init(true), cl::cat(CSV_Options));
+static cl::opt<bool> UseMergeByMaskKernel("merge-by-mask", cl::desc("Use MergeByMask kernel"), cl::init(false), cl::cat(CSV_Options));
 
 typedef void (*CSVFunctionType)(uint32_t fd, ParabixIllustrator * illustrator);
 
@@ -247,8 +248,11 @@ CSVFunctionType generatePipeline(CPUDriver & pxDriver, std::vector<std::string> 
     StreamSet * TemplateBasis = CreateRepeatingBixNum(P, 8, templateBytes);
 
     StreamSet * FinalBasis = P->CreateStreamSet(8);
-    // MergeByMask01(P, BasisSpreadMask, filteredBasis, TemplateBasis, FinalBasis);
-    MergeByMask01(P, BasisSpreadMask, filteredBasis, TemplateBasis, FinalBasis);
+    if (UseMergeByMaskKernel) {
+        MergeByMask(P, BasisSpreadMask, filteredBasis, TemplateBasis, FinalBasis);
+    } else {
+        MergeByMask01(P, BasisSpreadMask, filteredBasis, TemplateBasis, FinalBasis);
+    }
     SHOW_BIXNUM(FinalBasis);
     StreamSet * Instantiated = P->CreateStreamSet(1, 8);
     P->CreateKernelCall<P2SKernel>(FinalBasis, Instantiated);
