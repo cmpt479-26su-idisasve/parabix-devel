@@ -40,7 +40,7 @@ RE * RE_Transformer::transform(RE * const from) {
     using T = RE::ClassTypeId;
     RE * to = from;
     #define TRANSFORM(Type) \
-case T::Type: to = transform##Type(llvm::cast<Type>(from)); llvm::errs() << #Type  << "\n"; break
+case T::Type: to = transform##Type(llvm::cast<Type>(from)); break
     switch (from->getClassTypeId()) {
         TRANSFORM(Alt);
         TRANSFORM(Any);

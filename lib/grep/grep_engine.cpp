@@ -271,8 +271,8 @@ void GrepEngine::initRE(re::RE * re) {
     if ((mEngineKind != EngineKind::EmitMatches) || mInvertMatches) {
         mColoring = false;
     }
-    //mRE = expandPermutes(mRE);
-    mRE = resolveModesAndExternalSymbols(re, mCaseInsensitive);
+    mRE = expandPermutes(re);
+    mRE = resolveModesAndExternalSymbols(mRE, mCaseInsensitive);
     // Determine the unit of length for the RE.  If the RE involves
     // fixed length UTF-8 sequences only, then UTF-8 can be used
     // for most efficient processing.   Otherwise we must use full
