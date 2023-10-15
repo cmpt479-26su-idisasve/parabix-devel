@@ -23,9 +23,10 @@ RE * ExpandPermutes::transformPermute(Permute * p) {
         alts.push_back(perm);
     }
     std::vector<RE *> elems;
-    elems.push_back(makeRep(makeAlt(alts.begin(), alts.end()), perm_size, perm_size));
+    RE * anyAlt = makeAlt(alts.begin(), alts.end());
+    elems.push_back(makeRep(anyAlt, perm_size, perm_size));
     for (auto perm : *p) {
-        RE * negated = makeDiff(makeAny(), perm);
+        RE * negated = makeDiff(anyAlt, perm);
         RE * r = makeSeq({perm, makeRep(negated, 0, perm_size - 1)});
         elems.push_back(makeLookBehindAssertion(r));
     }
