@@ -34,20 +34,29 @@ Audio Audio::fromWAV(const std::string & file_path)
         throw std::runtime_error("Error parsing file format: Subchunk ID does not match Wav format.");
     }
 
+    // read 2 bytes for num channels
     file.read(reinterpret_cast<char *>(&audio.num_channels), 2);
     if (!file)
     {
         throw std::runtime_error("Error parsing file format: Cannot interpret number channels.");
     }
 
+    // read 4 bytes for sample rate
     file.read(reinterpret_cast<char*>(&audio.sample_rate), 4);
     if (!file)
     {
         throw std::runtime_error("Error parsing file format: Cannot interpret sample rate.");
     }
 
-    // assume bits per sample is 16, no need to read it. TODO: handle arbitrary number of bits per sample
-    file.read(temp_buffer, 8);
+    // skip the next 6 bytes
+    file.read(temp_buffer, 6);
+    if (!file)
+    {
+        throw std::runtime_error("Error parsing file format.");
+    }
+
+    // read 4 bytes for num bits per sample
+    file.read(reinterpret_cast<char*>(&audio.bits_per_sample), 2);
     if (!file)
     {
         throw std::runtime_error("Error parsing file format.");
