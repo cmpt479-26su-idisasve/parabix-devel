@@ -81,5 +81,7 @@ Audio Audio::fromWAV(const std::string & file_path)
     audio.data_buffer.resize(subchunk2_size);
     file.read(reinterpret_cast<char*>(&audio.data_buffer[0]), subchunk2_size);
 
+    audio.num_samples = subchunk2_size / (audio.num_channels * audio.bits_per_sample / 8);
+
     return audio;
 }
