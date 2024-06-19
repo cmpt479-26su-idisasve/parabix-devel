@@ -39,9 +39,9 @@ DEPS
 
 parabix_add_executable(
 NAME
-    amplifier
+    ab2bsdemo
 SRC
-    amplifier.cpp
+    ab2bsdemo.cpp
 DEPS
     pablo
     kernel.basis
