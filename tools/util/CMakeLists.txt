@@ -16,6 +16,7 @@ DEPS
     kernel.streamutils
     kernel.util
     toolchain
+    audio
 )
 
 
@@ -36,3 +37,18 @@ DEPS
 )
 
 
+parabix_add_executable(
+NAME
+    ab2bsdemo
+SRC
+    ab2bsdemo.cpp
+DEPS
+    pablo
+    kernel.basis
+    kernel.io
+    kernel.pipeline
+    kernel.streamutils
+    kernel.util
+    toolchain
+    audio
+)
