@@ -11,7 +11,6 @@
 #include <kernel/streamutils/deletion.h>
 #include <kernel/streamutils/pdep_kernel.h>
 #include <kernel/streamutils/stream_select.h>
-#include <kernel/streamutils/stream_shift.h>
 #include <kernel/basis/s2p_kernel.h>
 #include <kernel/io/source_kernel.h>
 #include <kernel/io/stdout_kernel.h>
@@ -50,15 +49,15 @@ static cl::OptionCategory Audio2BitStreamOptions("Audio2BitStream Options", "Aud
 static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), cl::Required, cl::cat(Audio2BitStreamOptions));
 
 typedef void (*AmplifierFunctionType)(uint32_t fd);
-AmplifierFunctionType generatePipeline(CPUDriver &pxDriver, const bool& includedHeader, const unsigned int& numChannels, const unsigned int& numSamples, const unsigned int& sampleRate, const unsigned int& bitsPerSample)
+AmplifierFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& numChannels, const unsigned int& numSamples, const unsigned int& bitsPerSample, const unsigned int& sampleRate)
 {
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipeline({Binding{b.getInt32Ty(), "inputFileDecriptor"}}, {});
     Scalar *fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
     StreamSet *dataStreams;
-    ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, includedHeader, dataStreams);
-    SHOW_BIXNUM(dataStreams);
+    ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, true, dataStreams);
+    SHOW_BYTES(dataStreams);
     return reinterpret_cast<AmplifierFunctionType>(P->compile());
 }
 
@@ -71,9 +70,9 @@ int main(int argc, char *argv[])
     unsigned int sampleRate, numChannels, bitsPerSample, numSamples;
     try
     {
-        readWAVHeader(fd, numChannels, numSamples, sampleRate, bitsPerSample); 
+        readWAVHeader(fd, numChannels, numSamples, bitsPerSample, sampleRate); 
         std::cout << numChannels << " " << numChannels << " " << sampleRate << " " << bitsPerSample << "\n";
-        auto fn = generatePipeline(driver, false, numChannels, numSamples, sampleRate, bitsPerSample);
+        auto fn = generatePipeline(driver, numChannels, numSamples, bitsPerSample, sampleRate);
         fn(fd);
     }
     catch(const std::exception& e)
