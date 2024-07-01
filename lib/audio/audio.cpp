@@ -3,64 +3,27 @@
 #include <kernel/io/source_kernel.h>
 #include <kernel/core/kernel_builder.h>
 #include <llvm/IR/Value.h>
+#include <kernel/streamutils/stream_shift.h>
 #include <kernel/core/relationship.h>
+#include <kernel/basis/s2p_kernel.h>
+#include <kernel/basis/p2s_kernel.h>
+#include <kernel/streamutils/deletion.h>
+#include "audio/stream_manipulation.h"
 
-using namespace kernel;
-using namespace llvm;
+#define SHOW_STREAM(name)           \
+    if (codegen::EnableIllustrator) \
+    P->captureBitstream(#name, name)
+#define SHOW_BIXNUM(name)           \
+    if (codegen::EnableIllustrator) \
+    P->captureBixNum(#name, name)
+#define SHOW_BYTES(name)            \
+    if (codegen::EnableIllustrator) \
+    P->captureByteData(#name, name)
+
+#define NUM_HEADER_BYTES 44
 
 namespace audio
 {
-    mS2PKernel::mS2PKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
-        : MultiBlockKernel(b, "mS2PKernel_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
-                           {Binding{"inputStreams", inputStreams, FixedRate(2)}},
-                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
-          numInputStreams(inputStreams->getNumElements()), bitsPerSample(bitsPerSample) {}
-
-    void mS2PKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
-    {
-        const unsigned fw = 8;
-        const unsigned inputPacksPerStride = fw * 2;
-        const unsigned outputPacksPerStride = fw * 1;
-
-        BasicBlock *entry = b.GetInsertBlock();
-        BasicBlock *packLoop = b.CreateBasicBlock("packLoop");
-        BasicBlock *packFinalize = b.CreateBasicBlock("packFinalize");
-        Constant *const ZERO = b.getSize(0);
-        Value *numOfBlocks = numOfStrides;
-        b.CreateBr(packLoop);
-        b.SetInsertPoint(packLoop);
-        PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
-        blockOffsetPhi->addIncoming(ZERO, entry);
-        for (int streamIndex = 0; streamIndex < numInputStreams; ++streamIndex)
-        {
-            Value *bytepack[inputPacksPerStride];
-            Constant *const STREAMINDEX = b.getSize(streamIndex);
-            Constant *const LOWSTREAMINDEX = b.getSize(2 * streamIndex);
-            Constant *const HIGHSTREAMINDEX = b.getSize(2 * streamIndex + 1);
-            for (unsigned i = 0; i < inputPacksPerStride; i++)
-            {
-                bytepack[i] = b.loadInputStreamPack("inputStreams", STREAMINDEX, b.getInt32(i), blockOffsetPhi);
-            }
-
-            Value *lo[outputPacksPerStride];
-            Value *hi[outputPacksPerStride];
-            for (unsigned i = 0; i < outputPacksPerStride; i++)
-            {
-                lo[i] = b.hsimd_packl(2 * bitsPerSample, bytepack[2 * i], bytepack[2 * i + 1]);
-                hi[i] = b.hsimd_packh(2 * bitsPerSample, bytepack[2 * i], bytepack[2 * i + 1]);
-                b.storeOutputStreamPack("outputStreams", LOWSTREAMINDEX, b.getInt32(i), blockOffsetPhi, lo[i]);
-                b.storeOutputStreamPack("outputStreams", HIGHSTREAMINDEX, b.getInt32(i), blockOffsetPhi, hi[i]);
-            }
-        }
-
-        Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
-        blockOffsetPhi->addIncoming(nextBlk, packLoop);
-        Value *moreToDo = b.CreateICmpNE(nextBlk, numOfBlocks);
-
-        b.CreateCondBr(moreToDo, packLoop, packFinalize);
-        b.SetInsertPoint(packFinalize);
-    }
-
     void ExtractWAVData(
         const std::unique_ptr<ProgramBuilder> &P,
         Scalar *const fileDescriptor,
@@ -76,17 +39,42 @@ namespace audio
             throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
         }
 
+        
         StreamSet *ByteStream = P->CreateStreamSet(1, 8);
         P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, ByteStream);
+
+        StreamSet *TrimByteStream;
+        if (includedHeader)
+        {
+            StreamSet *BitStreams = P->CreateStreamSet(8);
+            P->CreateKernelCall<S2PKernel>(ByteStream, BitStreams);
+            StreamSet *ones = P->CreateStreamSet(1);
+            StreamSet *shiftedOnes = P->CreateStreamSet(1);
+            P->CreateKernelCall<CreateOnes>(BitStreams, ones);
+            P->CreateKernelCall<ShiftBack>(ones, shiftedOnes, NUM_HEADER_BYTES);
+            StreamSet *headerMask = P->CreateStreamSet(1);
+            P->CreateKernelCall<ShiftForward>(shiftedOnes, headerMask, NUM_HEADER_BYTES);
+            StreamSet *TrimBitStreams = P->CreateStreamSet(8);
+            FilterByMask(P, headerMask, BitStreams, TrimBitStreams);
+            TrimByteStream = P->CreateStreamSet(1, 8);
+            P->CreateKernelCall<P2SKernel>(TrimBitStreams, TrimByteStream);
+        }
+        else
+        {
+            TrimByteStream = ByteStream;
+        }
+        
+        SHOW_BYTES(TrimByteStream);
         StreamSet *DataStreams = P->CreateStreamSet(numChannels, 8);
         if (numChannels == 2)
         {
-            P->CreateKernelCall<mS2PKernel>(ByteStream, DataStreams, bitPerSample);
+            P->CreateKernelCall<mS2PKernel>(TrimByteStream, DataStreams, bitPerSample);
         }
         else
         {
             DataStreams = ByteStream;
         }
+        outputDataStreams = DataStreams;
     }
 
     void readWAVHeader(const int& fd,
@@ -177,3 +165,5 @@ namespace audio
         numSamples = subchunk2_size / (numChannels * bitPerSample / 8);
     }
 }
+
+#undef NUM_HEADER_BYTES

@@ -8,6 +8,7 @@
 #include <kernel/io/source_kernel.h>
 
 using namespace kernel;
+using namespace llvm;
 
 namespace audio
 {
@@ -28,16 +29,4 @@ namespace audio
         const bool includedHeader,
         StreamSet *&outputDataStreams);
 
-    class mS2PKernel final : public MultiBlockKernel {
-    public:
-        mS2PKernel(KernelBuilder & b,
-                StreamSet * const inputStreams,
-                StreamSet * const outputStreams,
-                const unsigned int bitsPerSample = 16);
-    protected:
-        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
-    private:
-        unsigned int bitsPerSample;
-        unsigned int numInputStreams;
-    };
 }
