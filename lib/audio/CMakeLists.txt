@@ -8,6 +8,12 @@ NAME
     audio
 SRC
     audio.cpp
+    stream_manipulation.cpp
 DEPS
+    pablo
+    kernel.io
+    kernel.pipeline
+    kernel.streamutils
+    kernel.util
     toolchain
 )
