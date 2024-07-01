@@ -9,5 +9,9 @@ NAME
 SRC
     audio.cpp
 DEPS
+    kernel.io
+    kernel.pipeline
+    kernel.streamutils
+    kernel.util
     toolchain
 )
