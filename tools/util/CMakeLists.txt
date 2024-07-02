@@ -62,3 +62,13 @@ DEPS
     toolchain
     audio
 )
+
+parabix_add_executable(
+NAME
+    stereo2mono
+SRC
+    stereo2mono.cpp
+DEPS
+    kernel.pipeline
+    audio
+)

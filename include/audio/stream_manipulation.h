@@ -3,6 +3,9 @@
 #include <kernel/core/kernel_builder.h>
 #include <kernel/core/relationship.h>
 #include <llvm/IR/Value.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Constants.h>
 #include <pablo/pablo_toolchain.h>
 #include <pablo/builder.hpp>
 #include <pablo/pe_ones.h>
