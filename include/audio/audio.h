@@ -29,4 +29,16 @@ namespace audio
         const bool includedHeader,
         StreamSet *&outputDataStreams);
 
+    class Stereo2MonoKernel final : public MultiBlockKernel {
+    public:
+        Stereo2MonoKernel(KernelBuilder & b,
+                StreamSet * const inputStreams,
+                StreamSet * const outputStream,
+                const unsigned int bitsPerSample = 16);
+    protected:
+        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
+    private:
+        unsigned int bitsPerSample;
+        unsigned int numInputStreams;
+    };
 }

@@ -164,6 +164,59 @@ namespace audio
 
         numSamples = subchunk2_size / (numChannels * bitPerSample / 8);
     }
+
+    Stereo2MonoKernel::Stereo2MonoKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+        : MultiBlockKernel(b, "Stereo2MonoKernel_" + std::to_string(bitsPerSample),
+                           {Binding{"inputStreams", inputStreams, FixedRate(1)}},
+                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}), bitsPerSample(bitsPerSample), numInputStreams(inputStreams->getNumElements()) 
+    {
+        if (numInputStreams != 2)
+        {
+            throw std::invalid_argument("numInputStreams: " + std::to_string(numInputStreams) + ". Input must be a stereo audio stream");
+        }
+    }
+
+    void Stereo2MonoKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
+    {
+        const unsigned fw = 8;
+        const unsigned inputPacksPerStride = fw * 1;
+        const unsigned packSize = b.getBitBlockWidth();
+        const unsigned numElementsPerPack = packSize/bitsPerSample;
+
+        BasicBlock *entry = b.GetInsertBlock();
+        BasicBlock *loop = b.CreateBasicBlock("loop");
+        BasicBlock *exit = b.CreateBasicBlock("exit");
+        Constant *const ZERO = b.getSize(0);
+        Constant *const ONE = b.getSize(1);
+
+        Type* vec16x16Type = FixedVectorType::get(b.getIntNTy(bitsPerSample), static_cast<unsigned>(numElementsPerPack));
+        Value *shiftAmount = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 1));
+
+        Value *numOfBlocks = numOfStrides;
+        b.CreateBr(loop);
+        b.SetInsertPoint(loop);
+        PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
+        blockOffsetPhi->addIncoming(ZERO, entry);
+
+        for (unsigned i = 0; i < inputPacksPerStride; ++i)
+        {
+            Value *bytepack_1, *bytepack_2;
+            bytepack_1 = b.loadInputStreamPack("inputStreams", ZERO, b.getInt32(i), blockOffsetPhi);
+            bytepack_1 = b.CreateBitCast(bytepack_1, vec16x16Type);
+            bytepack_2 = b.loadInputStreamPack("inputStreams", ONE, b.getInt32(i), blockOffsetPhi);
+            bytepack_2 = b.CreateBitCast(bytepack_2, vec16x16Type);
+            Value *sumBytePack = b.CreateAdd(bytepack_1, bytepack_2);
+            Value *meanBytePack = b.CreateAShr(sumBytePack, shiftAmount);
+            b.storeOutputStreamPack("outputStreams", ZERO, b.getInt32(i), blockOffsetPhi, meanBytePack);
+        }
+
+        Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
+        blockOffsetPhi->addIncoming(nextBlk, loop);
+        Value *moreToDo = b.CreateICmpNE(nextBlk, numOfBlocks);
+
+        b.CreateCondBr(moreToDo, loop, exit);
+        b.SetInsertPoint(exit);
+    }
 }
 
 #undef NUM_HEADER_BYTES
