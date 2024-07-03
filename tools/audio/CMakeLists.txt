@@ -1,16 +1,14 @@
 #  Part of the Parabix Project, under the Open Software License 3.0.
 #  SPDX-License-Identifier: OSL-3.0
 
-# module: util
+# module: audio
 
 parabix_add_executable(
 NAME
-    hexlines
+    ab2bsdemo
 SRC
-    hexlines.cpp
+    ab2bsdemo.cpp
 DEPS
-    pablo
-    kernel.basis
     kernel.io
     kernel.pipeline
     kernel.streamutils
@@ -19,32 +17,22 @@ DEPS
     audio
 )
 
-
 parabix_add_executable(
 NAME
-    hashdemo
+    stereo2mono
 SRC
-    hashdemo.cpp
+    stereo2mono.cpp
 DEPS
-    grep
-    pablo
-    kernel.basis
-    kernel.io
     kernel.pipeline
-    kernel.streamutils
-    kernel.util
-    toolchain
+    audio
 )
 
 parabix_add_executable(
 NAME
-    packdemo
+    audioamplifier
 SRC
-    packdemo.cpp
+    audioamplifier.cpp
 DEPS
-    kernel.io
     kernel.pipeline
-    kernel.streamutils
-    kernel.util
-    toolchain
+    audio
 )

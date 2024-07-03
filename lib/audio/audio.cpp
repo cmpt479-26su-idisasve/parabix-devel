@@ -9,6 +9,7 @@
 #include <kernel/basis/p2s_kernel.h>
 #include <kernel/streamutils/deletion.h>
 #include "audio/stream_manipulation.h"
+#include <llvm/IR/Intrinsics.h>
 
 #define SHOW_STREAM(name)           \
     if (codegen::EnableIllustrator) \
@@ -39,7 +40,6 @@ namespace audio
             throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
         }
 
-        
         StreamSet *ByteStream = P->CreateStreamSet(1, 8);
         P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, ByteStream);
 
@@ -63,7 +63,7 @@ namespace audio
         {
             TrimByteStream = ByteStream;
         }
-        
+
         SHOW_BYTES(TrimByteStream);
         StreamSet *DataStreams = P->CreateStreamSet(numChannels, 8);
         if (numChannels == 2)
@@ -77,7 +77,7 @@ namespace audio
         outputDataStreams = DataStreams;
     }
 
-    void readWAVHeader(const int& fd,
+    void readWAVHeader(const int &fd,
                        unsigned int &numChannels,
                        unsigned int &sampleRate,
                        unsigned int &bitPerSample,
@@ -168,7 +168,8 @@ namespace audio
     Stereo2MonoKernel::Stereo2MonoKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
         : MultiBlockKernel(b, "Stereo2MonoKernel_" + std::to_string(bitsPerSample),
                            {Binding{"inputStreams", inputStreams, FixedRate(1)}},
-                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}), bitsPerSample(bitsPerSample), numInputStreams(inputStreams->getNumElements()) 
+                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
+          bitsPerSample(bitsPerSample), numInputStreams(inputStreams->getNumElements())
     {
         if (numInputStreams != 2)
         {
@@ -181,7 +182,7 @@ namespace audio
         const unsigned fw = 8;
         const unsigned inputPacksPerStride = fw * 1;
         const unsigned packSize = b.getBitBlockWidth();
-        const unsigned numElementsPerPack = packSize/bitsPerSample;
+        const unsigned numElementsPerPack = packSize / bitsPerSample;
 
         BasicBlock *entry = b.GetInsertBlock();
         BasicBlock *loop = b.CreateBasicBlock("loop");
@@ -189,7 +190,7 @@ namespace audio
         Constant *const ZERO = b.getSize(0);
         Constant *const ONE = b.getSize(1);
 
-        Type* vec16x16Type = FixedVectorType::get(b.getIntNTy(bitsPerSample), static_cast<unsigned>(numElementsPerPack));
+        Type *vec16x16Type = FixedVectorType::get(b.getIntNTy(bitsPerSample), static_cast<unsigned>(numElementsPerPack));
         Value *shiftAmount = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 1));
 
         Value *numOfBlocks = numOfStrides;
@@ -208,6 +209,82 @@ namespace audio
             Value *sumBytePack = b.CreateAdd(bytepack_1, bytepack_2);
             Value *meanBytePack = b.CreateAShr(sumBytePack, shiftAmount);
             b.storeOutputStreamPack("outputStreams", ZERO, b.getInt32(i), blockOffsetPhi, meanBytePack);
+        }
+
+        Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
+        blockOffsetPhi->addIncoming(nextBlk, loop);
+        Value *moreToDo = b.CreateICmpNE(nextBlk, numOfBlocks);
+
+        b.CreateCondBr(moreToDo, loop, exit);
+        b.SetInsertPoint(exit);
+    }
+
+    AmplifyKernel::AmplifyKernel(KernelBuilder &b, StreamSet *const inputStreams, const unsigned int &factor, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+        : MultiBlockKernel(b, "AmplifyKernel_" + std::to_string(factor) + "_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
+                           {Binding{"inputStreams", inputStreams, FixedRate(1)}},
+                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
+          bitsPerSample(bitsPerSample), numInputStreams(inputStreams->getNumElements()), factor(factor)
+    {
+        if (inputStreams->getNumElements() != outputStreams->getNumElements())
+        {
+            throw std::invalid_argument("numInputStreams: " + std::to_string(inputStreams->getNumElements()) + " != numOutputStreams: " + std::to_string(outputStreams->getNumElements()));
+        }
+    }
+
+    void AmplifyKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
+    {
+        const unsigned fw = 8;
+        const unsigned inputPacksPerStride = fw * 1;
+        const unsigned packSize = b.getBitBlockWidth();
+        const unsigned numElementsPerPack = packSize / bitsPerSample;
+
+        BasicBlock *entry = b.GetInsertBlock();
+        BasicBlock *loop = b.CreateBasicBlock("loop");
+        BasicBlock *exit = b.CreateBasicBlock("exit");
+        Constant *const ZERO = b.getSize(0);
+        
+        Type *vec16x16Type = FixedVectorType::get(b.getIntNTy(bitsPerSample), static_cast<unsigned>(numElementsPerPack));
+
+        Function *smulWithOverflow = Intrinsic::getDeclaration(getModule(), Intrinsic::smul_with_overflow, {vec16x16Type});
+        Value *factorVec = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), factor));
+        Value *zeroVec = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 0));
+        Value *minVal = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), -(1 << (bitsPerSample - 1))));
+        Value *maxVal = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), (1 << (bitsPerSample - 1)) - 1));
+
+        Value *numOfBlocks = numOfStrides;
+        b.CreateBr(loop);
+        b.SetInsertPoint(loop);
+        PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
+        blockOffsetPhi->addIncoming(ZERO, entry);
+
+        Value *bytepack[inputPacksPerStride];
+        Value *amplifiedBytepack[inputPacksPerStride];
+        Value *clipBytepack[inputPacksPerStride];
+        Value *signMask[inputPacksPerStride];
+
+        for (unsigned k = 0; k < numInputStreams; ++k)
+        {
+            Constant *const STREAMINDEX = b.getSize(k);
+            for (unsigned i = 0; i < inputPacksPerStride; ++i)
+            {
+                bytepack[i] = b.loadInputStreamPack("inputStreams", STREAMINDEX, b.getInt32(i), blockOffsetPhi);
+                bytepack[i] = b.CreateBitCast(bytepack[i], vec16x16Type);
+                signMask[i] = b.CreateICmpSLT(bytepack[i], zeroVec);
+            }
+            
+            for (unsigned i = 0; i < inputPacksPerStride; ++i)
+            {
+                Value *mulResults = b.CreateCall(smulWithOverflow, {bytepack[i], factorVec});
+                amplifiedBytepack[i] = b.CreateExtractValue(mulResults, 0);
+                Value *overflow = b.CreateExtractValue(mulResults, 1);
+
+                Value *maxClip = b.CreateAnd(b.CreateNot(signMask[i]), overflow);
+                clipBytepack[i] = b.CreateSelect(maxClip, maxVal, amplifiedBytepack[i]);
+
+                Value *minClip = b.CreateAnd(signMask[i], overflow);
+                clipBytepack[i] = b.CreateSelect(minClip, minVal, clipBytepack[i]);
+                b.storeOutputStreamPack("outputStreams", STREAMINDEX, b.getInt32(i), blockOffsetPhi, clipBytepack[i]);
+            }
         }
 
         Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
