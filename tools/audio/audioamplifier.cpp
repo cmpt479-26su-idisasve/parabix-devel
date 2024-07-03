@@ -49,7 +49,7 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& n
     SHOW_BYTES(dataStreams);
     StreamSet *AmplifyDataStream = P->CreateStreamSet(2, 8);
     P->CreateKernelCall<AmplifyKernel>(dataStreams, 2, AmplifyDataStream);   
-    SHOW_STREAM(AmplifyDataStream);
+    SHOW_BYTES(AmplifyDataStream);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
 
