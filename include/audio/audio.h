@@ -41,4 +41,19 @@ namespace audio
         unsigned int bitsPerSample;
         unsigned int numInputStreams;
     };
+
+    class AmplifyKernel final : public MultiBlockKernel {
+    public:
+        AmplifyKernel(KernelBuilder & b,
+                StreamSet * const inputStreams,
+                const unsigned int& factor,
+                StreamSet * const outputStreams,
+                const unsigned int bitsPerSample = 16);
+    protected:
+        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
+    private:
+        unsigned int bitsPerSample;
+        unsigned int numInputStreams;
+        unsigned int factor;
+    };
 }

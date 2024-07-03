@@ -72,3 +72,13 @@ DEPS
     kernel.pipeline
     audio
 )
+
+parabix_add_executable(
+NAME
+    audioamplifier
+SRC
+    audioamplifier.cpp
+DEPS
+    kernel.pipeline
+    audio
+)
