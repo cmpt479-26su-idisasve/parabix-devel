@@ -15,13 +15,13 @@ namespace audio
         pb.createAssign(pb.createExtract(onesVar, pb.getInteger(0)), ones);
     }
 
-    mS2PKernel::mS2PKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
-        : MultiBlockKernel(b, "mS2PKernel_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
+    SplitKernel::SplitKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+        : MultiBlockKernel(b, "SplitKernel_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
                            {Binding{"inputStreams", inputStreams, FixedRate(2)}},
                            {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
           numInputStreams(inputStreams->getNumElements()), bitsPerSample(bitsPerSample) {}
 
-    void mS2PKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
+    void SplitKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
     {
         const unsigned fw = 8;
         const unsigned inputPacksPerStride = fw * 2;

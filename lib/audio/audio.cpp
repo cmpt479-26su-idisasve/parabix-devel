@@ -8,8 +8,10 @@
 #include <kernel/basis/s2p_kernel.h>
 #include <kernel/basis/p2s_kernel.h>
 #include <kernel/streamutils/deletion.h>
+#include <kernel/streamutils/stream_select.h>
 #include "audio/stream_manipulation.h"
 #include <llvm/IR/Intrinsics.h>
+#include <pablo/bixnum/bixnum.h>
 
 #define SHOW_STREAM(name)           \
     if (codegen::EnableIllustrator) \
@@ -68,7 +70,7 @@ namespace audio
         StreamSet *DataStreams = P->CreateStreamSet(numChannels, 8);
         if (numChannels == 2)
         {
-            P->CreateKernelCall<mS2PKernel>(TrimByteStream, DataStreams, bitPerSample);
+            P->CreateKernelCall<SplitKernel>(TrimByteStream, DataStreams, bitPerSample);
         }
         else
         {
@@ -163,6 +165,33 @@ namespace audio
         }
 
         numSamples = subchunk2_size / (numChannels * bitPerSample / 8);
+    }
+
+    void S2P(
+        const std::unique_ptr<ProgramBuilder> &P,
+        unsigned int bitPerSample,
+        StreamSet * const inputStream,
+        StreamSet *&outputStreams)
+    {
+        if (bitPerSample == 16)
+        {
+            StreamSet * ParallelStreams = P->CreateStreamSet(2, 8);
+            P->CreateKernelCall<SplitKernel>(inputStream, ParallelStreams, 8);
+            
+            std::vector<StreamSet *> BitsBasis;
+            BitsBasis.reserve(2);
+            for (int i=0;i<2;++i)
+            {
+                BitsBasis.push_back(P->CreateStreamSet(8));
+            }
+            for (int i=1;i>=0;--i)
+            {
+                StreamSet *SingleStream = P->CreateStreamSet(1, 8);
+                P->CreateKernelCall<IStreamSelect>(SingleStream, Select(ParallelStreams, {i}));
+                P->CreateKernelCall<S2PKernel>(SingleStream, BitsBasis[i]);
+                SHOW_STREAM(BitsBasis[i]);
+            }
+        }
     }
 
     Stereo2MonoKernel::Stereo2MonoKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
@@ -293,6 +322,30 @@ namespace audio
 
         b.CreateCondBr(moreToDo, loop, exit);
         b.SetInsertPoint(exit);
+    }
+
+    AmplifyPabloKernel::AmplifyPabloKernel(KernelBuilder &b, StreamSet *const inputStreams, const unsigned int &factor, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+        : PabloKernel(b, "AmplifyPabloKernel_" + std::to_string(factor) + "_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
+                           {Binding{"inputStreams", inputStreams}},
+                           {Binding{"outputStreams", outputStreams}}),
+          bitsPerSample(bitsPerSample), numInputStreams(inputStreams->getNumElements()), factor(factor)
+    {
+        if (inputStreams->getNumElements() != outputStreams->getNumElements())
+        {
+            throw std::invalid_argument("numInputStreams: " + std::to_string(inputStreams->getNumElements()) + " != numOutputStreams: " + std::to_string(outputStreams->getNumElements()));
+        }
+    }
+
+    void AmplifyPabloKernel::generatePabloMethod()
+    {
+        pablo::PabloBuilder pb(getEntryScope());
+        BixNumCompiler bnc(pb);
+        std::vector<PabloAST *> inputStreams = getInputStreamSet("inputStreams");
+        std::vector<PabloAST *> resultStreams = bnc.MulModular(resultStreams, factor);
+        Var * result = getOutputStreamVar("outputStreams");
+        for (unsigned i = 0; i < bitsPerSample; i++) {
+            pb.createAssign(pb.createExtract(result, pb.getInteger(i)), resultStreams[i]);
+        }
     }
 }
 

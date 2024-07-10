@@ -26,9 +26,9 @@ namespace audio
         void generatePabloMethod() override;
     };
 
-    class mS2PKernel final : public MultiBlockKernel {
+    class SplitKernel final : public MultiBlockKernel {
     public:
-        mS2PKernel(KernelBuilder & b,
+        SplitKernel(KernelBuilder & b,
                 StreamSet * const inputStreams,
                 StreamSet * const outputStreams,
                 const unsigned int bitsPerSample = 16);

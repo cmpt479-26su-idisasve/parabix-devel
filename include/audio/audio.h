@@ -6,9 +6,11 @@
 #include <kernel/pipeline/pipeline_builder.h>
 #include <kernel/core/relationship.h>
 #include <kernel/io/source_kernel.h>
+#include <pablo/builder.hpp>
 
 using namespace kernel;
 using namespace llvm;
+using namespace pablo;
 
 namespace audio
 {
@@ -29,9 +31,15 @@ namespace audio
         const bool includedHeader,
         StreamSet *&outputDataStreams);
 
+    void S2P(
+        const std::unique_ptr<ProgramBuilder> &P,
+        unsigned int bitPerSample,
+        StreamSet * const inputStream,
+        StreamSet *&outputStreams);
+
     class Stereo2MonoKernel final : public MultiBlockKernel {
     public:
-        Stereo2MonoKernel(KernelBuilder & b,
+        Stereo2MonoKernel(kernel::KernelBuilder & b,
                 StreamSet * const inputStreams,
                 StreamSet * const outputStream,
                 const unsigned int bitsPerSample = 16);
@@ -44,13 +52,29 @@ namespace audio
 
     class AmplifyKernel final : public MultiBlockKernel {
     public:
-        AmplifyKernel(KernelBuilder & b,
+        AmplifyKernel(kernel::KernelBuilder & b,
                 StreamSet * const inputStreams,
                 const unsigned int& factor,
                 StreamSet * const outputStreams,
                 const unsigned int bitsPerSample = 16);
     protected:
         void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
+    private:
+        unsigned int bitsPerSample;
+        unsigned int numInputStreams;
+        unsigned int factor;
+    };
+
+    class AmplifyPabloKernel final : public PabloKernel {
+    public:
+        AmplifyPabloKernel(kernel::KernelBuilder & b,
+                StreamSet * const inputStreams,
+                const unsigned int& factor,
+                StreamSet * const outputStreams,
+                const unsigned int bitsPerSample = 16);
+    protected:
+        void generatePabloMethod() override;
+
     private:
         unsigned int bitsPerSample;
         unsigned int numInputStreams;
