@@ -37,6 +37,18 @@ namespace audio
         StreamSet * const inputStream,
         StreamSet *&outputStreams);
 
+    class FlexS2PKernel final : public MultiBlockKernel {
+    public:
+        FlexS2PKernel(kernel::KernelBuilder & b,
+                StreamSet * const inputStream,
+                StreamSet * const outputStreams,
+                const unsigned int bitsPerSample = 16);
+    protected:
+        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
+    private:
+        unsigned int bitsPerSample;
+    };
+
     class Stereo2MonoKernel final : public MultiBlockKernel {
     public:
         Stereo2MonoKernel(kernel::KernelBuilder & b,

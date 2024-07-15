@@ -194,6 +194,72 @@ namespace audio
         }
     }
 
+    FlexS2PKernel::FlexS2PKernel(KernelBuilder &b, StreamSet *const inputStream, StreamSet *const outputStreams, const unsigned int bitsPerSample) 
+        :
+         bitsPerSample(bitsPerSample),
+         MultiBlockKernel(b, "FlexS2PKernel_" + std::to_string(bitsPerSample),
+                           {Binding{"inputStream", inputStream, FixedRate((bitsPerSample < 8) ? 1 : bitsPerSample / 8)}},
+                           {Binding{"outputStreams", outputStreams, FixedRate((bitsPerSample < 8) ? 8 / bitsPerSample : 1)}}, {}, {}, {})
+    {
+        if (bitsPerSample != 4 && bitsPerSample % 8 != 0)
+        {
+            throw std::invalid_argument("bitsPerSample: " + std::to_string(bitsPerSample) + ". bitsPerSample must be 4 or multiple of 8");
+        }
+        if (inputStream->getNumElements() != 1)
+        {
+            throw std::invalid_argument("numInputStreams: " + std::to_string(inputStream->getNumElements()) + ". Input must be a mono stream");
+        }
+    }
+
+    void FlexS2PKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
+    {
+        const unsigned fw = 1;
+        const unsigned inputRate = (bitsPerSample < 8) ? 8 / bitsPerSample : 1;
+        const unsigned outputRate = (bitsPerSample < 8) ? 8 / bitsPerSample : 1;
+        const unsigned inputPacksPerStride = fw * inputRate;
+        const unsigned outputPacksPerStride = fw * outputRate;
+        const unsigned packSize = b.getBitBlockWidth();
+        const unsigned numElementsPerPack = packSize / bitsPerSample;
+
+        BasicBlock *entry = b.GetInsertBlock();
+        BasicBlock *loop = b.CreateBasicBlock("loop");
+        BasicBlock *exit = b.CreateBasicBlock("exit");
+        Constant *const ZERO = b.getSize(0);
+
+        Type *vecType = FixedVectorType::get(b.getIntNTy(bitsPerSample), static_cast<unsigned>(numElementsPerPack));
+        Type *vec1Type = FixedVectorType::get(b.getIntNTy(1), static_cast<unsigned>(numElementsPerPack));
+
+        Value *numOfBlocks = numOfStrides;
+        b.CreateBr(loop);
+        b.SetInsertPoint(loop);
+        PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
+        blockOffsetPhi->addIncoming(ZERO, entry);
+        Value* bytepack[inputPacksPerStride];
+        for (unsigned i = 0; i < inputPacksPerStride; ++i)
+        {
+            bytepack[i] = b.loadInputStreamPack("inputStream", ZERO, b.getInt32(i), blockOffsetPhi);
+            bytepack[i] = b.CreateBitCast(bytepack[i], vecType);
+        }
+
+        for (unsigned i = 0;i<outputPacksPerStride;++i)
+        {
+            for (unsigned j = 0;j<bitsPerSample;++j)
+            {   
+                Value *mask = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 1 << j));
+                Value *extractedBit = b.simd_pext(bitsPerSample, bytepack[i], mask);
+                extractedBit = b.CreateZExtOrTrunc(extractedBit, vec1Type);
+                b.storeOutputStreamPack("outputStreams", b.getSize(j), b.getInt32(i), blockOffsetPhi, extractedBit);
+            }
+        }
+
+        Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
+        blockOffsetPhi->addIncoming(nextBlk, loop);
+        Value *moreToDo = b.CreateICmpNE(nextBlk, numOfBlocks);
+
+        b.CreateCondBr(moreToDo, loop, exit);
+        b.SetInsertPoint(exit);
+    }
+
     Stereo2MonoKernel::Stereo2MonoKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
         : MultiBlockKernel(b, "Stereo2MonoKernel_" + std::to_string(bitsPerSample),
                            {Binding{"inputStreams", inputStreams, FixedRate(1)}},
