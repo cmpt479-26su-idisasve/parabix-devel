@@ -70,7 +70,7 @@ namespace audio
         StreamSet *DataStreams = P->CreateStreamSet(numChannels, 8);
         if (numChannels == 2)
         {
-            P->CreateKernelCall<SplitKernel>(TrimByteStream, DataStreams, bitPerSample);
+            P->CreateKernelCall<SplitKernel>(bitPerSample, TrimByteStream, DataStreams);
         }
         else
         {
@@ -176,7 +176,7 @@ namespace audio
         if (bitPerSample == 16)
         {
             StreamSet * ParallelStreams = P->CreateStreamSet(2, 8);
-            P->CreateKernelCall<SplitKernel>(inputStream, ParallelStreams, 8);
+            P->CreateKernelCall<SplitKernel>(8, inputStream, ParallelStreams);
             
             std::vector<StreamSet *> BitsBasis;
             BitsBasis.reserve(2);
@@ -197,6 +197,25 @@ namespace audio
         else if (bitPerSample == 8)
         {
             P->CreateKernelCall<S2PKernel>(inputStream, outputStreams);
+        }
+        else 
+        {
+            throw std::invalid_argument("Only 8 and 16 bit depths are supported");
+        }
+    }
+
+    void P2S(
+        const std::unique_ptr<ProgramBuilder> &P,
+        StreamSet * const inputStreams,
+        StreamSet *&outputStream)
+    {
+        if (inputStreams->getNumElements() == 16)
+        {
+            
+        }
+        else if (inputStreams->getNumElements() == 8)
+        {
+            
         }
         else 
         {

@@ -29,13 +29,26 @@ namespace audio
     class SplitKernel final : public MultiBlockKernel {
     public:
         SplitKernel(KernelBuilder & b,
+                const unsigned int bitsPerSample,
                 StreamSet * const inputStreams,
-                StreamSet * const outputStreams,
-                const unsigned int bitsPerSample = 16);
+                StreamSet * const outputStreams);
     protected:
         void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
     private:
         unsigned int bitsPerSample;
         unsigned int numInputStreams;
+    };
+
+    class MergeKernel final : public MultiBlockKernel {
+    public:
+        MergeKernel(KernelBuilder & b,
+                const unsigned int bitsPerSample,
+                StreamSet * const firstInputStream,
+                StreamSet * const secondInputStream,
+                StreamSet * const outputStream);
+    protected:
+        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
+    private:
+        unsigned int bitsPerSample;
     };
 }

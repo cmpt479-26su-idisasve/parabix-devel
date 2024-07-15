@@ -1,6 +1,5 @@
 #include "audio/stream_manipulation.h"
 
-
 namespace audio
 {
     void CreateOnes::generatePabloMethod()
@@ -8,14 +7,63 @@ namespace audio
         pablo::PabloBuilder pb(getEntryScope());
         PabloAST *inputStream = getInputStreamSet("dataStream")[0];
 
-
         PabloAST *ones = pb.createOr(pb.createOnes(), inputStream);
-        
+
         Var *onesVar = getOutputStreamVar("onesStream");
         pb.createAssign(pb.createExtract(onesVar, pb.getInteger(0)), ones);
     }
 
-    SplitKernel::SplitKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+    MergeKernel::MergeKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const firstInputStream, StreamSet *const secondInputStream, StreamSet *const outputStream)
+        : MultiBlockKernel(b, "MergeKernel_" + std::to_string(bitsPerSample),
+                           {Binding{"firstInputStream", firstInputStream, FixedRate(1)}, Binding{"secondInputStream", secondInputStream, FixedRate(1)}},
+                           {Binding{"outputStream", outputStream, FixedRate(2)}}, {}, {}, {}),
+          bitsPerSample(bitsPerSample) {}
+
+    void MergeKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
+    {
+        const unsigned fw = 8;
+        const unsigned inputPacksPerStride = fw * 1;
+        const unsigned outputPacksPerStride = fw * 2;
+
+        BasicBlock *entry = b.GetInsertBlock();
+        BasicBlock *packLoop = b.CreateBasicBlock("packLoop");
+        BasicBlock *packFinalize = b.CreateBasicBlock("packFinalize");
+        Constant *const ZERO = b.getSize(0);
+        Value *numOfBlocks = numOfStrides;
+        b.CreateBr(packLoop);
+        b.SetInsertPoint(packLoop);
+        PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
+        blockOffsetPhi->addIncoming(ZERO, entry);
+
+        Value *bytepack_1[inputPacksPerStride];
+        Value *bytepack_2[inputPacksPerStride];
+        for (unsigned i = 0; i < inputPacksPerStride; i++)
+        {
+            bytepack_1[i] = b.loadInputStreamPack("firstInputStream", ZERO, b.getInt32(i), blockOffsetPhi);
+            bytepack_2[i] = b.loadInputStreamPack("secondInputStream", ZERO, b.getInt32(i), blockOffsetPhi);
+        }
+
+        Value *output[outputPacksPerStride];
+        for (unsigned i = 0; i < inputPacksPerStride; i++)
+        {
+            output[2*i] = b.esimd_mergel(bitsPerSample, bytepack_1[i], bytepack_2[i]);
+            output[2*i + 1] = b.esimd_mergeh(bitsPerSample, bytepack_1[i], bytepack_2[i]);
+        }
+
+        for (int i = 0; i < outputPacksPerStride; ++i)
+        {
+            b.storeOutputStreamPack("outputStream", ZERO, b.getInt32(i), blockOffsetPhi, output[i]);
+        }
+
+        Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
+        blockOffsetPhi->addIncoming(nextBlk, packLoop);
+        Value *moreToDo = b.CreateICmpNE(nextBlk, numOfBlocks);
+
+        b.CreateCondBr(moreToDo, packLoop, packFinalize);
+        b.SetInsertPoint(packFinalize);
+    }
+
+    SplitKernel::SplitKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStreams, StreamSet *const outputStreams)
         : MultiBlockKernel(b, "SplitKernel_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
                            {Binding{"inputStreams", inputStreams, FixedRate(2)}},
                            {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
