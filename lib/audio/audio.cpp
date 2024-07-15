@@ -184,13 +184,23 @@ namespace audio
             {
                 BitsBasis.push_back(P->CreateStreamSet(8));
             }
-            for (int i=1;i>=0;--i)
+            
+            for (int i=0;i<2;++i)
             {
                 StreamSet *SingleStream = P->CreateStreamSet(1, 8);
                 P->CreateKernelCall<IStreamSelect>(SingleStream, Select(ParallelStreams, {(unsigned)i}));
                 P->CreateKernelCall<S2PKernel>(SingleStream, BitsBasis[i]);
-                SHOW_STREAM(BitsBasis[i]);
             }
+
+            P->CreateKernelCall<ConcatenateKernel>(BitsBasis[0], BitsBasis[1], outputStreams);
+        }
+        else if (bitPerSample == 8)
+        {
+            P->CreateKernelCall<S2PKernel>(inputStream, outputStreams);
+        }
+        else 
+        {
+            throw std::invalid_argument("Only 8 and 16 bit depths are supported");
         }
     }
 
@@ -411,6 +421,35 @@ namespace audio
         Var * result = getOutputStreamVar("outputStreams");
         for (unsigned i = 0; i < bitsPerSample; i++) {
             pb.createAssign(pb.createExtract(result, pb.getInteger(i)), resultStreams[i]);
+        }
+    }
+
+
+    ConcatenateKernel::ConcatenateKernel(KernelBuilder &b, StreamSet *const firstInputStreams, StreamSet *const secondInputStreams, StreamSet *const outputStreams)
+        : PabloKernel(b, "ConcatenateKernel_" + std::to_string(firstInputStreams->getNumElements()) + "_" + std::to_string(secondInputStreams->getNumElements()),
+                           {Binding{"firstInputStreams", firstInputStreams}, Binding{"secondInputStreams", secondInputStreams}},
+                           {Binding{"outputStreams", outputStreams}}),
+        numFirstInputStreams(firstInputStreams->getNumElements()), numSecondInputStreams(secondInputStreams->getNumElements())
+    {
+        if (firstInputStreams->getNumElements() + secondInputStreams->getNumElements() != outputStreams->getNumElements())
+        {
+            throw std::invalid_argument("numOutputStreams(" + std::to_string(firstInputStreams->getNumElements()) + ") != numFirstInputStreams(" + std::to_string(secondInputStreams->getNumElements()) + ") + numSecondInputStreams("+ std::to_string(outputStreams->getNumElements()) + ")");
+        }
+    }
+
+    void ConcatenateKernel::generatePabloMethod()
+    {
+        pablo::PabloBuilder pb(getEntryScope());
+        BixNumCompiler bnc(pb);
+        std::vector<PabloAST *> firstInputStreams = getInputStreamSet("firstInputStreams");
+        std::vector<PabloAST *> secondInputStreams = getInputStreamSet("secondInputStreams");
+        Var * result = getOutputStreamVar("outputStreams");
+        for (unsigned i = 0; i < numFirstInputStreams; ++i) {
+            pb.createAssign(pb.createExtract(result, pb.getInteger(i)), firstInputStreams[i]);
+        }
+
+        for (unsigned i = 0; i < numSecondInputStreams; ++i) {
+            pb.createAssign(pb.createExtract(result, pb.getInteger(i + numFirstInputStreams)), secondInputStreams[i]);
         }
     }
 }

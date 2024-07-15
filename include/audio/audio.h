@@ -92,4 +92,18 @@ namespace audio
         unsigned int numInputStreams;
         unsigned int factor;
     };
+
+    class ConcatenateKernel final : public PabloKernel {
+    public:
+        ConcatenateKernel(kernel::KernelBuilder & b,
+                StreamSet *const firstInputStreams,
+                StreamSet *const secondInputStreams,
+                StreamSet * const outputStreams);
+    protected:
+        void generatePabloMethod() override;
+
+    private:
+        unsigned int numFirstInputStreams;
+        unsigned int numSecondInputStreams;
+    };
 }

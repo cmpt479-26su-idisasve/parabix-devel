@@ -55,8 +55,8 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &n
         StreamSet *BasisBits = P->CreateStreamSet(bitsPerSample);
 
         P->CreateKernelCall<IStreamSelect>(Channel, Select(dataStreams, {i}));
-        P->CreateKernelCall<FlexS2PKernel>(bitsPerSample, Channel, BasisBits);
-
+        S2P(P, bitsPerSample, Channel, BasisBits);
+        SHOW_STREAM(BasisBits);
         StreamSet *AmplifiedBasisBits = P->CreateStreamSet(bitsPerSample);
         P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, 2, AmplifiedBasisBits);
         SHOW_STREAM(AmplifiedBasisBits);
@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 16, numSamples = 0;
+    unsigned int sampleRate = 0, numChannels = 1, bitsPerSample = 8, numSamples = 0;
     bool isWav = true;
     try
     {
