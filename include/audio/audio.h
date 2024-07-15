@@ -37,6 +37,11 @@ namespace audio
         StreamSet * const inputStream,
         StreamSet *&outputStreams);
 
+    void P2S(
+        const std::unique_ptr<ProgramBuilder> &P,
+        StreamSet * const inputStreams,
+        StreamSet *&outputStream);
+
     class FlexS2PKernel final : public MultiBlockKernel {
     public:
         FlexS2PKernel(kernel::KernelBuilder & b, 

@@ -18,6 +18,7 @@
 #include <iostream>
 #include <kernel/pipeline/driver/cpudriver.h>
 #include <audio/audio.h>
+#include <audio/stream_manipulation.h>
 #include <iostream>
 
 using namespace kernel;
@@ -48,20 +49,30 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &n
     StreamSet *dataStreams;
     ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
     SHOW_BYTES(dataStreams);
+    
+    std::vector<StreamSet *> OutputStreams(numChannels);
 
     for (int i = 0; i < numChannels; ++i)
     {
+        
         StreamSet *Channel = P->CreateStreamSet(1, 8);
         StreamSet *BasisBits = P->CreateStreamSet(bitsPerSample);
 
         P->CreateKernelCall<IStreamSelect>(Channel, Select(dataStreams, {i}));
         S2P(P, bitsPerSample, Channel, BasisBits);
-        SHOW_STREAM(BasisBits);
+        //SHOW_STREAM(BasisBits);
         StreamSet *AmplifiedBasisBits = P->CreateStreamSet(bitsPerSample);
         P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, 2, AmplifiedBasisBits);
-        SHOW_STREAM(AmplifiedBasisBits);
-    }
+        //SHOW_STREAM(AmplifiedBasisBits);
 
+        OutputStreams[i] = P->CreateStreamSet(1, 16);
+        P2S(P, AmplifiedBasisBits, OutputStreams[i]);
+        SHOW_BYTES(OutputStreams[i]);
+    }
+    
+    StreamSet *outputDataStream = P->CreateStreamSet(1, 16);
+    P->CreateKernelCall<MergeKernel>(16, OutputStreams[0], OutputStreams[1], outputDataStream);
+    SHOW_BYTES(outputDataStream);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
 
@@ -71,7 +82,7 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate = 0, numChannels = 1, bitsPerSample = 8, numSamples = 0;
+    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 16, numSamples = 0;
     bool isWav = true;
     try
     {

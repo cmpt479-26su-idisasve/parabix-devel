@@ -211,11 +211,11 @@ namespace audio
     {
         if (inputStreams->getNumElements() == 16)
         {
-            
+            P->CreateKernelCall<P2S16Kernel>(inputStreams, outputStream);
         }
         else if (inputStreams->getNumElements() == 8)
         {
-            
+            P->CreateKernelCall<P2SKernel>(inputStreams, outputStream);
         }
         else 
         {
