@@ -187,7 +187,7 @@ namespace audio
             for (int i=1;i>=0;--i)
             {
                 StreamSet *SingleStream = P->CreateStreamSet(1, 8);
-                P->CreateKernelCall<IStreamSelect>(SingleStream, Select(ParallelStreams, {i}));
+                P->CreateKernelCall<IStreamSelect>(SingleStream, Select(ParallelStreams, {(unsigned)i}));
                 P->CreateKernelCall<S2PKernel>(SingleStream, BitsBasis[i]);
                 SHOW_STREAM(BitsBasis[i]);
             }
@@ -340,7 +340,7 @@ namespace audio
         
         Type *vec16x16Type = FixedVectorType::get(b.getIntNTy(bitsPerSample), static_cast<unsigned>(numElementsPerPack));
 
-        Function *smulWithOverflow = Intrinsic::getDeclaration(getModule(), Intrinsic::smul_with_overflow, {vec16x16Type});
+        Function *smulWithOverflow = llvm::Intrinsic::getDeclaration(getModule(), llvm::Intrinsic::smul_with_overflow, {vec16x16Type});
         Value *factorVec = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), factor));
         Value *zeroVec = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 0));
         Value *minVal = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), -(1 << (bitsPerSample - 1))));
