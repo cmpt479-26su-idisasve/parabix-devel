@@ -48,7 +48,7 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& n
     ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
     SHOW_BYTES(dataStreams);
     StreamSet *MergedDataStream = P->CreateStreamSet(1, 8);
-    P->CreateKernelCall<Stereo2MonoKernel>(dataStreams, MergedDataStream);   
+    P->CreateKernelCall<Stereo2MonoKernel>(bitsPerSample, dataStreams, MergedDataStream);   
     SHOW_BYTES(MergedDataStream);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
