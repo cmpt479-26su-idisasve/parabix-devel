@@ -194,7 +194,7 @@ namespace audio
         }
     }
 
-    FlexS2PKernel::FlexS2PKernel(KernelBuilder &b, StreamSet *const inputStream, StreamSet *const outputStreams, const unsigned int bitsPerSample) 
+    FlexS2PKernel::FlexS2PKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStream, StreamSet *const outputStreams) 
         :
          bitsPerSample(bitsPerSample),
          MultiBlockKernel(b, "FlexS2PKernel_" + std::to_string(bitsPerSample),
@@ -260,7 +260,7 @@ namespace audio
         b.SetInsertPoint(exit);
     }
 
-    Stereo2MonoKernel::Stereo2MonoKernel(KernelBuilder &b, StreamSet *const inputStreams, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+    Stereo2MonoKernel::Stereo2MonoKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStreams, StreamSet *const outputStreams)
         : MultiBlockKernel(b, "Stereo2MonoKernel_" + std::to_string(bitsPerSample),
                            {Binding{"inputStreams", inputStreams, FixedRate(1)}},
                            {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
@@ -314,7 +314,7 @@ namespace audio
         b.SetInsertPoint(exit);
     }
 
-    AmplifyKernel::AmplifyKernel(KernelBuilder &b, StreamSet *const inputStreams, const unsigned int &factor, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+    AmplifyKernel::AmplifyKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStreams, const unsigned int &factor, StreamSet *const outputStreams)
         : MultiBlockKernel(b, "AmplifyKernel_" + std::to_string(factor) + "_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
                            {Binding{"inputStreams", inputStreams, FixedRate(1)}},
                            {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
@@ -390,7 +390,7 @@ namespace audio
         b.SetInsertPoint(exit);
     }
 
-    AmplifyPabloKernel::AmplifyPabloKernel(KernelBuilder &b, StreamSet *const inputStreams, const unsigned int &factor, StreamSet *const outputStreams, const unsigned int bitsPerSample)
+    AmplifyPabloKernel::AmplifyPabloKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStreams, const unsigned int &factor, StreamSet *const outputStreams)
         : PabloKernel(b, "AmplifyPabloKernel_" + std::to_string(factor) + "_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
                            {Binding{"inputStreams", inputStreams}},
                            {Binding{"outputStreams", outputStreams}}),
@@ -407,7 +407,7 @@ namespace audio
         pablo::PabloBuilder pb(getEntryScope());
         BixNumCompiler bnc(pb);
         std::vector<PabloAST *> inputStreams = getInputStreamSet("inputStreams");
-        std::vector<PabloAST *> resultStreams = bnc.MulModular(resultStreams, factor);
+        std::vector<PabloAST *> resultStreams = bnc.MulModular(inputStreams, factor);
         Var * result = getOutputStreamVar("outputStreams");
         for (unsigned i = 0; i < bitsPerSample; i++) {
             pb.createAssign(pb.createExtract(result, pb.getInteger(i)), resultStreams[i]);

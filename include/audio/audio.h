@@ -39,10 +39,10 @@ namespace audio
 
     class FlexS2PKernel final : public MultiBlockKernel {
     public:
-        FlexS2PKernel(kernel::KernelBuilder & b,
+        FlexS2PKernel(kernel::KernelBuilder & b, 
+                const unsigned int bitsPerSample,
                 StreamSet * const inputStream,
-                StreamSet * const outputStreams,
-                const unsigned int bitsPerSample = 16);
+                StreamSet * const outputStreams);
     protected:
         void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
     private:
@@ -52,9 +52,9 @@ namespace audio
     class Stereo2MonoKernel final : public MultiBlockKernel {
     public:
         Stereo2MonoKernel(kernel::KernelBuilder & b,
+                const unsigned int bitsPerSample,
                 StreamSet * const inputStreams,
-                StreamSet * const outputStream,
-                const unsigned int bitsPerSample = 16);
+                StreamSet * const outputStream);
     protected:
         void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
     private:
@@ -65,10 +65,10 @@ namespace audio
     class AmplifyKernel final : public MultiBlockKernel {
     public:
         AmplifyKernel(kernel::KernelBuilder & b,
+                const unsigned int bitsPerSample,
                 StreamSet * const inputStreams,
                 const unsigned int& factor,
-                StreamSet * const outputStreams,
-                const unsigned int bitsPerSample = 16);
+                StreamSet * const outputStreams);
     protected:
         void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
     private:
@@ -80,10 +80,10 @@ namespace audio
     class AmplifyPabloKernel final : public PabloKernel {
     public:
         AmplifyPabloKernel(kernel::KernelBuilder & b,
+                const unsigned int bitsPerSample,
                 StreamSet * const inputStreams,
                 const unsigned int& factor,
-                StreamSet * const outputStreams,
-                const unsigned int bitsPerSample = 16);
+                StreamSet * const outputStreams);
     protected:
         void generatePabloMethod() override;
 
