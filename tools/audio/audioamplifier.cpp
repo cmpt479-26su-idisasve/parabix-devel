@@ -107,8 +107,16 @@ int main(int argc, char *argv[])
         if (LLVM_UNLIKELY(fd_out == -1)) {
             llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
         } else {
-            // TO-DO: Process the header, and re-add to the beginning of the buffer
-            write(fd_out, wavStream.data<8>(), wavStream.length());
+            if (isWav) {
+                // TO-DO: Process the header, and re-add to the beginning of the buffer
+                // char header[44];
+                // read(fd, &header, 44);
+                // write(fd_out, &header, 44);
+            }
+            // NOTE: Multiplying by (bitsPerSample / 8) is a hack, to deal with incorrect lengths
+            //       reported when using register widths larger than 8.  This hack only supports
+            //       powers of 2 larger than or equal to 8.
+            write(fd_out, wavStream.data<8>(), wavStream.length() * (bitsPerSample / 8));
             close(fd_out);
         }
     }
