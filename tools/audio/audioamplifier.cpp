@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
     StreamSetPtr wavStream;
     fn(wavStream, fd);
     if (outputFile.getNumOccurrences() != 0) {
-        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT);
+        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0666);
         if (LLVM_UNLIKELY(fd_out == -1)) {
             llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
         } else {
