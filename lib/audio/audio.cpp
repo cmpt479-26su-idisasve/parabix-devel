@@ -12,6 +12,8 @@
 #include "audio/stream_manipulation.h"
 #include <llvm/IR/Intrinsics.h>
 #include <pablo/bixnum/bixnum.h>
+#include <pablo/pe_ones.h>
+#include <pablo/pe_zeroes.h>
 
 #define SHOW_STREAM(name)           \
     if (codegen::EnableIllustrator) \
@@ -439,7 +441,22 @@ namespace audio
         pablo::PabloBuilder pb(getEntryScope());
         BixNumCompiler bnc(pb);
         std::vector<PabloAST *> inputStreams = getInputStreamSet("inputStreams");
-        std::vector<PabloAST *> resultStreams = bnc.MulModular(inputStreams, factor);
+        std::vector<PabloAST *> resultStreams = bnc.MulFull(inputStreams, factor);
+        const unsigned bitsPerSample = inputStreams.size();
+        PabloAST *overflow = pb.createZeroes();
+        for (unsigned i = bitsPerSample;i < resultStreams.size() - 1;++i)
+        {
+            overflow = pb.createOr(overflow, resultStreams[i]);
+        }
+
+        for (unsigned i = 0; i < bitsPerSample-1;++i)
+        {
+            resultStreams[i] = pb.createSel(overflow, pb.createOnes(), resultStreams[i]);
+        }
+        
+        resultStreams[bitsPerSample-1] = pb.createSel(pb.createAnd(pb.createNot(inputStreams[inputStreams.size()-1]) /*sign bit*/, overflow), pb.createZeroes(), resultStreams[bitsPerSample-1]);
+        resultStreams[bitsPerSample-1] = pb.createSel(pb.createAnd(inputStreams[inputStreams.size()-1] /*sign bit*/, overflow), pb.createOnes(), resultStreams[bitsPerSample-1]);
+
         Var * result = getOutputStreamVar("outputStreams");
         for (unsigned i = 0; i < bitsPerSample; i++) {
             pb.createAssign(pb.createExtract(result, pb.getInteger(i)), resultStreams[i]);
