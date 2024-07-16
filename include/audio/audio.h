@@ -67,6 +67,17 @@ namespace audio
         unsigned int numInputStreams;
     };
 
+    class Stereo2MonoPabloKernel final : public PabloKernel {
+    public:
+        Stereo2MonoPabloKernel(kernel::KernelBuilder & b,
+                StreamSet * const firstInputStreams,
+                StreamSet * const secondInputStreams,
+                StreamSet * const outputStreams);
+    protected:
+        void generatePabloMethod() override;
+    };
+
+
     class AmplifyKernel final : public MultiBlockKernel {
     public:
         AmplifyKernel(kernel::KernelBuilder & b,

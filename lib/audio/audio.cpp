@@ -443,6 +443,36 @@ namespace audio
         }
     }
 
+    Stereo2MonoPabloKernel::Stereo2MonoPabloKernel(kernel::KernelBuilder & b, StreamSet * const firstInputStreams, StreamSet * const secondInputStreams, StreamSet * const outputStreams)
+        : PabloKernel(b, "Stereo2MonoPabloKernel_" + std::to_string(firstInputStreams->getNumElements()),
+                           {Binding{"firstInputStreams", firstInputStreams}, Binding{"secondInputStreams", secondInputStreams}},
+                           {Binding{"outputStreams", outputStreams}})
+    {
+        if (firstInputStreams->getNumElements() != outputStreams->getNumElements())
+        {
+            throw std::invalid_argument("firstInputStreams: " + std::to_string(firstInputStreams->getNumElements()) + " != outputStreams: " + std::to_string(outputStreams->getNumElements()));
+        }
+
+        if (secondInputStreams->getNumElements() != firstInputStreams->getNumElements())
+        {
+            throw std::invalid_argument("firstInputStreams: " + std::to_string(firstInputStreams->getNumElements()) + " != secondInputStreams: " + std::to_string(secondInputStreams->getNumElements()));
+        }
+    }
+
+    void Stereo2MonoPabloKernel::generatePabloMethod()
+    {
+        pablo::PabloBuilder pb(getEntryScope());
+        BixNumCompiler bnc(pb);
+        std::vector<PabloAST *> firstInputStreams = getInputStreamSet("firstInputStreams");
+        std::vector<PabloAST *> secondInputStreams = getInputStreamSet("secondInputStreams");
+
+        std::vector<PabloAST *> resultStreams = bnc.AddFull(firstInputStreams, secondInputStreams);
+        Var * result = getOutputStreamVar("outputStreams");
+        for (unsigned i = 1; i < resultStreams.size(); i++) {
+            pb.createAssign(pb.createExtract(result, pb.getInteger(i-1)), resultStreams[i]);
+        }
+    }
+
 
     ConcatenateKernel::ConcatenateKernel(KernelBuilder &b, StreamSet *const firstInputStreams, StreamSet *const secondInputStreams, StreamSet *const outputStreams)
         : PabloKernel(b, "ConcatenateKernel_" + std::to_string(firstInputStreams->getNumElements()) + "_" + std::to_string(secondInputStreams->getNumElements()),
