@@ -10,13 +10,16 @@
 #include <kernel/pipeline/pipeline_builder.h>
 #include <kernel/io/source_kernel.h>
 #include <kernel/io/stdout_kernel.h>
+#include <kernel/core/streamsetptr.h>
 #include <kernel/scan/scanmatchgen.h>
+#include <kernel/streamutils/stream_select.h>
 #include <string>
 #include <toolchain/toolchain.h>
 #include <fcntl.h>
 #include <iostream>
 #include <kernel/pipeline/driver/cpudriver.h>
 #include <audio/audio.h>
+#include <audio/stream_manipulation.h>
 #include <iostream>
 
 using namespace kernel;
@@ -36,20 +39,45 @@ using namespace audio;
 
 static cl::OptionCategory DemoOptions("Demo Options", "Demo control options.");
 static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), cl::Required, cl::cat(DemoOptions));
+static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the modified .wav file."), cl::cat(DemoOptions));
 
-typedef void (*PipelineFunctionType)(uint32_t fd);
-PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& numChannels, const unsigned int& numSamples, const unsigned int& bitsPerSample, const unsigned int& sampleRate, const bool& isWav)
+typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
+PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &numChannels, const unsigned int &numSamples, const unsigned int &bitsPerSample, const unsigned int &sampleRate, const bool &isWav)
 {
+    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,16);
+
     auto &b = pxDriver.getBuilder();
-    auto P = pxDriver.makePipeline({Binding{b.getInt32Ty(), "inputFileDecriptor"}}, {});
+    auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
+                                             {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
     Scalar *fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
     StreamSet *dataStreams;
     ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
     SHOW_BYTES(dataStreams);
-    StreamSet *AmplifyDataStream = P->CreateStreamSet(2, 8);
-    P->CreateKernelCall<AmplifyKernel>(dataStreams, 2, AmplifyDataStream);   
-    SHOW_BYTES(AmplifyDataStream);
+    
+    std::vector<StreamSet *> OutputStreams(numChannels);
+
+    for (int i = 0; i < numChannels; ++i)
+    {
+        
+        StreamSet *Channel = P->CreateStreamSet(1, 8);
+        StreamSet *BasisBits = P->CreateStreamSet(bitsPerSample);
+
+        P->CreateKernelCall<IStreamSelect>(Channel, Select(dataStreams, {(unsigned)i}));
+        S2P(P, bitsPerSample, Channel, BasisBits);
+        //SHOW_STREAM(BasisBits);
+        StreamSet *AmplifiedBasisBits = P->CreateStreamSet(bitsPerSample);
+        P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, 1, AmplifiedBasisBits);
+        //SHOW_STREAM(AmplifiedBasisBits);
+
+        OutputStreams[i] = P->CreateStreamSet(1, 16);
+        P2S(P, AmplifiedBasisBits, OutputStreams[i]);
+        SHOW_BYTES(OutputStreams[i]);
+    }
+    
+    StreamSet *outputDataStream = P->CreateStreamSet(1, 16);
+    P->CreateKernelCall<MergeKernel>(16, OutputStreams[0], OutputStreams[1], OutputBytes);
+    SHOW_BYTES(OutputBytes);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
 
@@ -59,21 +87,32 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate=0, numChannels=2, bitsPerSample=16, numSamples=0;
+    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 16, numSamples = 0;
     bool isWav = true;
     try
     {
-        readWAVHeader(fd, numChannels, numSamples, bitsPerSample, sampleRate); 
+        readWAVHeader(fd, numChannels, numSamples, bitsPerSample, sampleRate);
         std::cout << numChannels << " " << numChannels << " " << sampleRate << " " << bitsPerSample << "\n";
     }
-    catch(const std::exception& e)
+    catch (const std::exception &e)
     {
         llvm::errs() << "Warning: cannot parse " << inputFile << " WAV header for processing. Processing file as text.\n";
         isWav = false;
     }
 
     auto fn = generatePipeline(driver, numChannels, numSamples, bitsPerSample, sampleRate, isWav);
-    fn(fd);
+    StreamSetPtr wavStream;
+    fn(wavStream, fd);
+    if (outputFile.getNumOccurrences() != 0) {
+        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT);
+        if (LLVM_UNLIKELY(fd_out == -1)) {
+            llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
+        } else {
+            // TO-DO: Process the header, and re-add to the beginning of the buffer
+            write(fd_out, wavStream.data<16>(), wavStream.length());
+            close(fd_out);
+        }
+    }
     close(fd);
     return 0;
 }
