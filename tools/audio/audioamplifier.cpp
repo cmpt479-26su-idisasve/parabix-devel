@@ -75,7 +75,6 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &n
         SHOW_BYTES(OutputStreams[i]);
     }
     
-    StreamSet *outputDataStream = P->CreateStreamSet(1, bitsPerSample);
     P->CreateKernelCall<MergeKernel>(bitsPerSample, OutputStreams[0], OutputStreams[1], OutputBytes);
     SHOW_BYTES(OutputBytes);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
