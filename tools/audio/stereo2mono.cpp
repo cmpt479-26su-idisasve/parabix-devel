@@ -8,6 +8,7 @@
 #include <re/adt/re_re.h>
 #include <kernel/core/kernel_builder.h>
 #include <kernel/pipeline/pipeline_builder.h>
+#include <kernel/streamutils/stream_select.h>
 #include <kernel/io/source_kernel.h>
 #include <kernel/io/stdout_kernel.h>
 #include <kernel/scan/scanmatchgen.h>
@@ -47,9 +48,26 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& n
     StreamSet *dataStreams;
     ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
     SHOW_BYTES(dataStreams);
-    StreamSet *MergedDataStream = P->CreateStreamSet(1, 8);
-    P->CreateKernelCall<Stereo2MonoKernel>(bitsPerSample, dataStreams, MergedDataStream);   
-    SHOW_BYTES(MergedDataStream);
+
+    StreamSet *FirstChannelStream = P->CreateStreamSet(1, 8);
+    StreamSet *FirstChannelBasisBits = P->CreateStreamSet(bitsPerSample);
+    P->CreateKernelCall<IStreamSelect>(FirstChannelStream, Select(dataStreams, {(unsigned)0}));
+    S2P(P, bitsPerSample, FirstChannelStream, FirstChannelBasisBits);
+    //SHOW_BIXNUM(FirstChannelBasisBits[i]);
+
+    StreamSet *SecondChannelStream = P->CreateStreamSet(1, 8);
+    StreamSet *SecondChannelBasisBits = P->CreateStreamSet(bitsPerSample);
+    P->CreateKernelCall<IStreamSelect>(SecondChannelStream, Select(dataStreams, {(unsigned)1}));
+    S2P(P, bitsPerSample, SecondChannelStream, SecondChannelBasisBits);
+    //SHOW_BIXNUM(OutputStreams[i]);
+
+    StreamSet *MonoBasisBits = P->CreateStreamSet(bitsPerSample);
+    P->CreateKernelCall<Stereo2MonoPabloKernel>(FirstChannelBasisBits, SecondChannelBasisBits, MonoBasisBits);   
+
+    StreamSet *MonoStream = P->CreateStreamSet(1, bitsPerSample);
+    P2S(P, MonoBasisBits, MonoStream);
+    SHOW_BYTES(MonoStream);
+
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
 
