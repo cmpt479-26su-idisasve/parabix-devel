@@ -315,7 +315,7 @@ namespace audio
         Constant *const ONE = b.getSize(1);
 
         Type *vec16x16Type = FixedVectorType::get(b.getIntNTy(bitsPerSample), static_cast<unsigned>(numElementsPerPack));
-        Value *shiftAmount = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 1));
+        Value *oneVec = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 1));
 
         Value *numOfBlocks = numOfStrides;
         b.CreateBr(loop);
@@ -330,8 +330,11 @@ namespace audio
             bytepack_1 = b.CreateBitCast(bytepack_1, vec16x16Type);
             bytepack_2 = b.loadInputStreamPack("inputStreams", ONE, b.getInt32(i), blockOffsetPhi);
             bytepack_2 = b.CreateBitCast(bytepack_2, vec16x16Type);
-            Value *sumBytePack = b.CreateAdd(bytepack_1, bytepack_2);
-            Value *meanBytePack = b.CreateAShr(sumBytePack, shiftAmount);
+            Value *lastBits = b.CreateAnd(b.CreateAnd(bytepack_2,bytepack_1), oneVec);
+            Value *shiftedBytePack_1 = b.CreateAShr(bytepack_1, oneVec);
+            Value *shiftedBytePack_2 = b.CreateAShr(bytepack_2, oneVec);
+            Value *sumBytePack = b.CreateAdd(shiftedBytePack_1, shiftedBytePack_2);
+            Value *meanBytePack = b.CreateAdd(sumBytePack, lastBits);
             b.storeOutputStreamPack("outputStreams", ZERO, b.getInt32(i), blockOffsetPhi, meanBytePack);
         }
 
