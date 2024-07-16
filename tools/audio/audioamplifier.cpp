@@ -44,7 +44,7 @@ static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the
 typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
 PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &numChannels, const unsigned int &numSamples, const unsigned int &bitsPerSample, const unsigned int &sampleRate, const bool &isWav)
 {
-    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,16);
+    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,bitsPerSample);
 
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
@@ -70,13 +70,13 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &n
         P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, 1, AmplifiedBasisBits);
         //SHOW_STREAM(AmplifiedBasisBits);
 
-        OutputStreams[i] = P->CreateStreamSet(1, 16);
+        OutputStreams[i] = P->CreateStreamSet(1, bitsPerSample);
         P2S(P, AmplifiedBasisBits, OutputStreams[i]);
         SHOW_BYTES(OutputStreams[i]);
     }
     
-    StreamSet *outputDataStream = P->CreateStreamSet(1, 16);
-    P->CreateKernelCall<MergeKernel>(16, OutputStreams[0], OutputStreams[1], OutputBytes);
+    StreamSet *outputDataStream = P->CreateStreamSet(1, bitsPerSample);
+    P->CreateKernelCall<MergeKernel>(bitsPerSample, OutputStreams[0], OutputStreams[1], OutputBytes);
     SHOW_BYTES(OutputBytes);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 16, numSamples = 0;
+    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 8, numSamples = 0;
     bool isWav = true;
     try
     {
@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
             llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
         } else {
             // TO-DO: Process the header, and re-add to the beginning of the buffer
-            write(fd_out, wavStream.data<16>(), wavStream.length());
+            write(fd_out, wavStream.data<8>(), wavStream.length());
             close(fd_out);
         }
     }
