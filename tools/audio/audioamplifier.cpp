@@ -92,8 +92,8 @@ int main(int argc, char *argv[])
     bool isWav = true;
     try
     {
-        readWAVHeader(fd, numChannels, numSamples, bitsPerSample, sampleRate);
-        std::cout << numChannels << " " << numChannels << " " << sampleRate << " " << bitsPerSample << "\n";
+        readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples);
+        std::cout << numChannels << " " << sampleRate << " " << bitsPerSample << " " << numSamples << "\n";
     }
     catch (const std::exception &e)
     {
@@ -110,15 +110,10 @@ int main(int argc, char *argv[])
             llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
         } else {
             if (isWav) {
-                // TO-DO: Process the header, and re-add to the beginning of the buffer
-                char header[44];
-                lseek(fd, 0, SEEK_SET);
-                read(fd, &header, 44);
-                write(fd_out, &header, 44);
+                auto header = createWAVHeader(numChannels, sampleRate, bitsPerSample, numSamples);
+                write(fd_out, header.c_str(), header.size());
             }
-            // NOTE: Multiplying by (bitsPerSample / 8) is a hack, to deal with incorrect lengths
-            //       reported when using register widths larger than 8.  This hack only supports
-            //       powers of 2 larger than or equal to 8.
+            // NOTE: Despite a sample can be 8, 16, 32, etc. we treat the stream as bytestream (8-bit) to make it consistent with existing kernels.
             write(fd_out, wavStream.data<8>(), wavStream.length());
             close(fd_out);
         }

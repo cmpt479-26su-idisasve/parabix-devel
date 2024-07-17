@@ -35,7 +35,7 @@ namespace audio
         unsigned int numChannels,
         unsigned int numSamples,
         unsigned int sampleRate,
-        unsigned int bitPerSample,
+        unsigned int bitsPerSample,
         const bool includedHeader,
         StreamSet *&outputDataStreams)
     {
@@ -68,11 +68,11 @@ namespace audio
             TrimByteStream = ByteStream;
         }
 
-        SHOW_BYTES(TrimByteStream);
+        //SHOW_BYTES(TrimByteStream);
         StreamSet *DataStreams = P->CreateStreamSet(numChannels, 8);
         if (numChannels == 2)
         {
-            P->CreateKernelCall<SplitKernel>(bitPerSample, TrimByteStream, DataStreams);
+            P->CreateKernelCall<SplitKernel>(bitsPerSample, TrimByteStream, DataStreams);
         }
         else
         {
@@ -81,10 +81,48 @@ namespace audio
         outputDataStreams = DataStreams;
     }
 
+    // adapted from chatgpt with some modifications :)
+    struct WAVHeader {
+        char RIFF[4] = {'R','I','F','F'};
+        uint32_t chunkSize;
+        char WAVE[4] = {'W','A','V','E'};
+        char FMT[4] = {'f','m','t',' '};
+        uint32_t subchunk1Size = 16;  // For PCM
+        uint16_t audioFormat = 1;     // PCM = 1
+        uint16_t numChannels;
+        uint32_t sampleRate;
+        uint32_t byteRate;
+        uint16_t blockAlign;
+        uint16_t bitsPerSample;
+        char DATA[4] = {'d','a','t','a'};
+        uint32_t subchunk2Size;
+    };
+
+    std::string createWAVHeader(
+        const unsigned int &numChannels,
+        const unsigned int &sampleRate,
+        const unsigned int &bitsPerSample,
+        const unsigned int &numSamples)
+    {   
+        WAVHeader header;
+
+        header.numChannels = numChannels;
+        header.sampleRate = sampleRate;
+        header.bitsPerSample = bitsPerSample;
+        header.blockAlign = numChannels * (bitsPerSample / 8);
+        header.byteRate = sampleRate * header.blockAlign;
+        header.subchunk2Size = numSamples * header.blockAlign;
+        header.chunkSize = 36 + header.subchunk2Size;
+
+        std::ostringstream oss;
+        oss.write(reinterpret_cast<char*>(&header), sizeof(header));
+        return oss.str();
+    }
+
     void readWAVHeader(const int &fd,
                        unsigned int &numChannels,
                        unsigned int &sampleRate,
-                       unsigned int &bitPerSample,
+                       unsigned int &bitsPerSample,
                        unsigned int &numSamples)
     {
         char temp_buffer[11];
@@ -141,7 +179,7 @@ namespace audio
         {
             throw std::runtime_error("Error parsing file format.");
         }
-        bitPerSample = bits_per_sample;
+        bitsPerSample = bits_per_sample;
 
         bytesRead = read(fd, temp_buffer, 4);
         temp_buffer[4] = '\0';
@@ -166,20 +204,19 @@ namespace audio
             throw std::runtime_error("Error parsing file format: Cannot interpret data chunk.");
         }
 
-        numSamples = subchunk2_size / (numChannels * bitPerSample / 8);
+        numSamples = subchunk2_size / (numChannels * bitsPerSample / 8);
     }
 
     void S2P(
         const std::unique_ptr<ProgramBuilder> &P,
-        unsigned int bitPerSample,
+        unsigned int bitsPerSample,
         StreamSet * const inputStream,
         StreamSet *&outputStreams)
     {
-        if (bitPerSample == 16)
+        if (bitsPerSample == 16)
         {
             StreamSet * ParallelStreams = P->CreateStreamSet(2, 8);
             P->CreateKernelCall<SplitKernel>(8, inputStream, ParallelStreams);
-            
             std::vector<StreamSet *> BitsBasis;
             BitsBasis.reserve(2);
             for (int i=0;i<2;++i)
@@ -196,7 +233,7 @@ namespace audio
 
             P->CreateKernelCall<ConcatenateKernel>(BitsBasis[0], BitsBasis[1], outputStreams);
         }
-        else if (bitPerSample == 8)
+        else if (bitsPerSample == 8)
         {
             P->CreateKernelCall<S2PKernel>(inputStream, outputStreams);
         }
@@ -213,7 +250,15 @@ namespace audio
     {
         if (inputStreams->getNumElements() == 16)
         {
-            P->CreateKernelCall<P2S16Kernel>(inputStreams, outputStream);
+            StreamSet *LowStream = P->CreateStreamSet(1, 8);
+            StreamSet *HighStream = P->CreateStreamSet(1, 8);
+            StreamSet *LowBitStream = P->CreateStreamSet(8);
+            StreamSet *HighBittream = P->CreateStreamSet(8);
+            P->CreateKernelCall<IStreamSelect>(LowBitStream, Select(inputStreams, {(unsigned)0, 1, 2, 3, 4, 5, 6, 7}));
+            P->CreateKernelCall<IStreamSelect>(HighBittream, Select(inputStreams, {(unsigned)8, 9, 10, 11, 12, 13, 14, 15}));
+            P->CreateKernelCall<P2SKernel>(LowBitStream, LowStream);
+            P->CreateKernelCall<P2SKernel>(HighBittream, HighStream);
+            P->CreateKernelCall<MergeKernel>(8, LowStream, HighStream, outputStream);
         }
         else if (inputStreams->getNumElements() == 8)
         {
