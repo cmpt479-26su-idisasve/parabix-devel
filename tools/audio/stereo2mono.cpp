@@ -103,7 +103,12 @@ int main(int argc, char *argv[])
         if (LLVM_UNLIKELY(fd_out == -1)) {
             llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
         } else {
-            write(fd_out, outputStream.data<8>(), outputStream.length() * (bitsPerSample / 8));
+            if (isWav) {
+                auto header = createWAVHeader(1, sampleRate, bitsPerSample, numSamples);
+                write(fd_out, header.c_str(), header.size());
+            }
+            // NOTE: Despite a sample can be 8, 16, 32, etc. we treat the stream as bytestream (8-bit) to make it consistent with existing kernels.
+            write(fd_out, outputStream.data<8>(), outputStream.length());
             close(fd_out);
         }
     }
