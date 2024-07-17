@@ -43,7 +43,7 @@ static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the
 typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
 PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& numChannels, const unsigned int& numSamples, const unsigned int& bitsPerSample, const unsigned int& sampleRate, const bool& isWav)
 {
-    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1, bitsPerSample);
+    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1, 8);
 
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
@@ -52,22 +52,23 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& n
 
     StreamSet *dataStreams;
     ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
-    SHOW_BYTES(dataStreams);
+    //SHOW_BYTES(dataStreams);
 
     StreamSet *FirstChannelStream = P->CreateStreamSet(1, 8);
     StreamSet *FirstChannelBasisBits = P->CreateStreamSet(bitsPerSample);
     P->CreateKernelCall<IStreamSelect>(FirstChannelStream, Select(dataStreams, {(unsigned)0}));
     S2P(P, bitsPerSample, FirstChannelStream, FirstChannelBasisBits);
-    //SHOW_BIXNUM(FirstChannelBasisBits[i]);
+    //SHOW_STREAM(FirstChannelBasisBits);
 
     StreamSet *SecondChannelStream = P->CreateStreamSet(1, 8);
     StreamSet *SecondChannelBasisBits = P->CreateStreamSet(bitsPerSample);
     P->CreateKernelCall<IStreamSelect>(SecondChannelStream, Select(dataStreams, {(unsigned)1}));
     S2P(P, bitsPerSample, SecondChannelStream, SecondChannelBasisBits);
-    //SHOW_BIXNUM(OutputStreams[i]);
+    //SHOW_STREAM(SecondChannelBasisBits);
 
     StreamSet *MonoBasisBits = P->CreateStreamSet(bitsPerSample);
     P->CreateKernelCall<Stereo2MonoPabloKernel>(FirstChannelBasisBits, SecondChannelBasisBits, MonoBasisBits);   
+    //SHOW_STREAM(MonoBasisBits);
 
     P2S(P, MonoBasisBits, OutputBytes);
     SHOW_BYTES(OutputBytes);
@@ -85,7 +86,7 @@ int main(int argc, char *argv[])
     bool isWav = true;
     try
     {
-        readWAVHeader(fd, numChannels, numSamples, bitsPerSample, sampleRate); 
+        readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples); 
         std::cout << numChannels << " " << numChannels << " " << sampleRate << " " << bitsPerSample << "\n";
     }
     catch(const std::exception& e)
