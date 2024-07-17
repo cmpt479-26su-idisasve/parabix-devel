@@ -39,12 +39,13 @@ using namespace audio;
 
 static cl::OptionCategory DemoOptions("Demo Options", "Demo control options.");
 static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), cl::Required, cl::cat(DemoOptions));
+static cl::opt<int> amplifyFactor("f", cl::desc("Amplify factor"), cl::Required, cl::cat(DemoOptions));
 static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the modified .wav file."), cl::cat(DemoOptions));
 
 typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
-PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &numChannels, const unsigned int &numSamples, const unsigned int &bitsPerSample, const unsigned int &sampleRate, const bool &isWav)
+PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& amplifyFactor, const unsigned int &numChannels, const unsigned int &numSamples, const unsigned int &bitsPerSample, const unsigned int &sampleRate, const bool &isWav)
 {
-    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,bitsPerSample);
+    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,8);
 
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
@@ -53,7 +54,7 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &n
 
     StreamSet *dataStreams;
     ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
-    SHOW_BYTES(dataStreams);
+    //SHOW_BYTES(dataStreams);
     
     std::vector<StreamSet *> OutputStreams(numChannels);
 
@@ -67,16 +68,17 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int &n
         S2P(P, bitsPerSample, Channel, BasisBits);
         //SHOW_STREAM(BasisBits);
         StreamSet *AmplifiedBasisBits = P->CreateStreamSet(bitsPerSample);
-        P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, 1, AmplifiedBasisBits);
+        P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, amplifyFactor, AmplifiedBasisBits);
         //SHOW_STREAM(AmplifiedBasisBits);
 
-        OutputStreams[i] = P->CreateStreamSet(1, bitsPerSample);
+        OutputStreams[i] = P->CreateStreamSet(1, 8);
         P2S(P, AmplifiedBasisBits, OutputStreams[i]);
-        SHOW_BYTES(OutputStreams[i]);
+        //SHOW_BYTES(OutputStreams[i]);
     }
     
     P->CreateKernelCall<MergeKernel>(bitsPerSample, OutputStreams[0], OutputStreams[1], OutputBytes);
     SHOW_BYTES(OutputBytes);
+    //P->CreateKernelCall<StdOutKernel>(OutputBytes);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
 
@@ -86,7 +88,7 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 8, numSamples = 0;
+    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 16, numSamples = 0;
     bool isWav = true;
     try
     {
@@ -99,24 +101,25 @@ int main(int argc, char *argv[])
         isWav = false;
     }
 
-    auto fn = generatePipeline(driver, numChannels, numSamples, bitsPerSample, sampleRate, isWav);
+    auto fn = generatePipeline(driver, amplifyFactor, numChannels, numSamples, bitsPerSample, sampleRate, isWav);
     StreamSetPtr wavStream;
     fn(wavStream, fd);
     if (outputFile.getNumOccurrences() != 0) {
-        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0666);
+        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT, 0666);
         if (LLVM_UNLIKELY(fd_out == -1)) {
             llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
         } else {
             if (isWav) {
                 // TO-DO: Process the header, and re-add to the beginning of the buffer
-                // char header[44];
-                // read(fd, &header, 44);
-                // write(fd_out, &header, 44);
+                char header[44];
+                lseek(fd, 0, SEEK_SET);
+                read(fd, &header, 44);
+                write(fd_out, &header, 44);
             }
             // NOTE: Multiplying by (bitsPerSample / 8) is a hack, to deal with incorrect lengths
             //       reported when using register widths larger than 8.  This hack only supports
             //       powers of 2 larger than or equal to 8.
-            write(fd_out, wavStream.data<8>(), wavStream.length() * (bitsPerSample / 8));
+            write(fd_out, wavStream.data<8>(), wavStream.length());
             close(fd_out);
         }
     }
