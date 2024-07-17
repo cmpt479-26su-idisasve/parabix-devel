@@ -7,6 +7,7 @@
 #include <re/adt/re_name.h>
 #include <re/adt/re_re.h>
 #include <kernel/core/kernel_builder.h>
+#include <kernel/core/streamsetptr.h>
 #include <kernel/pipeline/pipeline_builder.h>
 #include <kernel/streamutils/stream_select.h>
 #include <kernel/io/source_kernel.h>
@@ -37,12 +38,16 @@ using namespace audio;
 
 static cl::OptionCategory DemoOptions("Demo Options", "Demo control options.");
 static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), cl::Required, cl::cat(DemoOptions));
+static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the modified .wav file."), cl::cat(DemoOptions));
 
-typedef void (*PipelineFunctionType)(uint32_t fd);
+typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
 PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& numChannels, const unsigned int& numSamples, const unsigned int& bitsPerSample, const unsigned int& sampleRate, const bool& isWav)
 {
+    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1, bitsPerSample);
+
     auto &b = pxDriver.getBuilder();
-    auto P = pxDriver.makePipeline({Binding{b.getInt32Ty(), "inputFileDecriptor"}}, {});
+    auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
+                                             {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
     Scalar *fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
     StreamSet *dataStreams;
@@ -64,9 +69,8 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& n
     StreamSet *MonoBasisBits = P->CreateStreamSet(bitsPerSample);
     P->CreateKernelCall<Stereo2MonoPabloKernel>(FirstChannelBasisBits, SecondChannelBasisBits, MonoBasisBits);   
 
-    StreamSet *MonoStream = P->CreateStreamSet(1, bitsPerSample);
-    P2S(P, MonoBasisBits, MonoStream);
-    SHOW_BYTES(MonoStream);
+    P2S(P, MonoBasisBits, OutputBytes);
+    SHOW_BYTES(OutputBytes);
 
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
@@ -91,7 +95,18 @@ int main(int argc, char *argv[])
     }
 
     auto fn = generatePipeline(driver, numChannels, numSamples, bitsPerSample, sampleRate, isWav);
-    fn(fd);
+    StreamSetPtr outputStream;
+    fn(outputStream, fd);
+
+    if (outputFile.getNumOccurrences() != 0) {
+        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (LLVM_UNLIKELY(fd_out == -1)) {
+            llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
+        } else {
+            write(fd_out, outputStream.data<8>(), outputStream.length() * (bitsPerSample / 8));
+            close(fd_out);
+        }
+    }
     close(fd);
     return 0;
 }
