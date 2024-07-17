@@ -18,8 +18,14 @@ namespace audio
         const int &fd,
         unsigned int &numChannels,
         unsigned int &sampleRate,
-        unsigned int &bitPerSample,
+        unsigned int &bitsPerSample,
         unsigned int &numSamples);
+
+    std::string createWAVHeader(
+        const unsigned int &numChannels,
+        const unsigned int &sampleRate,
+        const unsigned int &bitsPerSample,
+        const unsigned int &numSamples);
 
     void ExtractWAVData(
         const std::unique_ptr<ProgramBuilder> &P,
@@ -27,13 +33,13 @@ namespace audio
         unsigned int numChannels,
         unsigned int numSamples,
         unsigned int sampleRate,
-        unsigned int bitPerSample,
+        unsigned int bitsPerSample,
         const bool includedHeader,
         StreamSet *&outputDataStreams);
 
     void S2P(
         const std::unique_ptr<ProgramBuilder> &P,
-        unsigned int bitPerSample,
+        unsigned int bitsPerSample,
         StreamSet * const inputStream,
         StreamSet *&outputStreams);
 
