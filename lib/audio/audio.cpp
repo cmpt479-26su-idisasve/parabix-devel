@@ -550,8 +550,12 @@ namespace audio
         BixNumCompiler bnc(pb);
         std::vector<PabloAST *> firstInputStreams = getInputStreamSet("firstInputStreams");
         std::vector<PabloAST *> secondInputStreams = getInputStreamSet("secondInputStreams");
+        
+        const unsigned bitsPerSample = firstInputStreams.size() + 1;
+        std::vector<PabloAST *> extendedFirstInputStreams = bnc.SignExtend(firstInputStreams, bitsPerSample);
+        std::vector<PabloAST *> extendedSecondInputStreams = bnc.SignExtend(secondInputStreams, bitsPerSample);
 
-        std::vector<PabloAST *> resultStreams = bnc.AddFull(firstInputStreams, secondInputStreams);
+        std::vector<PabloAST *> resultStreams = bnc.AddModular(extendedFirstInputStreams, extendedSecondInputStreams);
         Var * result = getOutputStreamVar("outputStreams");
         for (unsigned i = 1; i < resultStreams.size(); i++) {
             pb.createAssign(pb.createExtract(result, pb.getInteger(i-1)), resultStreams[i]);
