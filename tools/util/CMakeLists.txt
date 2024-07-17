@@ -16,6 +16,7 @@ DEPS
     kernel.streamutils
     kernel.util
     toolchain
+    audio
 )
 
 
@@ -34,7 +35,6 @@ DEPS
     kernel.util
     toolchain
 )
-
 
 parabix_add_executable(
 NAME
