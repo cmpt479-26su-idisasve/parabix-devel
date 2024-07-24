@@ -73,6 +73,19 @@ namespace audio
         unsigned int numInputStreams;
     };
 
+    class DiscontinuityKernel final : public PabloKernel {
+    public:
+        DiscontinuityKernel(kernel::KernelBuilder & b,
+                StreamSet * const inputStreams,
+                const unsigned int& threshold,
+                StreamSet * const markStream);
+    protected:
+        void generatePabloMethod() override;
+    
+    private:
+        unsigned int threshold;
+    };
+
     class Stereo2MonoPabloKernel final : public PabloKernel {
     public:
         Stereo2MonoPabloKernel(kernel::KernelBuilder & b,
