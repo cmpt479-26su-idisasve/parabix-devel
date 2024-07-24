@@ -36,3 +36,14 @@ DEPS
     kernel.pipeline
     audio
 )
+
+parabix_add_executable(
+NAME
+    discontinuity
+SRC
+    discontinuity.cpp
+DEPS
+    kernel.pipeline
+    audio
+)
+
