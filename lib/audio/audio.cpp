@@ -254,8 +254,8 @@ namespace audio
             StreamSet *HighStream = P->CreateStreamSet(1, 8);
             StreamSet *LowBitStream = P->CreateStreamSet(8);
             StreamSet *HighBittream = P->CreateStreamSet(8);
-            P->CreateKernelCall<IStreamSelect>(LowBitStream, Select(inputStreams, {(unsigned)0, 1, 2, 3, 4, 5, 6, 7}));
-            P->CreateKernelCall<IStreamSelect>(HighBittream, Select(inputStreams, {(unsigned)8, 9, 10, 11, 12, 13, 14, 15}));
+            P->CreateKernelCall<StreamSelect>(LowBitStream, Select(inputStreams, {(unsigned)0, 1, 2, 3, 4, 5, 6, 7}));
+            P->CreateKernelCall<StreamSelect>(HighBittream, Select(inputStreams, {(unsigned)8, 9, 10, 11, 12, 13, 14, 15}));
             P->CreateKernelCall<P2SKernel>(LowBitStream, LowStream);
             P->CreateKernelCall<P2SKernel>(HighBittream, HighStream);
             P->CreateKernelCall<MergeKernel>(8, LowStream, HighStream, outputStream);
