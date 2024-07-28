@@ -15,16 +15,16 @@
 #include <llvm/Support/raw_ostream.h>
 #include <unistd.h>
 
-#ifdef __APPLE__
+// #ifdef __APPLE__
 
-#else
+// #else
 
 
-#endif
+// #endif
 
-#if !defined(__APPLE__) && _POSIX_C_SOURCE >= 200809L
-#define PREAD pread64
-#endif
+// #if !defined(__APPLE__) && _POSIX_C_SOURCE >= 200809L
+// #define PREAD pread64
+// #endif
 
 using namespace llvm;
 
