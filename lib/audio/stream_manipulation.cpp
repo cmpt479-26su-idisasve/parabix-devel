@@ -15,13 +15,13 @@ namespace audio
 
     MergeKernel::MergeKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const firstInputStream, StreamSet *const secondInputStream, StreamSet *const outputStream)
         : MultiBlockKernel(b, "MergeKernel_" + std::to_string(bitsPerSample),
-                           {Binding{"firstInputStream", firstInputStream, FixedRate(1)}, Binding{"secondInputStream", secondInputStream, FixedRate(1)}},
-                           {Binding{"outputStream", outputStream, FixedRate(2)}}, {}, {}, {}),
+                           {Binding{"firstInputStream", firstInputStream}, Binding{"secondInputStream", secondInputStream}},
+                           {Binding{"outputStream", outputStream}}, {}, {}, {}),
           bitsPerSample(bitsPerSample) {}
 
     void MergeKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
     {
-        const unsigned fw = 8;
+        const unsigned fw = bitsPerSample;
         const unsigned inputPacksPerStride = fw * 1;
         const unsigned outputPacksPerStride = fw * 2;
 
@@ -65,13 +65,13 @@ namespace audio
 
     SplitKernel::SplitKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStreams, StreamSet *const outputStreams)
         : MultiBlockKernel(b, "SplitKernel_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),
-                           {Binding{"inputStreams", inputStreams, FixedRate(2)}},
-                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {}),
+                           {Binding{"inputStreams", inputStreams}},
+                           {Binding{"outputStreams", outputStreams}}, {}, {}, {}),
           numInputStreams(inputStreams->getNumElements()), bitsPerSample(bitsPerSample) {}
 
     void SplitKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
     {
-        const unsigned fw = 8;
+        const unsigned fw = bitsPerSample;
         const unsigned inputPacksPerStride = fw * 2;
         const unsigned outputPacksPerStride = fw * 1;
 

@@ -45,7 +45,7 @@ static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the
 typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
 PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& amplifyFactor, const unsigned int &numChannels, const unsigned int &numSamples, const unsigned int &bitsPerSample, const unsigned int &sampleRate, const bool &isWav)
 {
-    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,8);
+    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,bitsPerSample * numChannels);
 
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
@@ -54,24 +54,24 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& a
 
     StreamSet *dataStreams;
     ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
-    //SHOW_BYTES(dataStreams);
+    
     
     std::vector<StreamSet *> OutputStreams(numChannels);
 
-    for (int i = 0; i < numChannels; ++i)
+    for (unsigned i = 0; i < numChannels; ++i)
     {
         
-        StreamSet *Channel = P->CreateStreamSet(1, 8);
+        StreamSet *Channel = P->CreateStreamSet(1, bitsPerSample);
         StreamSet *BasisBits = P->CreateStreamSet(bitsPerSample);
 
         P->CreateKernelCall<IStreamSelect>(Channel, Select(dataStreams, {(unsigned)i}));
         S2P(P, bitsPerSample, Channel, BasisBits);
-        //SHOW_STREAM(BasisBits);
+        //SHOW_BIXNUM(BasisBits);
         StreamSet *AmplifiedBasisBits = P->CreateStreamSet(bitsPerSample);
         P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, amplifyFactor, AmplifiedBasisBits);
         //SHOW_STREAM(AmplifiedBasisBits);
 
-        OutputStreams[i] = P->CreateStreamSet(1, 8);
+        OutputStreams[i] = P->CreateStreamSet(1, bitsPerSample);
         P2S(P, AmplifiedBasisBits, OutputStreams[i]);
         //SHOW_BYTES(OutputStreams[i]);
     }
@@ -94,10 +94,12 @@ int main(int argc, char *argv[])
     {
         readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples);
         std::cout << numChannels << " " << sampleRate << " " << bitsPerSample << " " << numSamples << "\n";
+        lseek(fd, 44, SEEK_SET);
     }
     catch (const std::exception &e)
     {
         llvm::errs() << "Warning: cannot parse " << inputFile << " WAV header for processing. Processing file as text.\n";
+        lseek(fd, 0, SEEK_SET);
         isWav = false;
     }
 
@@ -114,7 +116,7 @@ int main(int argc, char *argv[])
                 write(fd_out, header.c_str(), header.size());
             }
             // NOTE: Despite a sample can be 8, 16, 32, etc. we treat the stream as bytestream (8-bit) to make it consistent with existing kernels.
-            write(fd_out, wavStream.data<8>(), wavStream.length());
+            write(fd_out, wavStream.data<8>(), wavStream.length() * numChannels * (bitsPerSample / 8));
             close(fd_out);
         }
     }
