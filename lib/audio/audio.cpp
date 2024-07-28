@@ -241,8 +241,8 @@ namespace audio
         :
          bitsPerSample(bitsPerSample),
          MultiBlockKernel(b, "FlexS2PKernel_" + std::to_string(bitsPerSample),
-                           {Binding{"inputStream", inputStream, FixedRate((bitsPerSample < 8) ? 1 : bitsPerSample / 8)}},
-                           {Binding{"outputStreams", outputStreams, FixedRate((bitsPerSample < 8) ? 8 / bitsPerSample : 1)}}, {}, {}, {})
+                           {Binding{"inputStream", inputStream, FixedRate(1)}},
+                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {})
     {
         if (bitsPerSample != 4 && bitsPerSample % 8 != 0)
         {
@@ -256,11 +256,8 @@ namespace audio
 
     void FlexS2PKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
     {
-        const unsigned fw = 1;
-        const unsigned inputRate = (bitsPerSample < 8) ? 8 / bitsPerSample : 1;
-        const unsigned outputRate = (bitsPerSample < 8) ? 8 / bitsPerSample : 1;
-        const unsigned inputPacksPerStride = fw * inputRate;
-        const unsigned outputPacksPerStride = fw * outputRate;
+        const unsigned inputPacksPerStride = 16;
+        const unsigned outputPacksPerStride = 1;
         const unsigned packSize = b.getBitBlockWidth();
         const unsigned numElementsPerPack = packSize / bitsPerSample;
 
@@ -281,18 +278,18 @@ namespace audio
         for (unsigned i = 0; i < inputPacksPerStride; ++i)
         {
             bytepack[i] = b.loadInputStreamPack("inputStream", ZERO, b.getInt32(i), blockOffsetPhi);
-            bytepack[i] = b.CreateBitCast(bytepack[i], vecType);
         }
 
-        for (unsigned i = 0;i<outputPacksPerStride;++i)
-        {
-            for (unsigned j = 0;j<bitsPerSample;++j)
-            {   
-                Value *mask = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 1 << j));
-                Value *extractedBit = b.simd_pext(bitsPerSample, bytepack[i], mask);
-                extractedBit = b.CreateZExtOrTrunc(extractedBit, vec1Type);
-                b.storeOutputStreamPack("outputStreams", b.getSize(j), b.getInt32(i), blockOffsetPhi, extractedBit);
+        for (unsigned j = 0;j<bitsPerSample;++j)
+        {   
+            Value* output = UndefValue::get(vecType);
+            for (unsigned i = 0;i<inputPacksPerStride;++i)
+            {
+                Value* shifted = b.simd_slli(bitsPerSample, bytepack[i], bitsPerSample-1-j);
+                Value *extractedBit = b.hsimd_signmask(bitsPerSample, shifted);
+                output = b.CreateInsertElement(output, extractedBit,b.getInt32(i));
             }
+            b.storeOutputStreamBlock("outputStreams", b.getSize(j), blockOffsetPhi, output);
         }
 
         Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
