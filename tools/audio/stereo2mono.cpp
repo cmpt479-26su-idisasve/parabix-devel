@@ -41,9 +41,9 @@ static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), 
 static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the modified .wav file."), cl::cat(DemoOptions));
 
 typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
-PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& numChannels, const unsigned int& numSamples, const unsigned int& bitsPerSample, const unsigned int& sampleRate, const bool& isWav)
+PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& numChannels, const unsigned int& numSamples, const unsigned int& bitsPerSample, const unsigned int& sampleRate)
 {
-    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1, 8);
+    StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,bitsPerSample);
 
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
@@ -51,16 +51,16 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& n
     Scalar *fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
     StreamSet *dataStreams;
-    ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, /*trim_header*/ isWav, dataStreams);
+    ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, dataStreams);
     //SHOW_BYTES(dataStreams);
 
-    StreamSet *FirstChannelStream = P->CreateStreamSet(1, 8);
+    StreamSet *FirstChannelStream = P->CreateStreamSet(1, bitsPerSample);
     StreamSet *FirstChannelBasisBits = P->CreateStreamSet(bitsPerSample);
     P->CreateKernelCall<IStreamSelect>(FirstChannelStream, Select(dataStreams, {(unsigned)0}));
     S2P(P, bitsPerSample, FirstChannelStream, FirstChannelBasisBits);
     //SHOW_STREAM(FirstChannelBasisBits);
 
-    StreamSet *SecondChannelStream = P->CreateStreamSet(1, 8);
+    StreamSet *SecondChannelStream = P->CreateStreamSet(1, bitsPerSample);
     StreamSet *SecondChannelBasisBits = P->CreateStreamSet(bitsPerSample);
     P->CreateKernelCall<IStreamSelect>(SecondChannelStream, Select(dataStreams, {(unsigned)1}));
     S2P(P, bitsPerSample, SecondChannelStream, SecondChannelBasisBits);
@@ -82,25 +82,26 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate=0, numChannels=2, bitsPerSample=16, numSamples=0;
+    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 16, numSamples = 0;
     bool isWav = true;
     try
     {
-        readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples); 
-        std::cout << numChannels << " " << numChannels << " " << sampleRate << " " << bitsPerSample << "\n";
+        readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples);
+        std::cout << numChannels << " " << sampleRate << " " << bitsPerSample << " " << numSamples << "\n";
+        lseek(fd, 44, SEEK_SET);
     }
-    catch(const std::exception& e)
+    catch (const std::exception &e)
     {
         llvm::errs() << "Warning: cannot parse " << inputFile << " WAV header for processing. Processing file as text.\n";
+        lseek(fd, 0, SEEK_SET);
         isWav = false;
     }
 
-    auto fn = generatePipeline(driver, numChannels, numSamples, bitsPerSample, sampleRate, isWav);
-    StreamSetPtr outputStream;
-    fn(outputStream, fd);
-
+    auto fn = generatePipeline(driver, numChannels, numSamples, bitsPerSample, sampleRate);
+    StreamSetPtr wavStream;
+    fn(wavStream, fd);
     if (outputFile.getNumOccurrences() != 0) {
-        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT, 0666);
         if (LLVM_UNLIKELY(fd_out == -1)) {
             llvm::errs() << "Error: cannot write to " << outputFile << ".\n";
         } else {
@@ -109,7 +110,7 @@ int main(int argc, char *argv[])
                 write(fd_out, header.c_str(), header.size());
             }
             // NOTE: Despite a sample can be 8, 16, 32, etc. we treat the stream as bytestream (8-bit) to make it consistent with existing kernels.
-            write(fd_out, outputStream.data<8>(), outputStream.length());
+            write(fd_out, wavStream.data<8>(), wavStream.length() * (bitsPerSample / 8));
             close(fd_out);
         }
     }

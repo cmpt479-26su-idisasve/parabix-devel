@@ -56,7 +56,7 @@ AmplifierFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& 
     Scalar *fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
     StreamSet *dataStreams;
-    ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, true, dataStreams);
+    ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, dataStreams);
     SHOW_BYTES(dataStreams);
     return reinterpret_cast<AmplifierFunctionType>(P->compile());
 }

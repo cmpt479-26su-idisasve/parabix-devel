@@ -34,7 +34,6 @@ namespace audio
         unsigned int numSamples,
         unsigned int sampleRate,
         unsigned int bitsPerSample,
-        const bool includedHeader,
         StreamSet *&outputDataStreams);
 
     void S2P(

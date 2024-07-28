@@ -36,7 +36,6 @@ namespace audio
         unsigned int numSamples,
         unsigned int sampleRate,
         unsigned int bitsPerSample,
-        const bool includedHeader,
         StreamSet *&outputDataStreams)
     {
         if (numChannels != 1 && numChannels != 2)
@@ -46,8 +45,6 @@ namespace audio
 
         StreamSet *SampleStream = P->CreateStreamSet(1, bitsPerSample * numChannels);
         P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, SampleStream);
-
-        SHOW_BYTES(SampleStream);
         StreamSet *DataStreams = P->CreateStreamSet(numChannels, bitsPerSample);
         if (numChannels == 2)
         {
@@ -229,7 +226,6 @@ namespace audio
             P->CreateKernelCall<P2SKernel>(LowBitStream, LowStream);
             P->CreateKernelCall<P2SKernel>(HighBittream, HighStream);
             P->CreateKernelCall<MergeKernel>(8, LowStream, HighStream, outputStream);
-            SHOW_BYTES(outputStream);
         }
         else if (inputStreams->getNumElements() == 8)
         {
