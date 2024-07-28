@@ -36,7 +36,6 @@ namespace audio
         unsigned int numSamples,
         unsigned int sampleRate,
         unsigned int bitsPerSample,
-        const bool includedHeader,
         StreamSet *&outputDataStreams)
     {
         if (numChannels != 1 && numChannels != 2)
@@ -44,39 +43,16 @@ namespace audio
             throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
         }
 
-        StreamSet *ByteStream = P->CreateStreamSet(1, 8);
-        P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, ByteStream);
-
-        StreamSet *TrimByteStream;
-        if (includedHeader)
-        {
-            StreamSet *BitStreams = P->CreateStreamSet(8);
-            P->CreateKernelCall<S2PKernel>(ByteStream, BitStreams);
-            StreamSet *ones = P->CreateStreamSet(1);
-            StreamSet *shiftedOnes = P->CreateStreamSet(1);
-            P->CreateKernelCall<CreateOnes>(BitStreams, ones);
-            P->CreateKernelCall<ShiftBack>(ones, shiftedOnes, NUM_HEADER_BYTES);
-            StreamSet *headerMask = P->CreateStreamSet(1);
-            P->CreateKernelCall<ShiftForward>(shiftedOnes, headerMask, NUM_HEADER_BYTES);
-            StreamSet *TrimBitStreams = P->CreateStreamSet(8);
-            FilterByMask(P, headerMask, BitStreams, TrimBitStreams);
-            TrimByteStream = P->CreateStreamSet(1, 8);
-            P->CreateKernelCall<P2SKernel>(TrimBitStreams, TrimByteStream);
-        }
-        else
-        {
-            TrimByteStream = ByteStream;
-        }
-
-        //SHOW_BYTES(TrimByteStream);
-        StreamSet *DataStreams = P->CreateStreamSet(numChannels, 8);
+        StreamSet *SampleStream = P->CreateStreamSet(1, bitsPerSample * numChannels);
+        P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, SampleStream);
+        StreamSet *DataStreams = P->CreateStreamSet(numChannels, bitsPerSample);
         if (numChannels == 2)
         {
-            P->CreateKernelCall<SplitKernel>(bitsPerSample, TrimByteStream, DataStreams);
+            P->CreateKernelCall<SplitKernel>(bitsPerSample, SampleStream, DataStreams);
         }
         else
         {
-            DataStreams = ByteStream;
+            DataStreams = SampleStream;
         }
         outputDataStreams = DataStreams;
     }
@@ -193,15 +169,6 @@ namespace audio
         if (bytesRead <= 0)
         {
             throw std::runtime_error("Error parsing file format: Cannot interpret subchunk 2 size.");
-        }
-
-        // copy over the data buffer
-        std::vector<u_char> data_buffer(subchunk2_size);
-        bytesRead = read(fd, reinterpret_cast<char *>(&data_buffer[0]), subchunk2_size);
-
-        if (bytesRead <= 0)
-        {
-            throw std::runtime_error("Error parsing file format: Cannot interpret data chunk.");
         }
 
         numSamples = subchunk2_size / (numChannels * bitsPerSample / 8);
