@@ -5,25 +5,16 @@
 
 parabix_add_executable(
 NAME
-    ab2bsdemo
+    stereo2mono
 SRC
-    ab2bsdemo.cpp
+    stereo2mono.cpp
 DEPS
     kernel.io
     kernel.pipeline
     kernel.streamutils
     kernel.util
+    util
     toolchain
-    audio
-)
-
-parabix_add_executable(
-NAME
-    stereo2mono
-SRC
-    stereo2mono.cpp
-DEPS
-    kernel.pipeline
     audio
 )
 
@@ -33,6 +24,11 @@ NAME
 SRC
     audioamplifier.cpp
 DEPS
+    kernel.io
     kernel.pipeline
+    kernel.streamutils
+    kernel.util
+    util
+    toolchain
     audio
 )
