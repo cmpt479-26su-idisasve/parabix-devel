@@ -57,6 +57,35 @@ namespace audio
         outputDataStreams = DataStreams;
     }
 
+    void ExtractWAVData(
+        const std::unique_ptr<ProgramBuilder> &P,
+        Scalar *const buffer,
+        Scalar *const length,
+        unsigned int numChannels,
+        unsigned int numSamples,
+        unsigned int sampleRate,
+        unsigned int bitsPerSample,
+        StreamSet *&outputDataStreams)
+    {
+        if (numChannels != 1 && numChannels != 2)
+        {
+            throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
+        }
+
+        StreamSet *SampleStream = P->CreateStreamSet(1, bitsPerSample * numChannels);
+        P->CreateKernelCall<MemorySourceKernel>(buffer, length, SampleStream);
+        StreamSet *DataStreams = P->CreateStreamSet(numChannels, bitsPerSample);
+        if (numChannels == 2)
+        {
+            P->CreateKernelCall<SplitKernel>(bitsPerSample, SampleStream, DataStreams);
+        }
+        else
+        {
+            DataStreams = SampleStream;
+        }
+        outputDataStreams = DataStreams;
+    }
+
     // adapted from chatgpt with some modifications :)
     struct WAVHeader {
         char RIFF[4] = {'R','I','F','F'};
@@ -95,11 +124,23 @@ namespace audio
         return oss.str();
     }
 
-    void readWAVHeader(const int &fd,
+    void readTextFile(const int &fd, std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer)
+    {
+        buffer.clear();
+        std::vector<int8_t> temp_buffer(4096);
+        ssize_t bytesRead;
+
+        while ((bytesRead = read(fd, temp_buffer.data(), temp_buffer.size())) > 0) {
+            buffer.insert(buffer.end(), temp_buffer.begin(), temp_buffer.begin() + bytesRead);
+        }
+    }
+
+    void readWAVFile(const int &fd,
                        unsigned int &numChannels,
                        unsigned int &sampleRate,
                        unsigned int &bitsPerSample,
-                       unsigned int &numSamples)
+                       unsigned int &numSamples,
+                       std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer)
     {
         char temp_buffer[11];
 
@@ -170,6 +211,18 @@ namespace audio
         {
             throw std::runtime_error("Error parsing file format: Cannot interpret subchunk 2 size.");
         }
+
+        // copy over the data buffer
+        std::vector<char> data_buffer(subchunk2_size);
+        bytesRead = read(fd, reinterpret_cast<char *>(&data_buffer[0]), subchunk2_size);
+
+        if (bytesRead <= 0)
+        {
+            throw std::runtime_error("Error parsing file format: Cannot interpret data chunk.");
+        }
+
+        buffer.clear();
+        buffer.insert(buffer.end(), data_buffer.begin(), data_buffer.end());
 
         numSamples = subchunk2_size / (numChannels * bitsPerSample / 8);
     }

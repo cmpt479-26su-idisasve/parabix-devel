@@ -21,6 +21,7 @@
 #include <audio/audio.h>
 #include <audio/stream_manipulation.h>
 #include <iostream>
+#include <util/aligned_allocator.h>
 
 using namespace kernel;
 using namespace llvm;
@@ -42,25 +43,24 @@ static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), 
 static cl::opt<int> amplifyFactor("f", cl::desc("Amplify factor"), cl::Required, cl::cat(DemoOptions));
 static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the modified .wav file."), cl::cat(DemoOptions));
 
-typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, uint32_t fd);
+typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, void *buffer, size_t length);
 PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& amplifyFactor, const unsigned int &numChannels, const unsigned int &numSamples, const unsigned int &bitsPerSample, const unsigned int &sampleRate)
 {
     StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,bitsPerSample * numChannels);
 
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
-                                             {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
-    Scalar *fileDescriptor = P->getInputScalar("inputFileDecriptor");
+                                             {Binding{Type::getInt8PtrTy(b.getContext()), "buffer"}, Binding{b.getSizeTy(), "length"}});
+    Scalar * const buffer = P->getInputScalar("buffer");
+    Scalar * const length = P->getInputScalar("length");
 
     StreamSet *dataStreams;
-    ExtractWAVData(P, fileDescriptor, numChannels, numSamples, sampleRate, bitsPerSample, dataStreams);
-    
+    ExtractWAVData(P, buffer, length, numChannels, numSamples, sampleRate, bitsPerSample, dataStreams);
     
     std::vector<StreamSet *> OutputStreams(numChannels);
 
     for (unsigned i = 0; i < numChannels; ++i)
     {
-        
         StreamSet *Channel = P->CreateStreamSet(1, bitsPerSample);
         StreamSet *BasisBits = P->CreateStreamSet(bitsPerSample);
 
@@ -78,7 +78,6 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& a
     
     P->CreateKernelCall<MergeKernel>(bitsPerSample, OutputStreams[0], OutputStreams[1], OutputBytes);
     SHOW_BYTES(OutputBytes);
-    //P->CreateKernelCall<StdOutKernel>(OutputBytes);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
 
@@ -88,24 +87,26 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 16, numSamples = 0;
+    unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 8, numSamples = 0;
+    std::vector<int8_t, AlignedAllocator<int8_t,64>> buffer;
     bool isWav = true;
     try
     {
-        readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples);
+        readWAVFile(fd, numChannels, sampleRate, bitsPerSample, numSamples, buffer);
         std::cout << numChannels << " " << sampleRate << " " << bitsPerSample << " " << numSamples << "\n";
-        lseek(fd, 44, SEEK_SET);
     }
     catch (const std::exception &e)
     {
         llvm::errs() << "Warning: cannot parse " << inputFile << " WAV header for processing. Processing file as text.\n";
-        lseek(fd, 0, SEEK_SET);
+        readTextFile(fd, buffer);
+        numSamples = buffer.size() / (numChannels * (bitsPerSample / 8));
         isWav = false;
     }
 
     auto fn = generatePipeline(driver, amplifyFactor, numChannels, numSamples, bitsPerSample, sampleRate);
     StreamSetPtr wavStream;
-    fn(wavStream, fd);
+
+    fn(wavStream, &buffer[0], numSamples);
     if (outputFile.getNumOccurrences() != 0) {
         const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT, 0666);
         if (LLVM_UNLIKELY(fd_out == -1)) {
