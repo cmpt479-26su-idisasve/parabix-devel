@@ -504,44 +504,37 @@ namespace audio
         BixNumCompiler bnc(pb);
         std::vector<PabloAST *> inputStreams = getInputStreamSet("inputStreams");
         const unsigned bitsPerSample = inputStreams.size();
-        std::vector<PabloAST *> flipStreams(bitsPerSample);
-        for (unsigned i=0;i<bitsPerSample;++i)
+
+        std::vector<PabloAST *> ExtendedStreams = bnc.SignExtend(inputStreams, bitsPerSample + std::log2(factor) + 1);
+        std::vector<PabloAST *> AmplifiedStreams = bnc.MulModular(ExtendedStreams, factor);
+        std::vector<PabloAST *> flipStreams(AmplifiedStreams.size());
+        for (unsigned i=0;i<AmplifiedStreams.size();++i)
         {
-            flipStreams[i] = pb.createNot(inputStreams[i]);
+            flipStreams[i] = pb.createNot(AmplifiedStreams[i]);
         }
         std::vector<PabloAST *> NegativeStreams = bnc.AddModular(flipStreams, 1);
-        std::vector<PabloAST *> UnsignedStreams = bnc.Select(inputStreams[bitsPerSample-1] /*sign*/, NegativeStreams, inputStreams);
-        std::vector<PabloAST *> resultStreams = bnc.MulFull(UnsignedStreams, factor);
+        std::vector<PabloAST *> UnsignedStreams = bnc.Select(inputStreams[bitsPerSample-1] /*sign*/, NegativeStreams, AmplifiedStreams);
 
         PabloAST *overflow = pb.createZeroes();
-        for (int i = (int) bitsPerSample - 1;i < (int)resultStreams.size() - 1;++i)
+        for (int i = (int) bitsPerSample - 1;i < (int)UnsignedStreams.size() - 1;++i)
         {
-            overflow = pb.createOr(overflow, resultStreams[i]);
+            overflow = pb.createOr(overflow, UnsignedStreams[i]);
         }
 
-        std::vector<PabloAST *> flipStreams_2(resultStreams.size());
-        for (unsigned i=0;i<resultStreams.size();++i)
-        {
-            flipStreams_2[i] = pb.createNot(resultStreams[i]);
-        }
-
-        std::vector<PabloAST *> NegativeStreams_2 = bnc.AddModular(flipStreams_2, 1);
-        std::vector<PabloAST *> CorrectSignedResultStreams = bnc.Select(inputStreams[bitsPerSample-1] /*sign*/, NegativeStreams_2, resultStreams);
-        
         PabloAST *is_negative_overflow = pb.createAnd(inputStreams[bitsPerSample-1], overflow);
         PabloAST *is_positive_overflow = pb.createAnd(pb.createNot(inputStreams[bitsPerSample-1]), overflow);
         
         for (int i = 0; i < (int) bitsPerSample - 1;++i)
         {
-            CorrectSignedResultStreams[i] = pb.createSel(is_negative_overflow, pb.createZeroes(), CorrectSignedResultStreams[i]);
-            CorrectSignedResultStreams[i] = pb.createSel(is_positive_overflow, pb.createOnes(), CorrectSignedResultStreams[i]);
+            AmplifiedStreams[i] = pb.createSel(is_negative_overflow, pb.createZeroes(), AmplifiedStreams[i]);
+            AmplifiedStreams[i] = pb.createSel(is_positive_overflow, pb.createOnes(), AmplifiedStreams[i]);
         }
         
-        CorrectSignedResultStreams[bitsPerSample-1] = inputStreams[bitsPerSample-1];
+        AmplifiedStreams[bitsPerSample-1] = inputStreams[bitsPerSample-1];
 
         Var * result = getOutputStreamVar("outputStreams");
         for (unsigned i = 0; i < bitsPerSample; i++) {
-            pb.createAssign(pb.createExtract(result, pb.getInteger(i)), CorrectSignedResultStreams[i]);
+            pb.createAssign(pb.createExtract(result, pb.getInteger(i)), AmplifiedStreams[i]);
         }
     }
 
