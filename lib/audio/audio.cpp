@@ -36,7 +36,6 @@ namespace audio
         unsigned int numSamples,
         unsigned int sampleRate,
         unsigned int bitsPerSample,
-        const bool includedHeader,
         StreamSet *&outputDataStreams)
     {
         if (numChannels != 1 && numChannels != 2)
@@ -44,39 +43,45 @@ namespace audio
             throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
         }
 
-        StreamSet *ByteStream = P->CreateStreamSet(1, 8);
-        P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, ByteStream);
-
-        StreamSet *TrimByteStream;
-        if (includedHeader)
-        {
-            StreamSet *BitStreams = P->CreateStreamSet(8);
-            P->CreateKernelCall<S2PKernel>(ByteStream, BitStreams);
-            StreamSet *ones = P->CreateStreamSet(1);
-            StreamSet *shiftedOnes = P->CreateStreamSet(1);
-            P->CreateKernelCall<CreateOnes>(BitStreams, ones);
-            P->CreateKernelCall<ShiftBack>(ones, shiftedOnes, NUM_HEADER_BYTES);
-            StreamSet *headerMask = P->CreateStreamSet(1);
-            P->CreateKernelCall<ShiftForward>(shiftedOnes, headerMask, NUM_HEADER_BYTES);
-            StreamSet *TrimBitStreams = P->CreateStreamSet(8);
-            FilterByMask(P, headerMask, BitStreams, TrimBitStreams);
-            TrimByteStream = P->CreateStreamSet(1, 8);
-            P->CreateKernelCall<P2SKernel>(TrimBitStreams, TrimByteStream);
-        }
-        else
-        {
-            TrimByteStream = ByteStream;
-        }
-
-        // SHOW_BYTES(TrimByteStream);
-        StreamSet *DataStreams = P->CreateStreamSet(numChannels, 8);
+        StreamSet *SampleStream = P->CreateStreamSet(1, bitsPerSample * numChannels);
+        P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, SampleStream);
+        StreamSet *DataStreams = P->CreateStreamSet(numChannels, bitsPerSample);
         if (numChannels == 2)
         {
-            P->CreateKernelCall<SplitKernel>(bitsPerSample, TrimByteStream, DataStreams);
+            P->CreateKernelCall<SplitKernel>(bitsPerSample, SampleStream, DataStreams);
         }
         else
         {
-            DataStreams = ByteStream;
+            DataStreams = SampleStream;
+        }
+        outputDataStreams = DataStreams;
+    }
+
+    void ExtractWAVData(
+        const std::unique_ptr<ProgramBuilder> &P,
+        Scalar *const buffer,
+        Scalar *const length,
+        unsigned int numChannels,
+        unsigned int numSamples,
+        unsigned int sampleRate,
+        unsigned int bitsPerSample,
+        StreamSet *&outputDataStreams)
+    {
+        if (numChannels != 1 && numChannels != 2)
+        {
+            throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
+        }
+
+        StreamSet *SampleStream = P->CreateStreamSet(1, bitsPerSample * numChannels);
+        P->CreateKernelCall<MemorySourceKernel>(buffer, length, SampleStream);
+        StreamSet *DataStreams = P->CreateStreamSet(numChannels, bitsPerSample);
+        if (numChannels == 2)
+        {
+            P->CreateKernelCall<SplitKernel>(bitsPerSample, SampleStream, DataStreams);
+        }
+        else
+        {
+            DataStreams = SampleStream;
         }
         outputDataStreams = DataStreams;
     }
@@ -120,11 +125,23 @@ namespace audio
         return oss.str();
     }
 
-    void readWAVHeader(const int &fd,
+    void readTextFile(const int &fd, std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer)
+    {
+        buffer.clear();
+        std::vector<int8_t> temp_buffer(4096);
+        ssize_t bytesRead;
+
+        while ((bytesRead = read(fd, temp_buffer.data(), temp_buffer.size())) > 0) {
+            buffer.insert(buffer.end(), temp_buffer.begin(), temp_buffer.begin() + bytesRead);
+        }
+    }
+
+    void readWAVFile(const int &fd,
                        unsigned int &numChannels,
                        unsigned int &sampleRate,
                        unsigned int &bitsPerSample,
-                       unsigned int &numSamples)
+                       unsigned int &numSamples,
+                       std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer)
     {
         char temp_buffer[11];
 
@@ -197,13 +214,16 @@ namespace audio
         }
 
         // copy over the data buffer
-        std::vector<u_char> data_buffer(subchunk2_size);
+        std::vector<char> data_buffer(subchunk2_size);
         bytesRead = read(fd, reinterpret_cast<char *>(&data_buffer[0]), subchunk2_size);
 
         if (bytesRead <= 0)
         {
             throw std::runtime_error("Error parsing file format: Cannot interpret data chunk.");
         }
+
+        buffer.clear();
+        buffer.insert(buffer.end(), data_buffer.begin(), data_buffer.end());
 
         numSamples = subchunk2_size / (numChannels * bitsPerSample / 8);
     }
@@ -255,8 +275,8 @@ namespace audio
             StreamSet *HighStream = P->CreateStreamSet(1, 8);
             StreamSet *LowBitStream = P->CreateStreamSet(8);
             StreamSet *HighBittream = P->CreateStreamSet(8);
-            P->CreateKernelCall<IStreamSelect>(LowBitStream, Select(inputStreams, {(unsigned)0, 1, 2, 3, 4, 5, 6, 7}));
-            P->CreateKernelCall<IStreamSelect>(HighBittream, Select(inputStreams, {(unsigned)8, 9, 10, 11, 12, 13, 14, 15}));
+            P->CreateKernelCall<StreamSelect>(LowBitStream, Select(inputStreams, {(unsigned)0, 1, 2, 3, 4, 5, 6, 7}));
+            P->CreateKernelCall<StreamSelect>(HighBittream, Select(inputStreams, {(unsigned)8, 9, 10, 11, 12, 13, 14, 15}));
             P->CreateKernelCall<P2SKernel>(LowBitStream, LowStream);
             P->CreateKernelCall<P2SKernel>(HighBittream, HighStream);
             P->CreateKernelCall<MergeKernel>(8, LowStream, HighStream, outputStream);
@@ -271,11 +291,12 @@ namespace audio
         }
     }
 
-    FlexS2PKernel::FlexS2PKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStream, StreamSet *const outputStreams)
-        : bitsPerSample(bitsPerSample),
-          MultiBlockKernel(b, "FlexS2PKernel_" + std::to_string(bitsPerSample),
-                           {Binding{"inputStream", inputStream, FixedRate((bitsPerSample < 8) ? 1 : bitsPerSample / 8)}},
-                           {Binding{"outputStreams", outputStreams, FixedRate((bitsPerSample < 8) ? 8 / bitsPerSample : 1)}}, {}, {}, {})
+    FlexS2PKernel::FlexS2PKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStream, StreamSet *const outputStreams) 
+        :
+         bitsPerSample(bitsPerSample),
+         MultiBlockKernel(b, "FlexS2PKernel_" + std::to_string(bitsPerSample),
+                           {Binding{"inputStream", inputStream, FixedRate(1)}},
+                           {Binding{"outputStreams", outputStreams, FixedRate(1)}}, {}, {}, {})
     {
         if (bitsPerSample != 4 && bitsPerSample % 8 != 0)
         {
@@ -289,11 +310,8 @@ namespace audio
 
     void FlexS2PKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
     {
-        const unsigned fw = 1;
-        const unsigned inputRate = (bitsPerSample < 8) ? 8 / bitsPerSample : 1;
-        const unsigned outputRate = (bitsPerSample < 8) ? 8 / bitsPerSample : 1;
-        const unsigned inputPacksPerStride = fw * inputRate;
-        const unsigned outputPacksPerStride = fw * outputRate;
+        const unsigned inputPacksPerStride = 16;
+        const unsigned outputPacksPerStride = 1;
         const unsigned packSize = b.getBitBlockWidth();
         const unsigned numElementsPerPack = packSize / bitsPerSample;
 
@@ -314,18 +332,18 @@ namespace audio
         for (unsigned i = 0; i < inputPacksPerStride; ++i)
         {
             bytepack[i] = b.loadInputStreamPack("inputStream", ZERO, b.getInt32(i), blockOffsetPhi);
-            bytepack[i] = b.CreateBitCast(bytepack[i], vecType);
         }
 
-        for (unsigned i = 0; i < outputPacksPerStride; ++i)
-        {
-            for (unsigned j = 0; j < bitsPerSample; ++j)
+        for (unsigned j = 0;j<bitsPerSample;++j)
+        {   
+            Value* output = UndefValue::get(vecType);
+            for (unsigned i = 0;i<inputPacksPerStride;++i)
             {
-                Value *mask = b.getSplat(numElementsPerPack, ConstantInt::get(b.getIntNTy(bitsPerSample), 1 << j));
-                Value *extractedBit = b.simd_pext(bitsPerSample, bytepack[i], mask);
-                extractedBit = b.CreateZExtOrTrunc(extractedBit, vec1Type);
-                b.storeOutputStreamPack("outputStreams", b.getSize(j), b.getInt32(i), blockOffsetPhi, extractedBit);
+                Value* shifted = b.simd_slli(bitsPerSample, bytepack[i], bitsPerSample-1-j);
+                Value *extractedBit = b.hsimd_signmask(bitsPerSample, shifted);
+                output = b.CreateInsertElement(output, extractedBit,b.getInt32(i));
             }
+            b.storeOutputStreamBlock("outputStreams", b.getSize(j), blockOffsetPhi, output);
         }
 
         Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
@@ -540,45 +558,37 @@ namespace audio
         BixNumCompiler bnc(pb);
         std::vector<PabloAST *> inputStreams = getInputStreamSet("inputStreams");
         const unsigned bitsPerSample = inputStreams.size();
-        std::vector<PabloAST *> flipStreams(bitsPerSample);
-        for (unsigned i = 0; i < bitsPerSample; ++i)
+
+        std::vector<PabloAST *> ExtendedStreams = bnc.SignExtend(inputStreams, bitsPerSample + std::log2(factor) + 1);
+        std::vector<PabloAST *> AmplifiedStreams = bnc.MulModular(ExtendedStreams, factor);
+        std::vector<PabloAST *> flipStreams(AmplifiedStreams.size());
+        for (unsigned i=0;i<AmplifiedStreams.size();++i)
         {
-            flipStreams[i] = pb.createNot(inputStreams[i]);
+            flipStreams[i] = pb.createNot(AmplifiedStreams[i]);
         }
         std::vector<PabloAST *> NegativeStreams = bnc.AddModular(flipStreams, 1);
-        std::vector<PabloAST *> UnsignedStreams = bnc.Select(inputStreams[bitsPerSample - 1] /*sign*/, NegativeStreams, inputStreams);
-        std::vector<PabloAST *> resultStreams = bnc.MulFull(UnsignedStreams, factor);
+        std::vector<PabloAST *> UnsignedStreams = bnc.Select(inputStreams[bitsPerSample-1] /*sign*/, NegativeStreams, AmplifiedStreams);
 
         PabloAST *overflow = pb.createZeroes();
-        for (int i = (int)bitsPerSample - 1; i < (int)resultStreams.size() - 1; ++i)
+        for (int i = (int) bitsPerSample - 1;i < (int)UnsignedStreams.size() - 1;++i)
         {
-            overflow = pb.createOr(overflow, resultStreams[i]);
+            overflow = pb.createOr(overflow, UnsignedStreams[i]);
         }
 
-        std::vector<PabloAST *> flipStreams_2(resultStreams.size());
-        for (unsigned i = 0; i < resultStreams.size(); ++i)
+        PabloAST *is_negative_overflow = pb.createAnd(inputStreams[bitsPerSample-1], overflow);
+        PabloAST *is_positive_overflow = pb.createAnd(pb.createNot(inputStreams[bitsPerSample-1]), overflow);
+        
+        for (int i = 0; i < (int) bitsPerSample - 1;++i)
         {
-            flipStreams_2[i] = pb.createNot(resultStreams[i]);
+            AmplifiedStreams[i] = pb.createSel(is_negative_overflow, pb.createZeroes(), AmplifiedStreams[i]);
+            AmplifiedStreams[i] = pb.createSel(is_positive_overflow, pb.createOnes(), AmplifiedStreams[i]);
         }
+        
+        AmplifiedStreams[bitsPerSample-1] = inputStreams[bitsPerSample-1];
 
-        std::vector<PabloAST *> NegativeStreams_2 = bnc.AddModular(flipStreams_2, 1);
-        std::vector<PabloAST *> CorrectSignedResultStreams = bnc.Select(inputStreams[bitsPerSample - 1] /*sign*/, NegativeStreams_2, resultStreams);
-
-        PabloAST *is_negative_overflow = pb.createAnd(inputStreams[bitsPerSample - 1], overflow);
-        PabloAST *is_positive_overflow = pb.createAnd(pb.createNot(inputStreams[bitsPerSample - 1]), overflow);
-
-        for (int i = 0; i < (int)bitsPerSample - 1; ++i)
-        {
-            CorrectSignedResultStreams[i] = pb.createSel(is_negative_overflow, pb.createZeroes(), CorrectSignedResultStreams[i]);
-            CorrectSignedResultStreams[i] = pb.createSel(is_positive_overflow, pb.createOnes(), CorrectSignedResultStreams[i]);
-        }
-
-        CorrectSignedResultStreams[bitsPerSample - 1] = inputStreams[bitsPerSample - 1];
-
-        Var *result = getOutputStreamVar("outputStreams");
-        for (unsigned i = 0; i < bitsPerSample; i++)
-        {
-            pb.createAssign(pb.createExtract(result, pb.getInteger(i)), CorrectSignedResultStreams[i]);
+        Var * result = getOutputStreamVar("outputStreams");
+        for (unsigned i = 0; i < bitsPerSample; i++) {
+            pb.createAssign(pb.createExtract(result, pb.getInteger(i)), AmplifiedStreams[i]);
         }
     }
 

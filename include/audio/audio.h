@@ -7,6 +7,7 @@
 #include <kernel/core/relationship.h>
 #include <kernel/io/source_kernel.h>
 #include <pablo/builder.hpp>
+#include <util/aligned_allocator.h>
 
 using namespace kernel;
 using namespace llvm;
@@ -14,12 +15,15 @@ using namespace pablo;
 
 namespace audio
 {
-    void readWAVHeader(
+    void readWAVFile(
         const int &fd,
         unsigned int &numChannels,
         unsigned int &sampleRate,
         unsigned int &bitsPerSample,
-        unsigned int &numSamples);
+        unsigned int &numSamples,
+        std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer);
+
+    void readTextFile(const int &fd, std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer);
 
     std::string createWAVHeader(
         const unsigned int &numChannels,
@@ -34,7 +38,16 @@ namespace audio
         unsigned int numSamples,
         unsigned int sampleRate,
         unsigned int bitsPerSample,
-        const bool includedHeader,
+        StreamSet *&outputDataStreams);
+
+    void ExtractWAVData(
+        const std::unique_ptr<ProgramBuilder> &P,
+        Scalar *const buffer,
+        Scalar *const length,
+        unsigned int numChannels,
+        unsigned int numSamples,
+        unsigned int sampleRate,
+        unsigned int bitsPerSample,
         StreamSet *&outputDataStreams);
 
     void S2P(
