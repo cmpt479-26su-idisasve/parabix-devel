@@ -43,19 +43,18 @@ static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), 
 static cl::opt<int> amplifyFactor("f", cl::desc("Amplify factor"), cl::Required, cl::cat(DemoOptions));
 static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the modified .wav file."), cl::cat(DemoOptions));
 
-typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, void *buffer, size_t length);
+typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, int32_t fd);
 PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& amplifyFactor, const unsigned int &numChannels, const unsigned int &bitsPerSample)
 {
     StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,bitsPerSample * numChannels);
 
     auto &b = pxDriver.getBuilder();
     auto P = pxDriver.makePipelineWithIO({}, {Bind("OutputBytes", OutputBytes, ReturnedBuffer(1))}, 
-                                             {Binding{Type::getInt8PtrTy(b.getContext()), "buffer"}, Binding{b.getSizeTy(), "length"}});
-    Scalar * const buffer = P->getInputScalar("buffer");
-    Scalar * const length = P->getInputScalar("length");
+                                             {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
+    Scalar * const fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
     StreamSet *dataStreams;
-    ParseAudioBuffer(P, buffer, length, numChannels, bitsPerSample, dataStreams);
+    ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, dataStreams);
     
     std::vector<StreamSet *> OutputStreams(numChannels);
 
@@ -88,25 +87,24 @@ int main(int argc, char *argv[])
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
     unsigned int sampleRate = 0, numChannels = 2, bitsPerSample = 8, numSamples = 0;
-    std::vector<int8_t, AlignedAllocator<int8_t,64>> buffer;
     bool isWav = true;
     try
     {
-        readWAVFile(fd, numChannels, sampleRate, bitsPerSample, numSamples, buffer);
+        readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples);
         std::cout << numChannels << " " << sampleRate << " " << bitsPerSample << " " << numSamples << "\n";
+        lseek(fd, 44, SEEK_SET);
     }
     catch (const std::exception &e)
     {
         llvm::errs() << "Warning: cannot parse " << inputFile << " WAV header for processing. Processing file as text.\n";
-        readTextFile(fd, buffer);
-        numSamples = buffer.size() / (numChannels * (bitsPerSample / 8));
+        lseek(fd, 0, SEEK_SET);
         isWav = false;
     }
 
     auto fn = generatePipeline(driver, amplifyFactor, numChannels, bitsPerSample);
     StreamSetPtr wavStream;
 
-    fn(wavStream, &buffer[0], numSamples);
+    fn(wavStream, fd);
     if (outputFile.getNumOccurrences() != 0) {
         const int fd_out = open(outputFile.c_str(), O_WRONLY | O_CREAT, 0666);
         if (LLVM_UNLIKELY(fd_out == -1)) {

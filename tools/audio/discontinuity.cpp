@@ -41,12 +41,15 @@ static cl::OptionCategory DemoOptions("Demo Options", "Demo control options.");
 static cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input file>"), cl::Required, cl::cat(DemoOptions));
 static cl::opt<int> threshold("t", cl::desc("Difference threshold"), cl::Required, cl::cat(DemoOptions));
 
-typedef void (*PipelineFunctionType)(int32_t fd);
+typedef void (*PipelineFunctionType)(StreamSetPtr & marker_1, StreamSetPtr & marker_2, int32_t fd);
 PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& threshold, const unsigned int &numChannels, const unsigned int &bitsPerSample)
 {
+    std::vector<StreamSet *> Makers = {pxDriver.CreateStreamSet(1,1), pxDriver.CreateStreamSet(1,1)};
+
     auto &b = pxDriver.getBuilder();
-    auto P = pxDriver.makePipeline({Binding{b.getInt32Ty(), "inputFileDecriptor"}});
-    Scalar *fileDescriptor = P->getInputScalar("inputFileDecriptor");
+    auto P = pxDriver.makePipelineWithIO({}, {Bind("Marker1", Makers[0], ReturnedBuffer(1)), Bind("Marker2", Makers[1], ReturnedBuffer(1))}, 
+                                             {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
+    Scalar * const fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
     StreamSet *dataStreams;
     ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, dataStreams);
@@ -62,11 +65,10 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& t
         S2P(P, bitsPerSample, Channel, BasisBits);
         //SHOW_BIXNUM(BasisBits);
         StreamSet *MarkerStream = P->CreateStreamSet(1);
-        P->CreateKernelCall<DiscontinuityKernel>(BasisBits, threshold, MarkerStream);
+        P->CreateKernelCall<DiscontinuityKernel>(BasisBits, threshold, Makers[i]);
         
         SHOW_STREAM(MarkerStream);
     }
-    //P->CreateKernelCall<StdOutKernel>(dataStreams);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }
 
@@ -77,10 +79,9 @@ int main(int argc, char *argv[])
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
     unsigned int sampleRate = 0, numChannels = 1, bitsPerSample = 16, numSamples = 0;
-    std::vector<int8_t, AlignedAllocator<int8_t,64>> buffer;
     try
     {
-        readWAVFile(fd, numChannels, sampleRate, bitsPerSample, numSamples, buffer);
+        readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples);
         lseek(fd, 44, SEEK_SET);
         std::cout << numChannels << " " << sampleRate << " " << bitsPerSample << " " << numSamples << "\n";
     }
@@ -88,11 +89,11 @@ int main(int argc, char *argv[])
     {
         llvm::errs() << "Warning: cannot parse " << inputFile << " WAV header for processing. Processing file as text.\n";
         lseek(fd, 0, SEEK_SET);
-        numSamples = buffer.size() / (numChannels * (bitsPerSample / 8));
     }
 
     auto fn = generatePipeline(driver, threshold, numChannels, bitsPerSample);
-    fn(fd);
+    StreamSetPtr wavStream, wavStream1;
+    fn(wavStream, wavStream1, fd);
     close(fd);
     return 0;
 }
