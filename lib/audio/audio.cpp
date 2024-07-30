@@ -201,20 +201,11 @@ namespace audio
             throw std::runtime_error("Error parsing file format: Subchunk 2 ID does not match Wav format.");
         }
 
-        int subchunk2_size;
+        unsigned subchunk2_size;
         bytesRead = read(fd, reinterpret_cast<char *>(&subchunk2_size), 4);
         if (bytesRead <= 0)
         {
             throw std::runtime_error("Error parsing file format: Cannot interpret subchunk 2 size.");
-        }
-
-        // copy over the data buffer
-        std::vector<char> data_buffer(subchunk2_size);
-        bytesRead = read(fd, reinterpret_cast<char *>(&data_buffer[0]), subchunk2_size);
-
-        if (bytesRead <= 0)
-        {
-            throw std::runtime_error("Error parsing file format: Cannot interpret data chunk.");
         }
 
         numSamples = subchunk2_size / (numChannels * bitsPerSample / 8);
