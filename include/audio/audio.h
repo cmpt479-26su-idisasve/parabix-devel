@@ -31,22 +31,18 @@ namespace audio
         const unsigned int &bitsPerSample,
         const unsigned int &numSamples);
 
-    void ExtractWAVData(
+    void ParseAudioBuffer(
         const std::unique_ptr<ProgramBuilder> &P,
         Scalar *const fileDescriptor,
         unsigned int numChannels,
-        unsigned int numSamples,
-        unsigned int sampleRate,
         unsigned int bitsPerSample,
         StreamSet *&outputDataStreams);
 
-    void ExtractWAVData(
+    void ParseAudioBuffer(
         const std::unique_ptr<ProgramBuilder> &P,
         Scalar *const buffer,
         Scalar *const length,
         unsigned int numChannels,
-        unsigned int numSamples,
-        unsigned int sampleRate,
         unsigned int bitsPerSample,
         StreamSet *&outputDataStreams);
 
@@ -84,6 +80,19 @@ namespace audio
     private:
         unsigned int bitsPerSample;
         unsigned int numInputStreams;
+    };
+
+    class DiscontinuityKernel final : public PabloKernel {
+    public:
+        DiscontinuityKernel(kernel::KernelBuilder & b,
+                StreamSet * const inputStreams,
+                const unsigned int& threshold,
+                StreamSet * const markStream);
+    protected:
+        void generatePabloMethod() override;
+    
+    private:
+        unsigned int threshold;
     };
 
     class Stereo2MonoPabloKernel final : public PabloKernel {
