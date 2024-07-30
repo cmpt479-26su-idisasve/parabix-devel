@@ -15,13 +15,12 @@ using namespace pablo;
 
 namespace audio
 {
-    void readWAVFile(
+    void readWAVHeader(
         const int &fd,
         unsigned int &numChannels,
         unsigned int &sampleRate,
         unsigned int &bitsPerSample,
-        unsigned int &numSamples,
-        std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer);
+        unsigned int &numSamples);
 
     void readTextFile(const int &fd, std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer);
 

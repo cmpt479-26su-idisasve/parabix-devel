@@ -132,12 +132,11 @@ namespace audio
         }
     }
 
-    void readWAVFile(const int &fd,
+    void readWAVHeader(const int &fd,
                        unsigned int &numChannels,
                        unsigned int &sampleRate,
                        unsigned int &bitsPerSample,
-                       unsigned int &numSamples,
-                       std::vector<int8_t, AlignedAllocator<int8_t, 64>>& buffer)
+                       unsigned int &numSamples)
     {
         char temp_buffer[11];
 
@@ -217,9 +216,6 @@ namespace audio
         {
             throw std::runtime_error("Error parsing file format: Cannot interpret data chunk.");
         }
-
-        buffer.clear();
-        buffer.insert(buffer.end(), data_buffer.begin(), data_buffer.end());
 
         numSamples = subchunk2_size / (numChannels * bitsPerSample / 8);
     }
