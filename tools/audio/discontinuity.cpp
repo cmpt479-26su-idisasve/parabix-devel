@@ -76,7 +76,7 @@ int main(int argc, char *argv[])
 
     CPUDriver driver("demo");
     const int fd = open(inputFile.c_str(), O_RDONLY);
-    unsigned int sampleRate = 0, numChannels = 1, bitsPerSample = 8, numSamples = 0;
+    unsigned int sampleRate = 0, numChannels = 1, bitsPerSample = 16, numSamples = 0;
     std::vector<int8_t, AlignedAllocator<int8_t,64>> buffer;
     try
     {

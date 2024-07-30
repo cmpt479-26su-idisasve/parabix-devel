@@ -500,12 +500,10 @@ namespace audio
 
         std::vector<PabloAST *> extendedStreams = bnc.SignExtend(inputStreams, bitsPerSample + 1);
         std::vector<PabloAST *> srExtendedStreams(extendedStreams.size());
-        std::vector<PabloAST *> slExtendedStreams(extendedStreams.size());
 
         for (unsigned i = 0; i < extendedStreams.size(); ++i)
         {
             srExtendedStreams[i] = pb.createAdvance(extendedStreams[i], 1);
-            slExtendedStreams[i] = pb.createLookahead(extendedStreams[i], 1);
         } 
 
         std::vector<PabloAST *> srDifference = bnc.SubModular(extendedStreams, srExtendedStreams);
@@ -519,21 +517,10 @@ namespace audio
         std::vector<PabloAST *> negatives = bnc.AddModular(flipBits, 1);
         std::vector<PabloAST *> srAbsDiff = bnc.Select(srDifference[srDifference.size() - 1] /*sign*/, negatives, srDifference);
 
-        std::vector<PabloAST *> slDifference = bnc.SubModular(extendedStreams, slExtendedStreams);
-        flipBits.resize(slDifference.size());
-        for (unsigned i = 0; i < slDifference.size(); ++i)
-        {
-            flipBits[i] = pb.createNot(slDifference[i]);
-        }
-
-        negatives = bnc.AddModular(slDifference, 1);
-
-        std::vector<PabloAST *> slAbsDiff = bnc.Select(slDifference[slDifference.size() - 1] /*sign*/, negatives, slDifference);
-        
-        PabloAST *exceed = pb.createOr(bnc.UGE(srAbsDiff, threshold),bnc.UGE(slAbsDiff, threshold));
+        PabloAST * exceedThreshold = pb.createAnd(pb.createAdvance(pb.createOnes(), 1), bnc.UGE(srAbsDiff, threshold));
 
         Var *result = getOutputStreamVar("markStream");
-        pb.createAssign(pb.createExtract(result, pb.getInteger(0)), exceed);
+        pb.createAssign(pb.createExtract(result, pb.getInteger(0)), exceedThreshold);
     }
 
     AmplifyPabloKernel::AmplifyPabloKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStreams, const unsigned int &factor, StreamSet *const outputStreams)

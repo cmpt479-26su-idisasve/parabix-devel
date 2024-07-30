@@ -31,22 +31,18 @@ namespace audio
         const unsigned int &bitsPerSample,
         const unsigned int &numSamples);
 
-    void ExtractWAVData(
+    void ParseAudioBuffer(
         const std::unique_ptr<ProgramBuilder> &P,
         Scalar *const fileDescriptor,
         unsigned int numChannels,
-        unsigned int numSamples,
-        unsigned int sampleRate,
         unsigned int bitsPerSample,
         StreamSet *&outputDataStreams);
 
-    void ExtractWAVData(
+    void ParseAudioBuffer(
         const std::unique_ptr<ProgramBuilder> &P,
         Scalar *const buffer,
         Scalar *const length,
         unsigned int numChannels,
-        unsigned int numSamples,
-        unsigned int sampleRate,
         unsigned int bitsPerSample,
         StreamSet *&outputDataStreams);
 
