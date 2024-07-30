@@ -44,7 +44,7 @@ static cl::opt<int> amplifyFactor("f", cl::desc("Amplify factor"), cl::Required,
 static cl::opt<std::string> outputFile("o", cl::desc("Specify a file to save the modified .wav file."), cl::cat(DemoOptions));
 
 typedef void (*PipelineFunctionType)(StreamSetPtr & ss_buf, void *buffer, size_t length);
-PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& amplifyFactor, const unsigned int &numChannels, const unsigned int &numSamples, const unsigned int &bitsPerSample, const unsigned int &sampleRate)
+PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& amplifyFactor, const unsigned int &numChannels, const unsigned int &bitsPerSample)
 {
     StreamSet * OutputBytes = pxDriver.CreateStreamSet(1,bitsPerSample * numChannels);
 
@@ -55,7 +55,7 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& a
     Scalar * const length = P->getInputScalar("length");
 
     StreamSet *dataStreams;
-    ExtractWAVData(P, buffer, length, numChannels, numSamples, sampleRate, bitsPerSample, dataStreams);
+    ParseAudioBuffer(P, buffer, length, numChannels, bitsPerSample, dataStreams);
     
     std::vector<StreamSet *> OutputStreams(numChannels);
 
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
         isWav = false;
     }
 
-    auto fn = generatePipeline(driver, amplifyFactor, numChannels, numSamples, bitsPerSample, sampleRate);
+    auto fn = generatePipeline(driver, amplifyFactor, numChannels, bitsPerSample);
     StreamSetPtr wavStream;
 
     fn(wavStream, &buffer[0], numSamples);
