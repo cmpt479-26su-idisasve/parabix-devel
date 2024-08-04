@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
     {
         readWAVHeader(fd, numChannels, sampleRate, bitsPerSample, numSamples);
         lseek(fd, 44, SEEK_SET);
-        std::cout << numChannels << " " << sampleRate << " " << bitsPerSample << " " << numSamples << "\n";
+        std::cout << "numChannels: " << numChannels << ", sampleRate: " << sampleRate << ", bitsPerSample: " << bitsPerSample << ", numSamples: " << numSamples << "\n";
     }
     catch (const std::exception &e)
     {
