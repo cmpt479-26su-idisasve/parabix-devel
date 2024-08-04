@@ -5,13 +5,12 @@
 
 parabix_add_executable(
 NAME
-    stereo2mono
+    audioamplifier
 SRC
-    stereo2mono.cpp
+    audioamplifier.cpp
 DEPS
     kernel.io
     kernel.pipeline
-    kernel.streamutils
     kernel.util
     util
     toolchain
@@ -20,13 +19,12 @@ DEPS
 
 parabix_add_executable(
 NAME
-    audioamplifier
+    stereo2mono
 SRC
-    audioamplifier.cpp
+    stereo2mono.cpp
 DEPS
     kernel.io
     kernel.pipeline
-    kernel.streamutils
     kernel.util
     util
     toolchain
@@ -39,7 +37,10 @@ NAME
 SRC
     discontinuity.cpp
 DEPS
+    kernel.io
     kernel.pipeline
+    kernel.util
+    util
+    toolchain
     audio
 )
-

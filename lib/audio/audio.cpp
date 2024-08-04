@@ -34,25 +34,30 @@ namespace audio
         Scalar *const fileDescriptor,
         unsigned int numChannels,
         unsigned int bitsPerSample,
-        StreamSet *&outputDataStreams)
+        std::vector<StreamSet *> &outputDataStreams,
+        const bool& splitChannels)
     {
         if (numChannels != 1 && numChannels != 2)
         {
             throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
         }
 
-        StreamSet *SampleStream = P->CreateStreamSet(1, bitsPerSample * numChannels);
-        P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, SampleStream);
-        StreamSet *DataStreams = P->CreateStreamSet(numChannels, bitsPerSample);
-        if (numChannels == 2)
+        if (splitChannels && outputDataStreams.size() != numChannels)
         {
-            P->CreateKernelCall<SplitKernel>(bitsPerSample, SampleStream, DataStreams);
+            throw std::invalid_argument("Error: Splitting channel is on but numChannels " + std::to_string(numChannels) + " is not equal to number output streams");
+        }
+
+        if (numChannels == 2 && splitChannels)
+        {
+            unsigned SampleStreamFW = (splitChannels) ? bitsPerSample * numChannels : bitsPerSample;
+            StreamSet *SampleStream = P->CreateStreamSet(1, SampleStreamFW);
+            P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, SampleStream);
+            P->CreateKernelCall<Split2Kernel>(bitsPerSample, SampleStream, outputDataStreams[0], outputDataStreams[1]);
         }
         else
         {
-            DataStreams = SampleStream;
+            P->CreateKernelCall<ReadSourceKernel>(fileDescriptor, outputDataStreams[0]);
         }
-        outputDataStreams = DataStreams;
     }
 
     void ParseAudioBuffer(
@@ -61,25 +66,30 @@ namespace audio
         Scalar *const length,
         unsigned int numChannels,
         unsigned int bitsPerSample,
-        StreamSet *&outputDataStreams)
+        std::vector<StreamSet *> &outputDataStreams,
+        const bool& splitChannels)
     {
         if (numChannels != 1 && numChannels != 2)
         {
             throw std::invalid_argument("Error: numChannels " + std::to_string(numChannels) + " is not valid");
         }
 
-        StreamSet *SampleStream = P->CreateStreamSet(1, bitsPerSample * numChannels);
-        P->CreateKernelCall<MemorySourceKernel>(buffer, length, SampleStream);
-        StreamSet *DataStreams = P->CreateStreamSet(numChannels, bitsPerSample);
-        if (numChannels == 2)
+        if (splitChannels && outputDataStreams.size() != numChannels)
         {
-            P->CreateKernelCall<SplitKernel>(bitsPerSample, SampleStream, DataStreams);
+            throw std::invalid_argument("Error: Splitting channel is on but numChannels " + std::to_string(numChannels) + " is not equal to number output streams");
+        }
+
+        if (numChannels == 2 && splitChannels)
+        {
+            unsigned SampleStreamFW = (splitChannels) ? bitsPerSample * numChannels : bitsPerSample;
+            StreamSet *SampleStream = P->CreateStreamSet(1, SampleStreamFW);
+            P->CreateKernelCall<MemorySourceKernel>(buffer, length, SampleStream);
+            P->CreateKernelCall<Split2Kernel>(bitsPerSample, SampleStream, outputDataStreams[0], outputDataStreams[1]);
         }
         else
         {
-            DataStreams = SampleStream;
+            P->CreateKernelCall<MemorySourceKernel>(buffer, length, outputDataStreams[0]);
         }
-        outputDataStreams = DataStreams;
     }
 
     // adapted from chatgpt with some modifications :)
@@ -219,23 +229,14 @@ namespace audio
     {
         if (bitsPerSample == 16)
         {
-            StreamSet *ParallelStreams = P->CreateStreamSet(2, 8);
-            P->CreateKernelCall<SplitKernel>(8, inputStream, ParallelStreams);
-            std::vector<StreamSet *> BitsBasis;
-            BitsBasis.reserve(2);
-            for (int i = 0; i < 2; ++i)
-            {
-                BitsBasis.push_back(P->CreateStreamSet(8));
-            }
-
-            for (int i = 0; i < 2; ++i)
-            {
-                StreamSet *SingleStream = P->CreateStreamSet(1, 8);
-                P->CreateKernelCall<IStreamSelect>(SingleStream, Select(ParallelStreams, {(unsigned)i}));
-                P->CreateKernelCall<S2PKernel>(SingleStream, BitsBasis[i]);
-            }
-
-            P->CreateKernelCall<ConcatenateKernel>(BitsBasis[0], BitsBasis[1], outputStreams);
+            StreamSet *LowStream = P->CreateStreamSet(1, 8);
+            StreamSet *HighStream = P->CreateStreamSet(1, 8);
+            P->CreateKernelCall<Split2Kernel>(8, inputStream, LowStream, HighStream);
+            StreamSet *LowBitBasisStream = P->CreateStreamSet(8);
+            StreamSet *HighBitBasisStream = P->CreateStreamSet(8);
+            P->CreateKernelCall<S2PKernel>(LowStream, LowBitBasisStream);
+            P->CreateKernelCall<S2PKernel>(HighStream, HighBitBasisStream);
+            P->CreateKernelCall<ConcatenateKernel>(LowBitBasisStream, HighBitBasisStream, outputStreams);
         }
         else if (bitsPerSample == 8)
         {
@@ -254,15 +255,7 @@ namespace audio
     {
         if (inputStreams->getNumElements() == 16)
         {
-            StreamSet *LowStream = P->CreateStreamSet(1, 8);
-            StreamSet *HighStream = P->CreateStreamSet(1, 8);
-            StreamSet *LowBitStream = P->CreateStreamSet(8);
-            StreamSet *HighBittream = P->CreateStreamSet(8);
-            P->CreateKernelCall<StreamSelect>(LowBitStream, Select(inputStreams, {(unsigned)0, 1, 2, 3, 4, 5, 6, 7}));
-            P->CreateKernelCall<StreamSelect>(HighBittream, Select(inputStreams, {(unsigned)8, 9, 10, 11, 12, 13, 14, 15}));
-            P->CreateKernelCall<P2SKernel>(LowBitStream, LowStream);
-            P->CreateKernelCall<P2SKernel>(HighBittream, HighStream);
-            P->CreateKernelCall<MergeKernel>(8, LowStream, HighStream, outputStream);
+            P->CreateKernelCall<P2S16Kernel>(inputStreams, outputStream);
         }
         else if (inputStreams->getNumElements() == 8)
         {

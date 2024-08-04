@@ -50,20 +50,19 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& n
                                              {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
     Scalar * const fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
-    StreamSet *dataStreams;
-    ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, dataStreams);
-    //SHOW_BYTES(dataStreams);
+    std::vector<StreamSet *> ChannelSampleStreams(numChannels);
+    for (unsigned i=0;i<numChannels;++i)
+    {
+        ChannelSampleStreams[i] = P->CreateStreamSet(1,bitsPerSample);
+    }
+    ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, ChannelSampleStreams);
 
-    StreamSet *FirstChannelStream = P->CreateStreamSet(1, bitsPerSample);
     StreamSet *FirstChannelBasisBits = P->CreateStreamSet(bitsPerSample);
-    P->CreateKernelCall<IStreamSelect>(FirstChannelStream, Select(dataStreams, {(unsigned)0}));
-    S2P(P, bitsPerSample, FirstChannelStream, FirstChannelBasisBits);
+    S2P(P, bitsPerSample, ChannelSampleStreams[0], FirstChannelBasisBits);
     //SHOW_STREAM(FirstChannelBasisBits);
 
-    StreamSet *SecondChannelStream = P->CreateStreamSet(1, bitsPerSample);
     StreamSet *SecondChannelBasisBits = P->CreateStreamSet(bitsPerSample);
-    P->CreateKernelCall<IStreamSelect>(SecondChannelStream, Select(dataStreams, {(unsigned)1}));
-    S2P(P, bitsPerSample, SecondChannelStream, SecondChannelBasisBits);
+    S2P(P, bitsPerSample, ChannelSampleStreams[1], SecondChannelBasisBits);
     //SHOW_STREAM(SecondChannelBasisBits);
 
     StreamSet *MonoBasisBits = P->CreateStreamSet(bitsPerSample);
