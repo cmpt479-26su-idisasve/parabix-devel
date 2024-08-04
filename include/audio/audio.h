@@ -70,18 +70,6 @@ namespace audio
         unsigned int bitsPerSample;
     };
 
-    class Stereo2MonoKernel final : public MultiBlockKernel {
-    public:
-        Stereo2MonoKernel(kernel::KernelBuilder & b,
-                const unsigned int bitsPerSample,
-                StreamSet * const inputStreams,
-                StreamSet * const outputStream);
-    protected:
-        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
-    private:
-        unsigned int bitsPerSample;
-        unsigned int numInputStreams;
-    };
 
     class DiscontinuityKernel final : public PabloKernel {
     public:
@@ -104,22 +92,6 @@ namespace audio
                 StreamSet * const outputStreams);
     protected:
         void generatePabloMethod() override;
-    };
-
-
-    class AmplifyKernel final : public MultiBlockKernel {
-    public:
-        AmplifyKernel(kernel::KernelBuilder & b,
-                const unsigned int bitsPerSample,
-                StreamSet * const inputStreams,
-                const unsigned int& factor,
-                StreamSet * const outputStreams);
-    protected:
-        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
-    private:
-        unsigned int bitsPerSample;
-        unsigned int numInputStreams;
-        unsigned int factor;
     };
 
     class AmplifyPabloKernel final : public PabloKernel {
