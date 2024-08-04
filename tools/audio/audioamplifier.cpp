@@ -53,29 +53,31 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& a
                                              {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
     Scalar * const fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
-    StreamSet *dataStreams;
-    ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, dataStreams);
+    std::vector<StreamSet *> ChannelSampleStreams(numChannels);
+    for (unsigned i=0;i<numChannels;++i)
+    {
+        ChannelSampleStreams[i] = P->CreateStreamSet(1,bitsPerSample);
+    }
+
+    ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, ChannelSampleStreams);
     
-    std::vector<StreamSet *> OutputStreams(numChannels);
+    std::vector<StreamSet *> AmplifiedSampleStreams(numChannels);
 
     for (unsigned i = 0; i < numChannels; ++i)
     {
-        StreamSet *Channel = P->CreateStreamSet(1, bitsPerSample);
-        StreamSet *BasisBits = P->CreateStreamSet(bitsPerSample);
-
-        P->CreateKernelCall<IStreamSelect>(Channel, Select(dataStreams, {(unsigned)i}));
-        S2P(P, bitsPerSample, Channel, BasisBits);
+        StreamSet* BasisBits = P->CreateStreamSet(bitsPerSample);
+        S2P(P, bitsPerSample, ChannelSampleStreams[i], BasisBits);
         //SHOW_BIXNUM(BasisBits);
         StreamSet *AmplifiedBasisBits = P->CreateStreamSet(bitsPerSample);
         P->CreateKernelCall<AmplifyPabloKernel>(bitsPerSample, BasisBits, amplifyFactor, AmplifiedBasisBits);
         //SHOW_STREAM(AmplifiedBasisBits);
 
-        OutputStreams[i] = P->CreateStreamSet(1, bitsPerSample);
-        P2S(P, AmplifiedBasisBits, OutputStreams[i]);
+        AmplifiedSampleStreams[i] = P->CreateStreamSet(1, bitsPerSample);
+        P2S(P, AmplifiedBasisBits, AmplifiedSampleStreams[i]);
         //SHOW_BYTES(OutputStreams[i]);
     }
     
-    P->CreateKernelCall<MergeKernel>(bitsPerSample, OutputStreams[0], OutputStreams[1], OutputBytes);
+    P->CreateKernelCall<MergeKernel>(bitsPerSample, AmplifiedSampleStreams[0], AmplifiedSampleStreams[1], OutputBytes);
     SHOW_BYTES(OutputBytes);
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }

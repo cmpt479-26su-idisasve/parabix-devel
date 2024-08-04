@@ -51,23 +51,23 @@ PipelineFunctionType generatePipeline(CPUDriver &pxDriver, const unsigned int& t
                                              {Binding{b.getInt32Ty(), "inputFileDecriptor"}});
     Scalar * const fileDescriptor = P->getInputScalar("inputFileDecriptor");
 
-    StreamSet *dataStreams;
-    ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, dataStreams);
+    std::vector<StreamSet *> ChannelSampleStreams(numChannels);
+    for (unsigned i=0;i<numChannels;++i)
+    {
+        ChannelSampleStreams[i] = P->CreateStreamSet(1,bitsPerSample);
+    }
+    ParseAudioBuffer(P, fileDescriptor, numChannels, bitsPerSample, ChannelSampleStreams);
 
     std::vector<StreamSet *> OutputStreams(numChannels);
 
     for (unsigned i = 0; i < numChannels; ++i)
     {
-        StreamSet *Channel = P->CreateStreamSet(1, bitsPerSample);
         StreamSet *BasisBits = P->CreateStreamSet(bitsPerSample);
-
-        P->CreateKernelCall<IStreamSelect>(Channel, Select(dataStreams, {(unsigned)i}));
-        S2P(P, bitsPerSample, Channel, BasisBits);
+        S2P(P, bitsPerSample, ChannelSampleStreams[i], BasisBits);
         //SHOW_BIXNUM(BasisBits);
-        StreamSet *MarkerStream = P->CreateStreamSet(1);
         P->CreateKernelCall<DiscontinuityKernel>(BasisBits, threshold, Makers[i]);
         
-        SHOW_STREAM(MarkerStream);
+        SHOW_STREAM(Makers[i]);
     }
     return reinterpret_cast<PipelineFunctionType>(P->compile());
 }

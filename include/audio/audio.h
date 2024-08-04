@@ -35,7 +35,8 @@ namespace audio
         Scalar *const fileDescriptor,
         unsigned int numChannels,
         unsigned int bitsPerSample,
-        StreamSet *&outputDataStreams);
+        std::vector<StreamSet *> &outputDataStreams,
+        const bool& splitChannels = true);
 
     void ParseAudioBuffer(
         const std::unique_ptr<ProgramBuilder> &P,
@@ -43,7 +44,8 @@ namespace audio
         Scalar *const length,
         unsigned int numChannels,
         unsigned int bitsPerSample,
-        StreamSet *&outputDataStreams);
+        std::vector<StreamSet *> &outputDataStreams,
+        const bool& splitChannels = true);
 
     void S2P(
         const std::unique_ptr<ProgramBuilder> &P,

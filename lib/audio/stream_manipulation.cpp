@@ -62,6 +62,55 @@ namespace audio
         b.CreateCondBr(moreToDo, packLoop, packFinalize);
         b.SetInsertPoint(packFinalize);
     }
+    
+    Split2Kernel::Split2Kernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStream, StreamSet *const outputStream_1, StreamSet *const outputStream_2)
+        : MultiBlockKernel(b, "Split2Kernel_" + std::to_string(bitsPerSample),
+                           {Binding{"inputStream", inputStream}},
+                           {Binding{"outputStream_1", outputStream_1}, Binding{"outputStream_2", outputStream_2}}, {}, {}, {}), bitsPerSample(bitsPerSample) 
+    {
+        if (inputStream->getNumElements() != 1)
+        {
+            throw std::invalid_argument("Error: Input has " + std::to_string(inputStream->getNumElements()) + " streams. Input must be single stream.");
+        }
+    }
+
+    void Split2Kernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
+    {
+        const unsigned fw = bitsPerSample;
+        const unsigned inputPacksPerStride = fw * 2;
+        const unsigned outputPacksPerStride = fw * 1;
+
+        BasicBlock *entry = b.GetInsertBlock();
+        BasicBlock *packLoop = b.CreateBasicBlock("packLoop");
+        BasicBlock *packFinalize = b.CreateBasicBlock("packFinalize");
+        Constant *const ZERO = b.getSize(0);
+        Value *numOfBlocks = numOfStrides;
+        b.CreateBr(packLoop);
+        b.SetInsertPoint(packLoop);
+        PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
+        blockOffsetPhi->addIncoming(ZERO, entry);
+        Value *bytepack[inputPacksPerStride];
+        for (unsigned i = 0; i < inputPacksPerStride; i++)
+        {
+            bytepack[i] = b.loadInputStreamPack("inputStream", ZERO, b.getInt32(i), blockOffsetPhi);
+        }
+
+        
+        for (unsigned i = 0; i < outputPacksPerStride; i++)
+        {
+            Value *lo = b.hsimd_packl(2 * bitsPerSample, bytepack[2 * i], bytepack[2 * i + 1]);
+            Value *hi = b.hsimd_packh(2 * bitsPerSample, bytepack[2 * i], bytepack[2 * i + 1]);
+            b.storeOutputStreamPack("outputStream_1", ZERO, b.getInt32(i), blockOffsetPhi, lo);
+            b.storeOutputStreamPack("outputStream_2", ZERO, b.getInt32(i), blockOffsetPhi, hi);
+        }
+
+        Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
+        blockOffsetPhi->addIncoming(nextBlk, packLoop);
+        Value *moreToDo = b.CreateICmpNE(nextBlk, numOfBlocks);
+
+        b.CreateCondBr(moreToDo, packLoop, packFinalize);
+        b.SetInsertPoint(packFinalize);
+    }
 
     SplitKernel::SplitKernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStreams, StreamSet *const outputStreams)
         : MultiBlockKernel(b, "SplitKernel_" + std::to_string(inputStreams->getNumElements()) + "_" + std::to_string(bitsPerSample),

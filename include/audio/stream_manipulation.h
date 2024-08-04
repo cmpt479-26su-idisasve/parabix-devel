@@ -39,6 +39,15 @@ namespace audio
         unsigned int numInputStreams;
     };
 
+    class Split2Kernel final : public MultiBlockKernel {
+    public:
+        Split2Kernel(KernelBuilder &b, const unsigned int bitsPerSample, StreamSet *const inputStream, StreamSet *const outputStream_1, StreamSet *const outputStream_2);
+    protected:
+        void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) override;
+    private:
+        unsigned int bitsPerSample;
+    };
+
     class MergeKernel final : public MultiBlockKernel {
     public:
         MergeKernel(KernelBuilder & b,
