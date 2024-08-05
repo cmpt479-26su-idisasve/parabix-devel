@@ -286,7 +286,7 @@ namespace audio
 
     void FlexS2PKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numOfStrides)
     {
-        const unsigned inputPacksPerStride = 16;
+        const unsigned inputPacksPerStride = bitsPerSample;
         const unsigned outputPacksPerStride = 1;
         const unsigned packSize = b.getBitBlockWidth();
         const unsigned numElementsPerPack = packSize / bitsPerSample;
