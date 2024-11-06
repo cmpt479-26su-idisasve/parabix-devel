@@ -19,7 +19,6 @@
 #include "llvm/IR/Mangler.h"
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/IR/LegacyPassManager.h>
-
 #include <llvm/Support/CommandLine.h>
 
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(7, 0, 0)
@@ -190,7 +189,7 @@ void * CPUDriver::finalizeObject(kernel::Kernel * const pk) {
         }
     }
 
-    auto addModules = [&](const ModuleSet & S, const CodeGenOpt::Level level) {
+    auto addModules = [&](const ModuleSet & S, const CodeGenOptLevel level) {
         if (S.empty()) return;
         mEngine->getTargetMachine()->setOptLevel(level);
         for (Module * M : S) {
@@ -207,7 +206,7 @@ void * CPUDriver::finalizeObject(kernel::Kernel * const pk) {
 
     // compile any uncompiled kernels
     addModules(Infrequent, codegen::BackEndOptLevel);
-    addModules(Normal, CodeGenOpt::Default);
+    addModules(Normal, CodeGenOptLevel::Default);
 
     // write/declare the "main" method
     auto mainModule = std::make_unique<Module>("main", *mContext);
@@ -238,7 +237,7 @@ void * CPUDriver::finalizeObject(kernel::Kernel * const pk) {
     }
 
     // return the compiled main method
-    mEngine->getTargetMachine()->setOptLevel(CodeGenOpt::None);
+    mEngine->getTargetMachine()->setOptLevel(CodeGenOptLevel::None);
     const auto mainModulePtr = mainModule.get();
     mEngine->addModule(std::move(mainModule));
 
@@ -253,7 +252,9 @@ void * CPUDriver::finalizeObject(kernel::Kernel * const pk) {
         // TODO: there does not seem to be an ASM printer for the new PassManager?
         auto pm = std::make_unique<legacy::PassManager>();
 
-        #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(10, 0, 0)
+        #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(18, 0, 0)
+        const auto r = mTarget->addPassesToEmitFile(*pm, *mASMOutputStream, nullptr, CodeGenFileType::AssemblyFile);
+        #elif LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(10, 0, 0)
         const auto r = mTarget->addPassesToEmitFile(*pm, *mASMOutputStream, nullptr, CGFT_AssemblyFile);
         #elif LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(7, 0, 0)
         const auto r = mTarget->addPassesToEmitFile(*mPassManager, *mASMOutputStream, nullptr, TargetMachine::CGFT_AssemblyFile);
