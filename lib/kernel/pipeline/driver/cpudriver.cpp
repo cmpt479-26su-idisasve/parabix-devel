@@ -76,7 +76,7 @@ CPUDriver::CPUDriver(std::string && moduleName)
 
     #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    sys::getHostCPUFeatures(features)
+    sys::getHostCPUFeatures(features);
     #else
     const auto features = sys::getHostCPUFeatures();
     #endif
