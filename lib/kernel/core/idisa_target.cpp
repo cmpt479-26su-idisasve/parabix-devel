@@ -47,55 +47,80 @@ struct Features {
 
 Features getHostCPUFeatures() {
     Features hostCPUFeatures;
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    if (sys::getHostCPUFeatures(features)) {
-        hostCPUFeatures.hasAVX = features.lookup("avx");
-        hostCPUFeatures.hasAVX2 = features.lookup("avx2");
-        hostCPUFeatures.hasAVX512F = features.lookup("avx512f");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return hostCPUFeatures;
     }
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+    hostCPUFeatures.hasAVX = features.lookup("avx");
+    hostCPUFeatures.hasAVX2 = features.lookup("avx2");
+    hostCPUFeatures.hasAVX512F = features.lookup("avx512f");
     return hostCPUFeatures;
 }
 
 bool ARM_available() {
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    if (sys::getHostCPUFeatures(features)) {
-        return features.lookup("neon");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return false;
     }
-    return false;
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+    return features.lookup("neon");
 }
 
 bool SSSE3_available() {
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    if (sys::getHostCPUFeatures(features)) {
-        return features.lookup("ssse3");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return false;
     }
-    return false;
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+    return features.lookup("ssse3");
 }
 
 bool BMI2_available() {
     // FIXME: Workaround to prevent this from returning true on AVX2 machines even when the SSE builder is made
     if (codegen::BlockSize < 256) return false;
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    if (sys::getHostCPUFeatures(features)) {
-        return features.lookup("bmi2");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return false;
     }
-    return false;
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+    return features.lookup("bmi2");
 }
 
 bool AVX2_available() {
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    if (sys::getHostCPUFeatures(features)) {
-        return features.lookup("avx2");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return false;
     }
-    return false;
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+    return features.lookup("avx2");
 }
 
 bool AVX512BW_available() {
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    if (sys::getHostCPUFeatures(features)) {
-        return features.lookup("avx512bw");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return false;
     }
-    return false;
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+    return features.lookup("avx512bw");
 }
 
 namespace IDISA {

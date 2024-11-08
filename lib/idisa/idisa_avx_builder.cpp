@@ -1377,41 +1377,50 @@ std::pair<Value *, Value *> IDISA_AVX512F_Builder::bitblock_advance(Value * a, V
 
 IDISA_AVX_Builder::IDISA_AVX_Builder(LLVMContext & C, unsigned vectorWidth, unsigned laneWidth)
 : IDISA_Builder(C, AVX_width, vectorWidth, laneWidth)
-, IDISA_SSE2_Builder(C, vectorWidth, laneWidth)
-{
+, IDISA_SSE2_Builder(C, vectorWidth, laneWidth) {
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    hasBMI1 = sys::getHostCPUFeatures(features) && features.lookup("bmi");
-    hasBMI2 = sys::getHostCPUFeatures(features) && features.lookup("bmi2");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return;
+    }
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+    hasBMI1 = features.lookup("bmi");
+    hasBMI2 = features.lookup("bmi2");
 }
 
 IDISA_AVX2_Builder::IDISA_AVX2_Builder(LLVMContext & C, unsigned vectorWidth, unsigned laneWidth)
 : IDISA_Builder(C, AVX_width, vectorWidth, laneWidth)
 , IDISA_AVX_Builder(C, vectorWidth, laneWidth) {
+
 }
 
 IDISA_AVX512F_Builder::IDISA_AVX512F_Builder(LLVMContext & C, unsigned vectorWidth, unsigned laneWidth)
 : IDISA_Builder(C, AVX512_width, vectorWidth, laneWidth)
 , IDISA_AVX2_Builder(C, vectorWidth, laneWidth) {
-    getAVX512Features();
-}
 
-
-
-void IDISA_AVX512F_Builder::getAVX512Features() {
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    if (sys::getHostCPUFeatures(features)) {
-        hostCPUFeatures.hasAVX512CD = features.lookup("avx512cd");
-        hostCPUFeatures.hasAVX512BW = features.lookup("avx512bw");
-        hostCPUFeatures.hasAVX512DQ = features.lookup("avx512dq");
-        hostCPUFeatures.hasAVX512VL = features.lookup("avx512vl");
-
-        //hostCPUFeatures.hasAVX512VBMI, hostCPUFeatures.hasAVX512VBMI2,
-        //hostCPUFeatures.hasAVX512VPOPCNTDQ have not been tested as we
-        //did not have hardware support. It should work in theory (tm)
-
-        hostCPUFeatures.hasAVX512VBMI = features.lookup("avx512_vbmi");
-        hostCPUFeatures.hasAVX512VBMI2 = features.lookup("avx512_vbmi2");
-        hostCPUFeatures.hasAVX512VPOPCNTDQ = features.lookup("avx512_vpopcntdq");
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return;
     }
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+
+    hostCPUFeatures.hasAVX512CD = features.lookup("avx512cd");
+    hostCPUFeatures.hasAVX512BW = features.lookup("avx512bw");
+    hostCPUFeatures.hasAVX512DQ = features.lookup("avx512dq");
+    hostCPUFeatures.hasAVX512VL = features.lookup("avx512vl");
+
+    //hostCPUFeatures.hasAVX512VBMI, hostCPUFeatures.hasAVX512VBMI2,
+    //hostCPUFeatures.hasAVX512VPOPCNTDQ have not been tested as we
+    //did not have hardware support. It should work in theory (tm)
+
+    hostCPUFeatures.hasAVX512VBMI = features.lookup("avx512_vbmi");
+    hostCPUFeatures.hasAVX512VBMI2 = features.lookup("avx512_vbmi2");
+    hostCPUFeatures.hasAVX512VPOPCNTDQ = features.lookup("avx512_vpopcntdq");
 }
+
 }

@@ -67,7 +67,6 @@ public:
     IDISA_AVX512F_Builder(llvm::LLVMContext & C, unsigned vectorWidth, unsigned laneWidth);
 
     virtual std::string getBuilderUniqueName() override;
-    void getAVX512Features();
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packus(unsigned fw, llvm::Value * a, llvm::Value * b) override;
