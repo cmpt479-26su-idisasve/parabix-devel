@@ -78,7 +78,7 @@ CPUDriver::CPUDriver(std::string && moduleName)
     StringMap<bool> features;
     sys::getHostCPUFeatures(features);
     #else
-    const auto features = sys::getHostCPUFeatures();
+    const StringMap<bool> features = sys::getHostCPUFeatures();
     #endif
 
     std::vector<std::string> attrs;
@@ -108,7 +108,7 @@ CPUDriver::CPUDriver(std::string && moduleName)
     const DataLayout DL(mTarget->createDataLayout());
     mMainModule->setTargetTriple(triple);
     mMainModule->setDataLayout(DL);
-    mBuilder.reset(IDISA::GetIDISA_Builder(*mContext));
+    mBuilder.reset(IDISA::GetIDISA_Builder(*mContext, features));
     mBuilder->setDriver(*this);
     mBuilder->setModule(mMainModule);
 }
