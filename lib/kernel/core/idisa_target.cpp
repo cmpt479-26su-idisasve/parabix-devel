@@ -115,7 +115,7 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
     if (LLVM_LIKELY(codegen::BlockSize == 0)) {  // No BlockSize override: use processor SIMD width
         if (LLVM_UNLIKELY(HasAVX512F)) {
             codegen::BlockSize = 512;
-        } else if (HasAVX || HasAVX2) {
+        } else if (HasAVX2) {
             codegen::BlockSize = 256;
         } else {
             codegen::BlockSize = 128;
