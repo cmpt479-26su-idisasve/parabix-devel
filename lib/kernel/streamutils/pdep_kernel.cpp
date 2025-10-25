@@ -29,7 +29,7 @@ using namespace kernel;
 
 static cl::opt<bool> ElemSpread("ElemSpread", cl::desc("Use ElemSpreadKernel in place of byte spread by mask"), cl::init(true), cl::cat(codegen::CodeGenOptions));
 static cl::opt<bool> UnalignedLoads("UnalignedLoads", cl::desc("Use unaligned loads in ElemSpread"), cl::init(false), cl::cat(codegen::CodeGenOptions));
-static cl::opt<bool> InsertionMaskKernels("InsertionMaskKernels", cl::desc("Use Unit/InsertionSpreadMaskKernels"), cl::init(false), cl::cat(codegen::CodeGenOptions));
+static cl::opt<bool> InsertionMaskKernels("InsertionMaskKernels", cl::desc("Use Unit/InsertionSpreadMaskKernels"), cl::init(true), cl::cat(codegen::CodeGenOptions));
 
 namespace kernel {
 
@@ -1485,19 +1485,23 @@ void InsertionSpreadMaskKernel::generateProcessingLogic(KernelBuilder & b,
         Value * newPending = b.CreateOr(pendingAfterAdvance, b.CreateShl(sw_ONE, sw_offset));
         // We may have filled the word; write it out in case we move on.
         b.CreateStore(newPending, sm_word_ptr);
-        Value * totalInsert = b.CreateAdd(insertAmt, ONE);
         Value * updatedOffset = b.CreateAdd(totalInsert, new_offset);
         Value * pack_filled = b.CreateICmpUGE(updatedOffset, SCANWORD_BITS);
         pendingAfterInsert = b.CreateSelect(pack_filled, sw_ZERO, newPending);
     } else {
-        // The insertAmt zeroes may fill the pack; write it out in case we move on.
-        b.CreateStore(pendingAfterAdvance, sm_word_ptr);
+        // Generate insertAmt zeroes followed by a 1 bit.
         Value * bitOffset = b.CreateAdd(new_offset, insertAmt);
-        Value * pack_filled = b.CreateICmpUGE(bitOffset, SCANWORD_BITS);
+        Value * overflow = b.CreateICmpUGE(bitOffset, SCANWORD_BITS);
         bitOffset = b.CreateURem(bitOffset, SCANWORD_BITS);
-        Value * placedBit = b.CreateShl(ONE, bitOffset);
-        placedBit = b.CreateZExtOrTrunc(placedBit, scanWordTy);
-        pendingAfterInsert = b.CreateSelect(pack_filled, placedBit, b.CreateOr(loopVars[sm_pending], placedBit));
+        Value * placedBit = b.CreateShl(sw_ONE, b.CreateZExtOrTrunc(bitOffset, scanWordTy));
+        Value * currentPending = b.CreateSelect(overflow, pendingAfterAdvance, b.CreateOr(pendingAfterAdvance, placedBit));
+        // We may have filled the word; write it out in case we move on.
+        b.CreateStore(currentPending, sm_word_ptr);
+        Value * updatedOffset = b.CreateAdd(totalInsert, new_offset);
+        Value * pack_filled = b.CreateICmpUGE(updatedOffset, SCANWORD_BITS);
+        pendingAfterInsert = b.CreateSelect(pack_filled, placedBit, currentPending);
+        Value * zero_pending = b.CreateXor(pack_filled, overflow);
+        pendingAfterInsert = b.CreateSelect(zero_pending, sw_ZERO, pendingAfterInsert);
     }
     loopVars[bn_processed] = b.CreateAdd(absItemPos, ONE);
     loopVars[sm_produced] = producedAfterInsert;
