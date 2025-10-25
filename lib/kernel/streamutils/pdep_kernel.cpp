@@ -1382,6 +1382,7 @@ void InsertionSpreadMaskKernel::wordPrologueLogic(KernelBuilder & b,
                                                   std::vector<Value *> & loopVars) {
     IntegerType * sizeTy = b.getSizeTy();
     IntegerType * scanWordTy = b.getIntNTy(ScanWordWidth);
+    Constant * ZERO = b.getSize(0);
     Constant * const ONE = b.getSize(1);
     Constant * const SCANWORD_BITS = b.getSize(ScanWordWidth);
     Constant * const sw_ONES = ConstantInt::getAllOnesValue(scanWordTy);
@@ -1411,6 +1412,7 @@ void InsertionSpreadMaskKernel::wordPrologueLogic(KernelBuilder & b,
     Value * final_mask = b.CreateSub(b.CreateShl(ONE, final_offset), ONE);
     final_mask = b.CreateZExtOrTrunc(final_mask, scanWordTy);
     //
+    Value * wordsToFill = b.CreateSub(final_word, sm_word);
     Value * doesNotFill = b.CreateICmpEQ(sm_word, final_word);
     pending_filled = b.CreateSelect(doesNotFill, b.CreateAnd(final_mask, pending_filled), pending_filled);
     b.CreateStore(pending_filled, sm_word_ptr);
@@ -1420,9 +1422,9 @@ void InsertionSpreadMaskKernel::wordPrologueLogic(KernelBuilder & b,
 
     b.SetInsertPoint(fillLoop);
     PHINode * fillCounter = b.CreatePHI(sizeTy, 2);
-    fillCounter->addIncoming(sm_word, indexWordsReady);
+    fillCounter->addIncoming(ZERO, indexWordsReady);
     Value * nextScanWord = b.CreateAdd(fillCounter, ONE);
-    Value * atFinal = b.CreateICmpEQ(nextScanWord, final_word);
+    Value * atFinal = b.CreateICmpEQ(nextScanWord, wordsToFill);
     Value * toStore = b.CreateSelect(atFinal, final_pending, sw_ONES);
     b.CreateStore(toStore, b.CreateGEP(scanWordTy, sm_word_ptr, nextScanWord));
     fillCounter->addIncoming(nextScanWord, fillLoop);
