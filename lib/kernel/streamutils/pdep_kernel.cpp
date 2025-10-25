@@ -1249,9 +1249,9 @@ void InsertionSpreadMask(PipelineBuilder & P,
     }
 }
 
-InsertionSpreadMaskKernel::InsertionSpreadMaskKernel(LLVMTypeSystemInterface & ts,
+InsertionSpreadMaskKernel0::InsertionSpreadMaskKernel0(LLVMTypeSystemInterface & ts,
                                                      StreamSet * bixNumInsertCount, StreamSet * spread_mask, InsertPosition p)
-    : BlockOrientedKernel(ts, "InsertionSpreadMaskKernel" + InsertString(bixNumInsertCount, p),
+    : BlockOrientedKernel(ts, "InsertionSpreadMaskKernel0" + InsertString(bixNumInsertCount, p),
         {Binding{"bixNumInsertCount", bixNumInsertCount}},
         {},
         {}, {},
@@ -1260,7 +1260,7 @@ InsertionSpreadMaskKernel::InsertionSpreadMaskKernel(LLVMTypeSystemInterface & t
         mOutputStreamSets.push_back({"spread_mask", spread_mask, BoundedRate(1, mExpansionWidth), EmptyWriteOverflow()});
     }
 
-void InsertionSpreadMaskKernel::generateDoBlockMethod(KernelBuilder & b) {
+void InsertionSpreadMaskKernel0::generateDoBlockMethod(KernelBuilder & b) {
     const unsigned block_width = b.getBitBlockWidth();
     const unsigned packs_per_block = b.getBitBlockWidth()/pack_width;
     const unsigned bix_bits = b.getInputStreamSet("bixNumInsertCount")->getNumElements();
@@ -1272,7 +1272,6 @@ void InsertionSpreadMaskKernel::generateDoBlockMethod(KernelBuilder & b) {
     Constant * pONE = b.getIntN(pack_width, 1);
     Constant * PACK_BITS = b.getSize(pack_width);
     Value * fileExtentMask = b.fwCast(expansionPackWidth, b.CreateNot(b.getScalarField("EOFmask")));
-    //b.CallPrintRegister("fileExtentMask", fileExtentMask);
     std::vector<Value *> insert_bix_num(bix_bits);
     for (unsigned i = 0; i < bix_bits; i++) {
         insert_bix_num[i] = b.loadInputStreamBlock("bixNumInsertCount", b.getSize(i), b.getSize(0));
@@ -1305,20 +1304,17 @@ void InsertionSpreadMaskKernel::generateDoBlockMethod(KernelBuilder & b) {
         if (mInsertPos == InsertPosition::Before) {
             databit_mask = b.simd_slli(mExpansionWidth, databit_mask, mExpansionWidth - 1);
         }
-        //b.CallPrintRegister("databit_mask", databit_mask);
         extract_mask[blk] = databit_mask;
         for (unsigned j = 0; j < bix_bits; j++) {
             Value * bixNumField = b.CreateExtractElement(insert_bix_num[j], blk);
             Value * s = b.esimd_bitspread(mExpansionWidth, bixNumField);
             Value * s_mask = b.simd_any(mExpansionWidth, s);
             extract_mask[blk] = b.simd_or(extract_mask[blk], b.simd_and(s_mask, insertedBits[j]));
-            //b.CallPrintRegister("extract_mask" + std::to_string(j), extract_mask[blk]);
         }
         extracted[blk] = b.simd_pext(pack_width, databit_mask, extract_mask[blk]);
         for (unsigned i = 0; i < packs_per_block; i++) {
             Value * pack_mask = b.mvmd_extract(pack_width, extract_mask[blk], i);
             Value * newbits = b.CreateZExt(b.CreatePopcount(pack_mask), sizeTy);
-            //b.CallPrintInt("newbits", newbits);
             Value * spread_pack = b.CreateExtractElement(extracted[blk], i);
             pending = b.CreateOr(pending, b.CreateShl(spread_pack, offset));
             // We may have filled the pack; write it out in case we move on.
@@ -1327,7 +1323,6 @@ void InsertionSpreadMaskKernel::generateDoBlockMethod(KernelBuilder & b) {
             Value * pack_overflow = b.CreateLShr(spread_pack, Rshift);
             offset = b.CreateAdd(offset, newbits);
             produced = b.CreateAdd(produced, newbits);
-            //b.CallPrintInt("produced", produced);
             Value * pack_filled = b.CreateICmpUGE(offset, PACK_BITS);
             pending = b.CreateSelect(pack_filled, pack_overflow, pending);
             spread_mask_pack_ptr = b.CreateGEP(packPtrTy, spread_mask_pack_ptr, b.CreateZExt(pack_filled, sizeTy));
@@ -1338,11 +1333,227 @@ void InsertionSpreadMaskKernel::generateDoBlockMethod(KernelBuilder & b) {
     b.setProducedItemCount("spread_mask", produced);
 }
 
-void InsertionSpreadMaskKernel::generateFinalBlockMethod(KernelBuilder & b, Value * const remainingBytes) {
+void InsertionSpreadMaskKernel0::generateFinalBlockMethod(KernelBuilder & b, Value * const remainingBytes) {
     // Standard Pablo convention for final block processing: set a bit marking
     // the position just past EOF, as well as a mask marking all positions past EOF.
     b.setScalarField("EOFmask", b.bitblock_mask_from(remainingBytes));
     RepeatDoBlockLogic(b);
+}
+
+InsertionSpreadMaskKernel::InsertionSpreadMaskKernel(LLVMTypeSystemInterface & ts,
+                                                     StreamSet * bixNumInsertCount,
+                                                     StreamSet * spread_mask,
+                                                     InsertPosition p)
+    : TwoLevelScanKernel(ts, "InsertionSpreadMaskKernel" + InsertString(bixNumInsertCount, p),
+                         ScanWordWidth,
+                         "bixNumInsertCount",
+                         {LoopVar("bn_processed", ts.getSizeTy()),
+                          LoopVar("sm_produced", ts.getSizeTy()),
+                          LoopVar("sm_pending", ts.getIntNTy(ScanWordWidth))}),
+      mBixBits(bixNumInsertCount->getNumElements()),
+      mExpansionWidth(1U << mBixBits), mInsertPos(p) {
+        mMasks.resize(mBixBits);
+        mInputStreamSets.push_back(Binding{"bixNumInsertCount", bixNumInsertCount});
+        mOutputStreamSets.push_back(Binding{"spread_mask", spread_mask, BoundedRate(1, mExpansionWidth), EmptyWriteOverflow()});
+    }
+
+void InsertionSpreadMaskKernel::initialize(KernelBuilder & b) {
+    IntegerType * const scanWordTy = b.getIntNTy(ScanWordWidth);
+    Constant * const SCANWORD_WIDTH = b.getSize(ScanWordWidth);
+    Value * initialProcessed = b.getProcessedItemCount("bixNumInsertCount");
+    Value * initialProduced = b.getProducedItemCount("spread_mask");
+    Value * sm_offset = b.CreateURem(initialProduced, SCANWORD_WIDTH);
+    Value * sm_base = b.CreateSub(initialProduced, sm_offset);
+    Value * sm_base_ptr = b.getRawOutputPointer("spread_mask", sm_base);
+    sm_base_ptr = b.CreatePointerCast(sm_base_ptr, scanWordTy->getPointerTo());
+    Value * sm_initial = b.CreateLoad(scanWordTy, sm_base_ptr);
+    Constant * sw_ONE = b.getIntN(ScanWordWidth, 1);
+    Value * offset_mask = b.CreateSub(b.CreateShl(sw_ONE, b.CreateZExtOrTrunc(sm_offset, scanWordTy)), sw_ONE);
+    Value * initialPending = b.CreateAnd(sm_initial, offset_mask);
+    mLoopVarInitialValues.resize(3);
+    mLoopVarInitialValues[bn_processed] = initialProcessed;
+    mLoopVarInitialValues[sm_produced] = initialProduced;
+    mLoopVarInitialValues[sm_pending] = initialPending;
+}
+
+void InsertionSpreadMaskKernel::wordPrologueLogic(KernelBuilder & b,
+                                                  Value * absWordPos,
+                                                  std::vector<Value *> indexWord,
+                                                  std::vector<Value *> & loopVars) {
+    IntegerType * sizeTy = b.getSizeTy();
+    IntegerType * scanWordTy = b.getIntNTy(ScanWordWidth);
+    Constant * const ONE = b.getSize(1);
+    Constant * const SCANWORD_BITS = b.getSize(ScanWordWidth);
+    Constant * const sw_ONES = ConstantInt::getAllOnesValue(scanWordTy);
+    BasicBlock * indexWordsReady = b.GetInsertBlock();
+    BasicBlock * fillLoop = b.CreateBasicBlock("fillLoop");
+    BasicBlock * fillComplete = b.CreateBasicBlock("fillComplete");
+
+    for (unsigned i = 0; i < mMasks.size(); i++) {
+        mMasks[i] = indexWord[i];
+    }
+    Value * inputAdvance = b.CreateSub(absWordPos, loopVars[bn_processed]);
+    Value * sm_word = b.CreateUDiv(loopVars[sm_produced], SCANWORD_BITS);
+    Value * sm_offset = b.CreateURem(loopVars[sm_produced], SCANWORD_BITS);
+    Value * sm_base = b.CreateSub(loopVars[sm_produced], sm_offset);
+    Value * sm_word_ptr = b.getRawOutputPointer("spread_mask", sm_base);
+    sm_word_ptr = b.CreatePointerCast(sm_word_ptr, scanWordTy->getPointerTo());
+
+    Value * offset_mask = b.CreateSub(b.CreateShl(ONE, sm_offset), ONE);
+    offset_mask = b.CreateZExtOrTrunc(offset_mask, scanWordTy);
+    // We may fill the current pending scanword.
+    Value * pending_filled = b.CreateOr(loopVars[sm_pending], b.CreateNot(offset_mask));
+    // Calculate the final produced values upon updating of the
+    // output mask with inputAdvance 1 bits.
+    Value * updated_produced = b.CreateAdd(loopVars[sm_produced], inputAdvance);
+    Value * final_word = b.CreateUDiv(updated_produced, SCANWORD_BITS);
+    Value * final_offset = b.CreateURem(updated_produced, SCANWORD_BITS);
+    Value * final_mask = b.CreateSub(b.CreateShl(ONE, final_offset), ONE);
+    final_mask = b.CreateZExtOrTrunc(final_mask, scanWordTy);
+    //
+    Value * doesNotFill = b.CreateICmpEQ(sm_word, final_word);
+    pending_filled = b.CreateSelect(doesNotFill, b.CreateAnd(final_mask, pending_filled), pending_filled);
+    b.CreateStore(pending_filled, sm_word_ptr);
+    Value * final_pending = b.CreateSelect(doesNotFill, pending_filled, final_mask);
+    
+    b.CreateCondBr(doesNotFill, fillComplete, fillLoop);
+
+    b.SetInsertPoint(fillLoop);
+    PHINode * fillCounter = b.CreatePHI(sizeTy, 2);
+    fillCounter->addIncoming(sm_word, indexWordsReady);
+    Value * nextScanWord = b.CreateAdd(fillCounter, ONE);
+    Value * atFinal = b.CreateICmpEQ(nextScanWord, final_word);
+    Value * toStore = b.CreateSelect(atFinal, final_pending, sw_ONES);
+    b.CreateStore(toStore, b.CreateGEP(scanWordTy, sm_word_ptr, nextScanWord));
+    fillCounter->addIncoming(nextScanWord, fillLoop);
+    b.CreateCondBr(atFinal, fillComplete, fillLoop);
+
+    b.SetInsertPoint(fillComplete);
+    loopVars[bn_processed] = absWordPos;
+    loopVars[sm_produced] = updated_produced;
+    loopVars[sm_pending] = final_pending;
+}
+
+void InsertionSpreadMaskKernel::generateProcessingLogic(KernelBuilder & b,
+                                                        Value * absItemPos,
+                                                        std::vector<Value *> & loopVars) {
+    IntegerType * sizeTy = b.getSizeTy();
+    IntegerType * scanWordTy = b.getIntNTy(ScanWordWidth);
+    Constant * ONE = b.getSize(1);
+    Constant * const SCANWORD_BITS = b.getSize(ScanWordWidth);
+    Constant * sw_ZERO = b.getIntN(ScanWordWidth, 0);
+    Constant * sw_ONE = b.getIntN(ScanWordWidth, 1);
+    Value * sm_offset = b.CreateURem(loopVars[sm_produced], SCANWORD_BITS);
+    Value * sm_base = b.CreateSub(loopVars[sm_produced], sm_offset);
+    Value * sm_word_ptr = b.getRawOutputPointer("spread_mask", sm_base);
+    sm_word_ptr = b.CreatePointerCast(sm_word_ptr, scanWordTy->getPointerTo());
+    // Determine how far we have advanced the input, and generate this many
+    // 1 bits to the output spread mask.
+    Value * advanceAmt = b.CreateSub(absItemPos, loopVars[bn_processed]);
+    Value * advanceAmt_mask = b.CreateSub(b.CreateShl(ONE, advanceAmt), ONE);
+    Value * advanced_mask = b.CreateZExtOrTrunc(b.CreateShl(advanceAmt_mask, sm_offset), scanWordTy);
+    Value * pending_updated = b.CreateOr(loopVars[sm_pending], advanced_mask);
+    // We may have filled the word; write it out in case we move on.
+    b.CreateStore(pending_updated, sm_word_ptr);
+
+    Value * producedAfterAdvance = b.CreateAdd(loopVars[sm_produced], advanceAmt);
+    Value * sm_word_advance = b.CreateICmpUGE(b.CreateSub(producedAfterAdvance, sm_base), SCANWORD_BITS);
+    Value * new_offset = b.CreateURem(producedAfterAdvance, SCANWORD_BITS);
+    Value * new_mask = b.CreateSub(b.CreateShl(ONE, new_offset), ONE);
+    Value * pendingAfterAdvance = b.CreateSelect(sm_word_advance, new_mask, pending_updated);
+    sm_word_ptr = b.CreateSelect(sm_word_advance, b.CreateGEP(scanWordTy, sm_word_ptr, ONE), sm_word_ptr);
+
+    Value * posInScanWord = b.CreateURem(absItemPos, SCANWORD_BITS);
+    posInScanWord = b.CreateZExtOrTrunc(posInScanWord, scanWordTy);
+    Value * insertAmt = b.getSize(0);
+    for (unsigned i = 0; i < mBixBits; i++) {
+        Value * theBit = b.CreateAnd(b.CreateLShr(mMasks[i], posInScanWord), sw_ONE);
+        theBit = b.CreateZExtOrTrunc(theBit, sizeTy);
+        insertAmt = b.CreateAdd(insertAmt, b.CreateShl(theBit, b.getSize(i)));
+    }
+    //  Depending on InsertPosition (Before or After), generate insertAmt zeroes
+    //  plus a single 1 bit to the output spreadmask.
+    Value * totalInsert = b.CreateAdd(insertAmt, ONE);
+    Value * producedAfterInsert = b.CreateAdd(producedAfterAdvance, totalInsert);
+    Value * pendingAfterInsert = nullptr;
+
+    if (mInsertPos == InsertPosition::After) {
+        // Generate a 1 bit followed by insertAmt zeroes.
+        Value * sw_offset = b.CreateZExtOrTrunc(new_offset, scanWordTy);
+        Value * newPending = b.CreateOr(pendingAfterAdvance, b.CreateShl(sw_ONE, sw_offset));
+        // We may have filled the word; write it out in case we move on.
+        b.CreateStore(newPending, sm_word_ptr);
+        Value * totalInsert = b.CreateAdd(insertAmt, ONE);
+        Value * updatedOffset = b.CreateAdd(totalInsert, new_offset);
+        Value * pack_filled = b.CreateICmpUGE(updatedOffset, SCANWORD_BITS);
+        pendingAfterInsert = b.CreateSelect(pack_filled, sw_ZERO, newPending);
+    } else {
+        // The insertAmt zeroes may fill the pack; write it out in case we move on.
+        b.CreateStore(pendingAfterAdvance, sm_word_ptr);
+        Value * bitOffset = b.CreateAdd(new_offset, insertAmt);
+        Value * pack_filled = b.CreateICmpUGE(bitOffset, SCANWORD_BITS);
+        bitOffset = b.CreateURem(bitOffset, SCANWORD_BITS);
+        Value * placedBit = b.CreateShl(ONE, bitOffset);
+        placedBit = b.CreateZExtOrTrunc(placedBit, scanWordTy);
+        pendingAfterInsert = b.CreateSelect(pack_filled, placedBit, b.CreateOr(loopVars[sm_pending], placedBit));
+    }
+    loopVars[bn_processed] = b.CreateAdd(absItemPos, ONE);
+    loopVars[sm_produced] = producedAfterInsert;
+    loopVars[sm_pending] = pendingAfterInsert;
+}
+
+void InsertionSpreadMaskKernel::finalize(KernelBuilder & b, std::vector<Value *> & loopVarFinalValues) {
+    BasicBlock * finalizeSpread = b.GetInsertBlock();
+    BasicBlock * finalFillLoop = b.CreateBasicBlock("finalFillLoop");
+    BasicBlock * finalFillComplete = b.CreateBasicBlock("finalFillComplete");
+    IntegerType * sizeTy = b.getSizeTy();
+    IntegerType * scanWordTy = b.getIntNTy(ScanWordWidth);
+    Constant * ZERO = b.getSize(0);
+    Constant * ONE = b.getSize(1);
+    Constant * const SCANWORD_BITS = b.getSize(ScanWordWidth);
+    Constant * const sw_ONES = ConstantInt::getAllOnesValue(scanWordTy);
+
+    Value * avail = b.getAvailableItemCount("bixNumInsertCount");
+    Value * stillToProcess = b.CreateSub(avail, loopVarFinalValues[bn_processed]);
+    // Need to append stillToProcess 1s to the spreadmask output.
+    Value * sm_word = b.CreateUDiv(loopVarFinalValues[sm_produced], SCANWORD_BITS);
+    Value * sm_offset = b.CreateURem(loopVarFinalValues[sm_produced], SCANWORD_BITS);
+    Value * sm_base = b.CreateSub(loopVarFinalValues[sm_produced], sm_offset);
+    Value * sm_word_ptr = b.getRawOutputPointer("spread_mask", sm_base);
+    sm_word_ptr = b.CreatePointerCast(sm_word_ptr, scanWordTy->getPointerTo());
+
+    Value * offset_mask = b.CreateSub(b.CreateShl(ONE, sm_offset), ONE);
+    offset_mask = b.CreateZExtOrTrunc(offset_mask, scanWordTy);
+    // We may fill the current pending scanword.
+    Value * pending_filled = b.CreateOr(loopVarFinalValues[sm_pending], b.CreateNot(offset_mask));
+    // Calculate the final produced values upon updating of the
+    // output mask with inputAdvance 1 bits.
+    Value * updated_produced = b.CreateAdd(loopVarFinalValues[sm_produced], stillToProcess);
+    Value * final_word = b.CreateUDiv(updated_produced, SCANWORD_BITS);
+    Value * final_offset = b.CreateURem(updated_produced, SCANWORD_BITS);
+    Value * final_mask = b.CreateSub(b.CreateShl(ONE, final_offset), ONE);
+    final_mask = b.CreateZExtOrTrunc(final_mask, scanWordTy);
+    //
+    Value * wordsToFill = b.CreateSub(final_word, sm_word);
+    Value * doesNotFill = b.CreateICmpEQ(sm_word, final_word);
+    pending_filled = b.CreateSelect(doesNotFill, b.CreateAnd(final_mask, pending_filled), pending_filled);
+    b.CreateStore(pending_filled, sm_word_ptr);
+    Value * final_pending = b.CreateSelect(doesNotFill, pending_filled, final_mask);
+    
+    b.CreateCondBr(doesNotFill, finalFillComplete, finalFillLoop);
+
+    b.SetInsertPoint(finalFillLoop);
+    PHINode * fillCounter = b.CreatePHI(sizeTy, 2);
+    fillCounter->addIncoming(ZERO, finalizeSpread);
+    Value * nextScanWord = b.CreateAdd(fillCounter, ONE);
+    Value * atFinal = b.CreateICmpEQ(nextScanWord, wordsToFill);
+    Value * toStore = b.CreateSelect(atFinal, final_pending, sw_ONES);
+    b.CreateStore(toStore, b.CreateGEP(scanWordTy, sm_word_ptr, nextScanWord));
+    fillCounter->addIncoming(nextScanWord, finalFillLoop);
+    b.CreateCondBr(atFinal, finalFillComplete, finalFillLoop);
+
+    b.SetInsertPoint(finalFillComplete);
+    b.setProducedItemCount("spread_mask", updated_produced);
 }
 
 ByteCombine::ByteCombine(LLVMTypeSystemInterface & ts,

@@ -9,6 +9,7 @@
 #include <string>
 #include <kernel/pipeline/driver/driver.h>
 #include <kernel/pipeline/pipeline_builder.h>
+#include <kernel/scan/base.h>
 
 namespace kernel {
 
@@ -98,9 +99,9 @@ private:
     const InsertPosition mInsertPos;
 };
 
-class InsertionSpreadMaskKernel final : public BlockOrientedKernel {
+class InsertionSpreadMaskKernel0 final : public BlockOrientedKernel {
 public:
-    InsertionSpreadMaskKernel(LLVMTypeSystemInterface & ts,
+    InsertionSpreadMaskKernel0(LLVMTypeSystemInterface & ts,
                               StreamSet * insertion_counts, StreamSet * spread_mask, InsertPosition p = InsertPosition::Before);
 protected:
     const unsigned pack_width = 64;
@@ -109,6 +110,33 @@ protected:
 private:
     const unsigned mExpansionWidth;
     const InsertPosition mInsertPos;
+};
+
+class InsertionSpreadMaskKernel final : public TwoLevelScanKernel {
+public:
+    InsertionSpreadMaskKernel(LLVMTypeSystemInterface & ts,
+                              StreamSet * insertion_counts, StreamSet * spread_mask,
+                              InsertPosition p = InsertPosition::Before);
+protected:
+    static const unsigned ScanWordWidth = 64;
+    void initialize(KernelBuilder & b) override;
+    void wordPrologueLogic(KernelBuilder & b,
+                           llvm::Value * absWordPos,
+                           std::vector<llvm::Value *> indexWord,
+                           std::vector<llvm::Value *> & loopVars) override;
+    void generateProcessingLogic(KernelBuilder & b,
+                                 llvm::Value * absItemPos,
+                                 std::vector<llvm::Value *> & loopVars) override;
+    void finalize(KernelBuilder & b, std::vector<llvm::Value *> & loopVarFinalValues) override;
+
+private:
+    const unsigned mBixBits;
+    const unsigned mExpansionWidth;
+    const InsertPosition mInsertPos;
+    enum LoopVars {bn_processed = 0, sm_produced = 1, sm_pending = 2};
+    // Values initialized in scan word prologue for use
+    // throughout item processing logic.
+    std::vector<llvm::Value *> mMasks;
 };
 
 class ByteCombine final : public MultiBlockKernel {

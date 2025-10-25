@@ -200,7 +200,7 @@ void MultiStrideKernel::generateMultiBlockLogic(KernelBuilder & b, Value * const
     }
     b.CreateCondBr(b.CreateICmpNE(finalBlocksDone, numOfBlocks), multiStrideLoop, multiStrideExit);
     b.SetInsertPoint(multiStrideExit);
-    finalize(b);
+    finalize(b, updatedLoopValues);
 }
 
 unsigned maxScanBlocks(LLVMTypeSystemInterface & ts, unsigned scanWordWidth) {
@@ -227,29 +227,33 @@ void TwoLevelScanKernel::strideLogic(KernelBuilder & b,
     IntegerType * const sizeTy = b.getSizeTy();
     IntegerType * const scanWordTy = b.getIntNTy(mScanWordWidth);
     Constant * const ZERO = ConstantInt::getNullValue(sizeTy);
+    Constant * const ONE = b.getSize(1);
     Constant * const SCANWORD_WIDTH = b.getSize(mScanWordWidth);
     Constant * const SCANWORDS_PER_BLOCK = b.getSize(b.getBitBlockWidth()/mScanWordWidth);
+    Constant * BLOCK_WIDTH = b.getSize(b.getBitBlockWidth());
+
+    Value * baseProcessed = b.getProcessedItemCount(mScanStreamName);
+    Value * priorProcessed = b.CreateAdd(b.CreateMul(priorBlocksDone, BLOCK_WIDTH), baseProcessed);
 
     BasicBlock * const metaMaskLoop = b.CreateBasicBlock("metaMaskLoop");
     BasicBlock * const scanWordLoop = b.CreateBasicBlock("scanWordLoop");
     BasicBlock * scanWordDone = b.CreateBasicBlock("scanWordDone");
     BasicBlock * strideLogicDone = b.CreateBasicBlock("strideLogicDone");
 
-    BasicBlock * loopPredecessor = b.GetInsertBlock();
-
-    std::vector<Value *> masks = generateIndexComputation(b, priorBlocksDone, blocksToDo);
+    std::vector<Value *> masks(streamCount);
+    generateIndexComputation(b, priorBlocksDone, blocksToDo, masks);
     Value * metaMask = masks[0];
     for (unsigned i = 0; i < masks.size(); i++) {
         metaMask = b.CreateOr(metaMask, masks[i]);
     }
-
+    BasicBlock * loopPredecessor = b.GetInsertBlock();
     b.CreateLikelyCondBr(b.CreateICmpNE(metaMask, ZERO), metaMaskLoop, strideLogicDone);
 
     b.SetInsertPoint(metaMaskLoop);
-    PHINode * const remainingMaskPhi = b.CreatePHI(scanWordTy, 2);
+    PHINode * const remainingMaskPhi = b.CreatePHI(sizeTy, 2);
     remainingMaskPhi->addIncoming(metaMask, loopPredecessor);
     PHINode * const outerItemsProcessed = b.CreatePHI(sizeTy, 2);
-    outerItemsProcessed->addIncoming(ZERO, loopPredecessor);
+    outerItemsProcessed->addIncoming(priorProcessed, loopPredecessor);
     std::vector<PHINode *> outerLoopPhi(loopVariableCount);
     for (unsigned i = 0; i < loopVariableCount; i++) {
         outerLoopPhi[i] = b.CreatePHI(mLoopVars[i].Ty, 2);
@@ -260,6 +264,7 @@ void TwoLevelScanKernel::strideLogic(KernelBuilder & b,
     Value * scanWordBlock = b.CreateAdd(priorBlocksDone, b.CreateUDiv(wordsToSkip, SCANWORDS_PER_BLOCK));
     Value * wordPosInBlock = b.CreateURem(wordsToSkip, SCANWORDS_PER_BLOCK);
     Value * wordBasePosition = b.CreateMul(wordsToSkip, SCANWORD_WIDTH);
+    wordBasePosition = b.CreateAdd(priorProcessed, wordBasePosition);
 
     Value * scanWord = nullptr;
     std::vector<Value *> indexWord(streamCount);
@@ -273,34 +278,47 @@ void TwoLevelScanKernel::strideLogic(KernelBuilder & b,
             scanWord = b.CreateOr(scanWord, indexWord[i]);
         }
     }
-
-    wordPrologueLogic(b, indexWord);
+    std::vector<Value *> outerLoopVars(loopVariableCount);
+    for (unsigned i = 0; i < loopVariableCount; i++) {
+        outerLoopVars[i] = outerLoopPhi[i];
+    }
+    wordPrologueLogic(b, wordBasePosition, indexWord, outerLoopVars);
+    BasicBlock * metaMaskDone = b.GetInsertBlock();
     b.CreateBr(scanWordLoop);
 
     b.SetInsertPoint(scanWordLoop);
     PHINode * const remainingWordPhi = b.CreatePHI(scanWordTy, 2);
-    remainingWordPhi->addIncoming(scanWord, metaMaskLoop);
+    remainingWordPhi->addIncoming(scanWord, metaMaskDone);
     PHINode * const priorItemsProcessed = b.CreatePHI(sizeTy, 2);
-    priorItemsProcessed->addIncoming(outerItemsProcessed, metaMaskLoop);
+    priorItemsProcessed->addIncoming(outerItemsProcessed, metaMaskDone);
     std::vector<PHINode *> innerLoopPhi(loopVariableCount);
     for (unsigned i = 0; i < loopVariableCount; i++) {
         innerLoopPhi[i] = b.CreatePHI(mLoopVars[i].Ty, 2);
-        innerLoopPhi[i]->addIncoming(outerLoopPhi[i], metaMaskLoop);
+        innerLoopPhi[i]->addIncoming(outerLoopVars[i], metaMaskDone);
     }
 
     Value * indexInWord = b.CreateZExtOrTrunc(b.CreateCountForwardZeroes(remainingWordPhi), sizeTy);
     Value * itemPos = b.CreateAdd(wordBasePosition, indexInWord);
-    Value * advanceAmt = b.CreateSub(itemPos, priorItemsProcessed);
 
-    std::vector<Value *> updatedLoopVars = generateProcessingLogic(advanceAmt, itemPos, innerLoopPhi);
+    std::vector<Value *> innerLoopVars(loopVariableCount);
+    for (unsigned i = 0; i < loopVariableCount; i++) {
+        innerLoopVars[i] = innerLoopPhi[i];
+    }
+    //
+    // Generate the main processing logic method for this item,
+    // passing in the current values of user loop variables,
+    // anticipating that the user updates the loop variables
+    // as required.
+    generateProcessingLogic(b, itemPos, innerLoopVars);
 
-    BasicBlock * scanWordLoopEpilogue = b.GetInsertBlock();
+    BasicBlock * itemDone = b.GetInsertBlock();
     Value * const scanWordNext = b.CreateResetLowestBit(remainingWordPhi);
-    remainingWordPhi->addIncoming(scanWordNext, scanWordLoopEpilogue);
-    priorItemsProcessed->addIncoming(itemPos, scanWordLoopEpilogue);
+    remainingWordPhi->addIncoming(scanWordNext, itemDone);
+    Value * itemsProcessed = b.CreateAdd(itemPos, ONE);
+    priorItemsProcessed->addIncoming(itemsProcessed, itemDone);
 
     for (unsigned i = 0; i < loopVariableCount; i++) {
-        innerLoopPhi[i]->addIncoming(updatedLoopVars[i], scanWordLoopEpilogue);
+        innerLoopPhi[i]->addIncoming(innerLoopVars[i], itemDone);
     }
 
     b.CreateCondBr(b.CreateICmpNE(scanWordNext, Constant::getNullValue(scanWordTy)), scanWordLoop, scanWordDone);
@@ -310,7 +328,7 @@ void TwoLevelScanKernel::strideLogic(KernelBuilder & b,
     remainingMaskPhi->addIncoming(nextMask, scanWordDone);
     outerItemsProcessed->addIncoming(itemPos, scanWordDone);
     for (unsigned i = 0; i < loopVariableCount; i++) {
-        outerLoopPhi[i]->addIncoming(updatedLoopVars[i], scanWordDone);
+        outerLoopPhi[i]->addIncoming(innerLoopVars[i], scanWordDone);
     }
 
     b.CreateCondBr(b.CreateICmpNE(nextMask, ZERO), metaMaskLoop, strideLogicDone);
@@ -320,16 +338,17 @@ void TwoLevelScanKernel::strideLogic(KernelBuilder & b,
     for (unsigned i = 0; i < loopVariableCount; i++) {
         strideDonePhi[i] = b.CreatePHI(mLoopVars[i].Ty, 2);
         strideDonePhi[i]->addIncoming(loopVarPhi[i], loopPredecessor);
-        strideDonePhi[i]->addIncoming(updatedLoopVars[i], scanWordDone);
+        strideDonePhi[i]->addIncoming(innerLoopVars[i], scanWordDone);
     }
     for (unsigned i = 0; i < loopVariableCount; i++) {
         loopVarUpdates[i] = strideDonePhi[i];
     }
 }
 
-std::vector<Value *> TwoLevelScanKernel::generateIndexComputation(KernelBuilder & b,
-                                                                  Value * blockOffset,
-                                                                  Value * blocksToDo) {
+void TwoLevelScanKernel::generateIndexComputation(KernelBuilder & b,
+                                                  Value * blockOffset,
+                                                  Value * blocksToDo,
+                                                  std::vector<Value *> & masks) {
     IntegerType * sizeTy = b.getSizeTy();
     Constant * const ZERO = b.getSize(0);
     Constant * const ONE = b.getSize(1);
@@ -348,7 +367,7 @@ std::vector<Value *> TwoLevelScanKernel::generateIndexComputation(KernelBuilder 
     b.SetInsertPoint(indexComputationLoop);
     PHINode * const blockCounter = b.CreatePHI(sizeTy, 2);
     blockCounter->addIncoming(ZERO, loopPredecessor);
-    std::vector<PHINode *> maskPhi;
+    std::vector<PHINode *> maskPhi(streamCount);
     for (unsigned i = 0; i < streamCount; i++) {
         maskPhi[i] = b.CreatePHI(sizeTy, 2);
         maskPhi[i]->addIncoming(ZERO, loopPredecessor);
@@ -359,7 +378,6 @@ std::vector<Value *> TwoLevelScanKernel::generateIndexComputation(KernelBuilder 
     blockCounter->addIncoming(nextBlockNo, indexComputationLoop);
     Value * wordCounter = b.CreateMul(blockCounter, SCANWORDS_PER_BLOCK);
 
-    std::vector<Value *> masks;
     for (unsigned i = 0; i < streamCount; i++) {
         Value * s = b.loadInputStreamBlock(mScanStreamName, b.getSize(i), inputBlockIndex);
         Value * anyBitInField = b.simd_any(mScanWordWidth, s);
@@ -369,7 +387,6 @@ std::vector<Value *> TwoLevelScanKernel::generateIndexComputation(KernelBuilder 
     }
     b.CreateCondBr(b.CreateICmpNE(nextBlockNo, blocksToDo), indexComputationLoop, indexComputationDone);
     b.SetInsertPoint(indexComputationDone);
-    return masks;
 }
 
 } // namespace kernel

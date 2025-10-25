@@ -93,7 +93,7 @@ protected:
 struct LoopVar {
     std::string Name;
     llvm::Type * Ty;
-    LoopVar(std::string & name, llvm::Type * t) : Name(name), Ty(t) {}
+    LoopVar(std::string name, llvm::Type * t) : Name(name), Ty(t) {}
 };
 
 class MultiStrideKernel : public MultiBlockKernel {
@@ -102,6 +102,7 @@ public:
                       std::string && name,
                       unsigned maxStrideBlocks,
                       std::vector<LoopVar> loopVars);
+    virtual ~MultiStrideKernel() {}
 protected:
     void generateMultiBlockLogic(KernelBuilder & b, llvm::Value * const numOfStrides) final override;
     virtual void initialize(KernelBuilder & b) = 0;
@@ -110,8 +111,7 @@ protected:
                              llvm::Value * blocksToDo,
                              std::vector<llvm::PHINode *> loopVarPhi,
                              std::vector<llvm::Value *> & loopVarUpdates) = 0;
-    virtual void finalize(KernelBuilder & b) = 0;
-    virtual ~MultiStrideKernel() {}
+    virtual void finalize(KernelBuilder & b, std::vector<llvm::Value *> & loopVarFinalValues) = 0;
     unsigned mMaxStrideBlocks;
     std::vector<LoopVar> mLoopVars;
     std::vector<llvm::Value *> mLoopVarInitialValues;
@@ -125,17 +125,23 @@ public:
                        unsigned scanWordWidth,
                        std::string scanStreamName,
                        std::vector<LoopVar> loopVars);
+    virtual ~TwoLevelScanKernel() {}
 protected:
-    std::vector<llvm::Value *> generateIndexComputation(KernelBuilder & b,
-                                                        llvm::Value * blockOffset,
-                                                        llvm::Value * blocksToDo);
+    void generateIndexComputation(KernelBuilder & b,
+                                  llvm::Value * blockOffset,
+                                  llvm::Value * blocksToDo,
+                                  std::vector<llvm::Value *> & masks);
     void strideLogic(KernelBuilder & b,
                      llvm::Value * priorBlocksDone, llvm::Value * blocksToDo,
                      std::vector<llvm::PHINode *> loopVarPhi,
                      std::vector<llvm::Value *> & loopVarUpdates) override;
-    virtual void wordPrologueLogic(KernelBuilder & b, std::vector<llvm::Value *> indexWord) = 0;
-    virtual std::vector<llvm::Value *> generateProcessingLogic(llvm::Value * advanceAmt, llvm::Value * itemPos, std::vector<llvm::PHINode *> innerLoopPhi) = 0;
-    virtual ~TwoLevelScanKernel() {}
+    virtual void wordPrologueLogic(KernelBuilder & b,
+                                   llvm::Value * absWordPosition,
+                                   std::vector<llvm::Value *> indexWord,
+                                   std::vector<llvm::Value *> & loopVars) = 0;
+    virtual void generateProcessingLogic(KernelBuilder & b,
+                                         llvm::Value * absItemPos,
+                                         std::vector<llvm::Value *> & loopVars) = 0;
 private:
     unsigned mScanWordWidth;
     std::string mScanStreamName;
