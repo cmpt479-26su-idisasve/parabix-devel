@@ -468,7 +468,7 @@ ElemSpreadShortStrides::ElemSpreadShortStrides(LLVMTypeSystemInterface & ts,
                         return tmp;
                     }(),
 {Binding("mask", mask, FixedRate(1), Principal()),
- Binding("source", source, BoundedRate(0, 1))}, //PopcountOf("mask"))},
+ Binding("source", source, BoundedRate(0, 1), EmptyReadOverflow())}, //PopcountOf("mask"))},
 {Binding{"spread", spread}},
 {}, {}, {}), mElemWidth(source->getFieldWidth()) {
     setStride(ts.getBitBlockWidth()/mElemWidth);
@@ -502,18 +502,18 @@ void ElemSpreadShortStrides::generateMultiBlockLogic(KernelBuilder & b, llvm::Va
     Value * const outputBasePtr = b.CreatePointerCast(rawOutputPtr, elemVecTy->getPointerTo());
 
 
-    Value * const processedSourceItems = b.getProcessedItemCount("source");
+    Value * processedSourceBase = b.getProcessedItemCount("source");
     Value * initialSourceOffset = nullptr;
     Value * sourcePtr = nullptr;
     Value * initialPendingData = nullptr;
     if (UnalignedLoads) {
-        initialSourceOffset = processedSourceItems;
-        Value * const sourceBasePtr = b.getRawInputPointer("source", initialSourceOffset);
+        initialSourceOffset = ZERO;
+        Value * const sourceBasePtr = b.getRawInputPointer("source", processedSourceBase);
         sourcePtr = b.CreatePointerCast(sourceBasePtr, elemTy->getPointerTo());
     } else {
-        initialSourceOffset = b.CreateURem(processedSourceItems, ELEMS_PER_STRIDE);
-        Value * const sourceItemBase = b.CreateSub(processedSourceItems, initialSourceOffset);
-        Value * const sourceBasePtr = b.getRawInputPointer("source", sourceItemBase);
+        initialSourceOffset = b.CreateURem(processedSourceBase, ELEMS_PER_STRIDE);
+        processedSourceBase = b.CreateSub(processedSourceBase, initialSourceOffset);
+        Value * const sourceBasePtr = b.getRawInputPointer("source", processedSourceBase);
         sourcePtr = b.CreatePointerCast(sourceBasePtr, elemVecTy->getPointerTo());
         initialPendingData = b.CreateLoad(elemVecTy, sourcePtr);
     }
@@ -597,7 +597,7 @@ void ElemSpreadShortStrides::generateMultiBlockLogic(KernelBuilder & b, llvm::Va
     finalOffsetPhi->addIncoming(sourceOffsetPhi, strideAtATimeLoop);
     finalOffsetPhi->addIncoming(updatedSourceOffset, spreadAndWrite);
 
-    b.setProducedItemCount("spread", b.CreateAdd(processedSourceItems, finalOffsetPhi));
+    b.setProcessedItemCount("source", b.CreateAdd(processedSourceBase, finalOffsetPhi));
 
 }
 
