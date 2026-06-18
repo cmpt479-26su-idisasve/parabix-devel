@@ -852,7 +852,7 @@ void PipelineCompiler::ensureSufficientOutputSpace(KernelBuilder & b, const Buff
     b.SetInsertPoint(afterCopyBackOrExpand);
     if (LLVM_UNLIKELY(EnableCycleCounter)) {
         if (mustExpand) {
-            updateCycleCounter(b, mKernelId, mustExpand, CycleCounter::BUFFER_EXPANSION, CycleCounter::BUFFER_COPY);
+            updateCycleCounter(b, mKernelId, b.CreateIsNotNull(mustExpand), CycleCounter::BUFFER_EXPANSION, CycleCounter::BUFFER_COPY);
         } else {
             updateCycleCounter(b, mKernelId, CycleCounter::BUFFER_EXPANSION);
         }
@@ -860,7 +860,7 @@ void PipelineCompiler::ensureSufficientOutputSpace(KernelBuilder & b, const Buff
     #ifdef ENABLE_PAPI
     if (NumOfPAPIEvents) {
         if (mustExpand) {
-            accumPAPIMeasurementWithoutReset(b, mKernelId, mustExpand, PAPI_BUFFER_EXPANSION, PAPI_BUFFER_COPY);
+            accumPAPIMeasurementWithoutReset(b, mKernelId, b.CreateIsNotNull(mustExpand), PAPI_BUFFER_EXPANSION, PAPI_BUFFER_COPY);
         } else {
             accumPAPIMeasurementWithoutReset(b, mKernelId, PAPI_BUFFER_EXPANSION);
         }
