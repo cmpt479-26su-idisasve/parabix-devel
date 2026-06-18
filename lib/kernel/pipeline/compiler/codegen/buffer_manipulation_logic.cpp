@@ -248,32 +248,45 @@ void PipelineCompiler::zeroInputAfterFinalItemCount(KernelBuilder & b,
         BasicBlock * const entryBlock = b.GetInsertBlock();
 
         Value * const availableItems = mLocallyAvailableItems[streamSet];
+        const auto zeroExtended = mIsInputZeroExtended[port.Port];
         const auto alwaysTruncate = bn.isUnowned() || bn.isTruncated() || bn.isConstant();
 
-        if (LLVM_UNLIKELY(alwaysTruncate)) {
+        if (LLVM_UNLIKELY(alwaysTruncate && !zeroExtended)) {
             b.CreateBr(maskedInput);
         } else {
 
-            Value * const selectedItems = b.CreateAdd(mCurrentProcessedItemCountPhi[inputPort], accessibleItems[inputPort.Number]);
-            const auto output = in_edge(streamSet, mBufferGraph);
-            const BufferPort & out = mBufferGraph[output];
-
             Value * cond = nullptr;
-            if (port.RequiredOverflowSpace == 0 && out.RequiredOverflowSpace == 0) {
-                cond = b.CreateICmpNE(selectedItems, availableItems);
-            } else {
-                Value * unprocessedItems = selectedItems;
-                if (port.RequiredOverflowSpace) {
-                    unprocessedItems = b.CreateAdd(selectedItems, b.getSize(port.RequiredOverflowSpace));
+
+            if (LLVM_LIKELY(!alwaysTruncate)) {
+                Value * const selectedItems = b.CreateAdd(mCurrentProcessedItemCountPhi[inputPort], accessibleItems[inputPort.Number]);
+                const auto output = in_edge(streamSet, mBufferGraph);
+                const BufferPort & out = mBufferGraph[output];
+                if (port.RequiredOverflowSpace == 0 && out.RequiredOverflowSpace == 0) {
+                    cond = b.CreateICmpNE(selectedItems, availableItems);
+                } else {
+                    Value * unprocessedItems = selectedItems;
+                    if (port.RequiredOverflowSpace) {
+                        unprocessedItems = b.CreateAdd(selectedItems, b.getSize(port.RequiredOverflowSpace));
+                    }
+                    Value * const tooMany = b.CreateICmpULT(unprocessedItems, availableItems);
+                    Value * totalItems = availableItems;
+                    if (out.RequiredOverflowSpace) {
+                        totalItems = b.CreateAdd(totalItems, b.getSize(out.RequiredOverflowSpace));
+                    }
+                    Value * const tooFew = b.CreateICmpUGT(selectedItems, totalItems);
+                    cond = b.CreateOr(tooMany, tooFew);
                 }
-                Value * const tooMany = b.CreateICmpULT(unprocessedItems, availableItems);
-                Value * totalItems = availableItems;
-                if (out.RequiredOverflowSpace) {
-                    totalItems = b.CreateAdd(totalItems, b.getSize(out.RequiredOverflowSpace));
-                }
-                Value * const tooFew = b.CreateICmpUGT(selectedItems, totalItems);
-                cond = b.CreateOr(tooMany, tooFew);
             }
+
+            if (zeroExtended) {
+                Value * const nze = b.CreateNot(zeroExtended);
+                if (cond) {
+                    cond = b.CreateAnd(cond, nze);
+                } else {
+                    cond = nze;
+                }
+            }
+
             b.CreateUnlikelyCondBr(cond, maskedInput, selectedInput);
         }
 
