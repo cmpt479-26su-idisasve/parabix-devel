@@ -555,6 +555,8 @@ void PipelineCompiler::zeroInputAfterFinalItemCount(KernelBuilder & b,
 
         Value * const maskVal = b.CreateCall(maskInput->getFunctionType(), maskInput, args);
 
+
+
         Value * maskedAddress = maskVal;
         Value * maskedCapacity = nullptr;
         if (LLVM_UNLIKELY(mCheckStreamSets)) {
@@ -566,6 +568,7 @@ void PipelineCompiler::zeroInputAfterFinalItemCount(KernelBuilder & b,
             maskedCapacity = b.CreateAdd(processedItems, maskedCapacity);
         }
         assert (maskedAddress->getType()->isPointerTy());
+
         maskedAddress = b.CreatePointerCast(maskedAddress, bufferType);
         BasicBlock * const maskedInputLoopExit = b.GetInsertBlock();
         b.CreateBr(selectedInput);
@@ -648,7 +651,6 @@ void PipelineCompiler::clearUnwrittenOutputData(KernelBuilder & b) {
             } else {
                 produced = mProducedAtTermination[port];
             }
-
 
             if (bn.isNonThreadLocal()) {
                 Constant * const align = b.getSize(bn.UnwrittenAlignment * blockWidth);
