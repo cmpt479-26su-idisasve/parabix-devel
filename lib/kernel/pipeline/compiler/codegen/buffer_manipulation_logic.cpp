@@ -576,7 +576,7 @@ void PipelineCompiler::zeroInputAfterFinalItemCount(KernelBuilder & b,
         b.SetInsertPoint(selectedInput);
         if (LLVM_UNLIKELY(mCheckStreamSets)) {
             PHINode * const inputBufferCapacityPhi = b.CreatePHI(sizeTy, 2, "truncatedBufferCapacityPhi");
-            if (!alwaysTruncate) {
+            if (!alwaysTruncate || zeroExtended) {
                 inputBufferCapacityPhi->addIncoming(inputBufferCapacity[inputPort.Number], entryBlock);
             }
             inputBufferCapacityPhi->addIncoming(maskedCapacity, maskedInputLoopExit);
@@ -584,7 +584,7 @@ void PipelineCompiler::zeroInputAfterFinalItemCount(KernelBuilder & b,
         }
 
         PHINode * const baseAddrPhi = b.CreatePHI(bufferType, 2);
-        if (!alwaysTruncate) {
+        if (!alwaysTruncate || zeroExtended) {
             baseAddrPhi->addIncoming(inputBaseAddresses[inputPort.Number], entryBlock);
         }
         baseAddrPhi->addIncoming(maskedAddress, maskedInputLoopExit);
