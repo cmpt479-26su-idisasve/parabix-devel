@@ -468,7 +468,9 @@ ElemSpreadShortStrides::ElemSpreadShortStrides(LLVMTypeSystemInterface & ts,
                         return tmp;
                     }(),
 {Binding("mask", mask, FixedRate(1), Principal()),
- Binding("source", source, PopcountOf("mask"), ZeroExtended())}, //PopcountOf("mask"))},
+ // The following would be preferred, but is currently buggy.
+ // Binding("source", source, PopcountOf("mask"), EmptyReadOverflow())},
+ Binding("source", source, BoundedRate(0, 1), ZeroExtended())}, 
 {Binding{"spread", spread}},
 {}, {}, {}), mElemWidth(source->getFieldWidth()) {
     setStride(ts.getBitBlockWidth()/mElemWidth);
