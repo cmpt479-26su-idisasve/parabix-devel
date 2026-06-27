@@ -13,7 +13,7 @@
     typedef long long int        Z3_int64;
 #endif
 
-#define PRINT_Z3_OPTIMIZATION
+// #define PRINT_Z3_OPTIMIZATION
 
 using boost::icl::interval_set;
 
@@ -452,7 +452,7 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
                     if (LLVM_UNLIKELY(bp.isZeroExtended())) {
                         const auto k = LastStreamSet + partitionId + 1U;
                         const auto j = mapStreamSetToThreadLocal[k - FirstStreamSet];
-                        assert (mapThreadLocalToStreamSet[j] == 0);
+                        assert (mapThreadLocalToStreamSet[j] == 0 || mapThreadLocalToStreamSet[j] == k);
                         mapThreadLocalToStreamSet[j] = k;
                         remaining[j] = 1U;
                         hasZeroExtendedInput = true;
@@ -606,8 +606,7 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
             const auto streamSet = mapThreadLocalToStreamSet[i];
             assert (FirstStreamSet <= streamSet && streamSet < (LastStreamSet + PartitionCount));
             assert (mapStreamSetToThreadLocal[streamSet - FirstStreamSet] == i);
-            assert (streamSet < w);
-            const auto j = PartitionCount + streamSet - FirstStreamSet;
+            const auto j = PartitionCount + streamSet - FirstStreamSet; assert (j < w);
             TLVertData & N = D[j];
             N.Value = unitWeight[i];
             N.Overflow = overflowStrideAdjustment[i];

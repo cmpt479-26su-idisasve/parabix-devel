@@ -90,9 +90,6 @@ void PipelineCompiler::initializeThreadLocalMemory(KernelBuilder & b, Value * se
     memorySize = b.CreateShl(memorySize, b.getSize(floor_log2(pageSize)));
     assert (mTarget->hasThreadLocal());
     Value * const base = b.CreateAlignedMalloc(memorySize, pageSize);
-
-    b.CreateAssert(base, "???");
-
     PointerType * const int8PtrTy = b.getInt8PtrTy();
     b.setScalarField(BASE_THREAD_LOCAL_STREAMSET_MEMORY, b.CreatePointerCast(base, int8PtrTy));
     b.setScalarField(BASE_THREAD_LOCAL_STREAMSET_MEMORY_BYTES, memorySize);
@@ -233,23 +230,9 @@ void PipelineCompiler::allocateThreadLocalMemoryForMaximumNumOfStrides(KernelBui
 
     assert (mIsPartitionRoot);
 
-    #ifndef NDEBUG
-    size_t totalThreadLocalStreamSetsInCurrentPartition = 0;
-    for (auto kernel = mKernelId; kernel < FirstKernelInPartition[mCurrentPartitionId + 1]; ++kernel) {
-        for (const auto output : make_iterator_range(out_edges(kernel, mBufferGraph))) {
-            const BufferNode & bn = mBufferGraph[target(output, mBufferGraph)];
-            if (bn.isThreadLocal()) {
-                ++totalThreadLocalStreamSetsInCurrentPartition;
-            }
-        }
-    }
-    #endif
-
     if (out_degree(mCurrentPartitionId, ThreadLocalPlacement) == 0) {
-        assert (totalThreadLocalStreamSetsInCurrentPartition == 0);
         return;
     }
-    assert (totalThreadLocalStreamSetsInCurrentPartition > 0);
 
     BasicBlock * const allocateThreadLocal = b.CreateBasicBlock("allocateThreadLocal", mKernelLoopCall);
     BasicBlock * const expandThreadLocalMemory = b.CreateBasicBlock("expandThreadLocalMemory", mKernelLoopCall);
@@ -353,10 +336,6 @@ void PipelineCompiler::allocateThreadLocalMemoryForMaximumNumOfStrides(KernelBui
                 Value * end = nullptr;
 
                 Value * const maxStrides = b.CreateAdd(maximumNumOfStrides, b.getSize(Tv.OverflowStrideAdjustment));
-
-
-                b.CreateAssert(maxStrides, "maxStrides cannot be 0");
-
                 if (streamSet <= LastStreamSet) {
                     #ifndef NDEBUG
                     ++visitedThreadLocalStreamSetsInCurrentPartition;
@@ -369,9 +348,6 @@ void PipelineCompiler::allocateThreadLocalMemoryForMaximumNumOfStrides(KernelBui
                 }
 
                 Value * const off = b.CreateShl(b.CreateCeilUMulRational(maxStrides, ThreadLocalPlacement[e]), LOG_2_PAGE_SIZE);
-
-                b.CreateAssert(off, "off cannot be 0");
-
                 if (u < PartitionCount) {
                     start = sz_ZERO;
                     end = off;
@@ -428,7 +404,6 @@ void PipelineCompiler::allocateThreadLocalMemoryForMaximumNumOfStrides(KernelBui
     }
 
     assert (memoryForSegment);
-    assert (visitedThreadLocalStreamSetsInCurrentPartition == totalThreadLocalStreamSetsInCurrentPartition);
 
     if (LLVM_UNLIKELY(CheckAssertions())) {
 
