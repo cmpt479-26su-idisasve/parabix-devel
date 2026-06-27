@@ -1013,9 +1013,9 @@ inline PipelineCompiler::PipelineCompiler(PipelineKernel * const pipelineKernel,
 , mLocallyAvailableItems(FirstStreamSet, LastStreamSet, mAllocator)
 
 , mScalarValue(FirstKernel, LastScalar, mAllocator)
-, mThreadLocalStartOffset(FirstStreamSet, LastStreamSet, mAllocator)
-, mThreadLocalEndOffset(FirstStreamSet, LastStreamSet, mAllocator)
-, mThreadLocalStartOffsetAtEntryPhi(FirstStreamSet, LastStreamSet, mAllocator)
+, mThreadLocalStartOffset(FirstStreamSet, LastStreamSet + PartitionCount, mAllocator)
+, mThreadLocalEndOffset(FirstStreamSet, LastStreamSet + PartitionCount, mAllocator)
+, mThreadLocalStartOffsetAtEntryPhi(FirstStreamSet, LastStreamSet + PartitionCount, mAllocator)
 , mThreadLocalEndOffsetAtEntryPhi(P.MaxNumOfOutputPorts, mAllocator)
 
 , mThreadLocalStartOffsetAtExitPhi(FirstStreamSet, LastStreamSet, mAllocator)

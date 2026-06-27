@@ -313,7 +313,6 @@ public:
     BufferGraph                     mBufferGraph;
     InOutGraph                      InOutStreamSetReplacement;
     ThreadLocalPlacementGraph       ThreadLocalPlacement;
-
     ThreadLocalConflictGraphType    ThreadLocalConflictGraph;
 
     std::vector<unsigned>           PartitionJumpTargetId;
