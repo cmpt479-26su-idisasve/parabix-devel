@@ -392,6 +392,12 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
 
     ThreadLocalPlacementGraph T(m + 1U);
 
+    for (unsigned i = 0; i <= m; ++i) {
+        auto & Ti = T[i];
+        Ti.OverflowStrideAdjustment = 0;
+        Ti.Terminal = false;
+    }
+
     if (numOfThreadLocalStreamSets) {
 
         ConflictGraph I(numOfThreadLocalStreamSets);
@@ -595,11 +601,6 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
         const auto w = m + PartitionCount + 1U;
 
         ThreadLocalDataGraph D(w);
-
-        for (unsigned i = 0; i < w; ++i) {
-            T[i].OverflowStrideAdjustment = 0;
-            T[i].Terminal = false;
-        }
 
         for (unsigned i = 0; i < numOfThreadLocalStreamSets; ++i) {
             const auto streamSet = mapThreadLocalToStreamSet[i];
