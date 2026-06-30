@@ -5,118 +5,37 @@ using namespace IDISA;
 namespace kernel {
 
 /** ------------------------------------------------------------------------------------------------------------- *
- * @brief allocateLocalZeroExtensionSpace
+ * @brief updateZeroExtendedInputVirtualBaseAddresses
  ** ------------------------------------------------------------------------------------------------------------- */
-Value * PipelineCompiler::allocateLocalZeroExtensionSpace(KernelBuilder & b,
-                                                          Vec<Value *> & inputBufferCapacity,
-                                                          BasicBlock * const insertBefore) const {
+void PipelineCompiler::updateZeroExtendedInputVirtualBaseAddresses(KernelBuilder & b) {
     #ifndef DISABLE_ZERO_EXTEND
-    const size_t blockWidth = b.getBitBlockWidth();
-
-    Value * const numOfStrides = b.CreateUMax(mNumOfLinearStrides, b.getSize(1));
-
-    auto & dl = b.getModule()->getDataLayout();
-
-    IntegerType * const sizeTy = b.getSizeTy();
-
-    Value * requiredSpace = nullptr;
-
-    for (const auto e : make_iterator_range(in_edges(mKernelId, mBufferGraph))) {
-
-        const BufferPort & br = mBufferGraph[e];
-
-        Value * zeroExtended = mIsInputZeroExtended[br.Port];
-        assert (br.isZeroExtended() == (zeroExtended != nullptr));
-
-        if (zeroExtended) {
-
-            assert (HasZeroExtendedStream);
-
-            const auto streamSet = source(e, mBufferGraph);
-            const BufferNode & bn = mBufferGraph[streamSet];
-
-            const auto ts = b.getTypeSize(dl, bn.Buffer->getType());
-
-            Rational scaleFactor{ts * br.Maximum.numerator(), blockWidth * br.Maximum.denominator()};
-
-            Value * ns = numOfStrides;
-            if (br.RequiredOverflowSpace) {
-                const auto k = ceiling(Rational{br.RequiredOverflowSpace, blockWidth});
-                ns = b.CreateAdd(ns, b.getSize(k));
-            }
-            zeroExtended = b.CreateZExt(zeroExtended, sizeTy);
-            Value * const requiredBytes = b.CreateCeilUMulRational(b.CreateMul(ns, zeroExtended), scaleFactor);
-            requiredSpace = b.CreateUMax(requiredBytes, requiredSpace);
-        }
-    }
-    assert (requiredSpace);    
-    requiredSpace = b.CreateRoundUpRational(requiredSpace, b.getPageSize());
+    assert (mHasZeroExtendedInput);
 
     const auto prefix = makeKernelName(mKernelId);
     BasicBlock * const entry = b.GetInsertBlock();
-    BasicBlock * const expandZeroExtension =
-        b.CreateBasicBlock(prefix + "_expandZeroExtensionBuffer", insertBefore);
-    BasicBlock * const hasSufficientZeroExtendSpace =
-        b.CreateBasicBlock(prefix + "_hasSufficientZeroExtendSpace", insertBefore);
+    BasicBlock * const nextNode = entry->getNextNode();
+    BasicBlock * const clearZeroExtension =
+        b.CreateBasicBlock(prefix + "_selectZeroExtensionBuffer", nextNode);
+    BasicBlock * const clearZeroExtensionExit =
+        b.CreateBasicBlock(prefix + "_selectZeroExtensionBufferExit", nextNode);
 
-    auto zeSpaceRef = b.getScalarFieldPtr(ZERO_EXTENDED_SPACE);
-    assert (zeSpaceRef.second == sizeTy);
-    Value * const currentSpace = b.CreateAlignedLoad(sizeTy, zeSpaceRef.first, SizeTyABIAlignment);
+    b.CreateUnlikelyCondBr(mHasZeroExtendedInput, clearZeroExtension, clearZeroExtensionExit);
 
-    auto zeBufferRef = b.getScalarFieldPtr(ZERO_EXTENDED_BUFFER);
-    Value * const currentBuffer = b.CreateAlignedLoad(zeBufferRef.second, zeBufferRef.first, PtrTyABIAlignment);
+    b.SetInsertPoint(clearZeroExtension);
+    IntegerType * const intPtrTy = b.getIntPtrTy(b.getModule()->getDataLayout());
+    const auto k = LastStreamSet + mCurrentPartitionId + 1U;
 
-    Value * const largeEnough = b.CreateICmpUGE(currentSpace, requiredSpace);
-    b.CreateLikelyCondBr(largeEnough, hasSufficientZeroExtendSpace, expandZeroExtension);
 
-    b.SetInsertPoint(expandZeroExtension);
-    assert (b.getCacheAlignment() >= (b.getBitBlockWidth() / 8));
-    b.CreateFree(currentBuffer);
-    Value * const newBuffer = b.CreatePageAlignedMalloc(requiredSpace);
-    b.CreateMemZero(newBuffer, requiredSpace, b.getCacheAlignment());
-    b.CreateAlignedStore(requiredSpace, zeSpaceRef.first, SizeTyABIAlignment);
-    b.CreateAlignedStore(newBuffer, zeBufferRef.first, PtrTyABIAlignment);
-    b.CreateBr(hasSufficientZeroExtendSpace);
+    Value * const startOffset = mThreadLocalStartOffset[k]; assert (startOffset);
+    Value * const endOffset = mThreadLocalEndOffset[k]; assert (endOffset);
+    Value * const start = b.CreateGEP(b.getInt8Ty(), mThreadLocalStreamSetBaseAddress, startOffset);
 
-    b.SetInsertPoint(hasSufficientZeroExtendSpace);
-    PHINode * const zeroBufferPhi = b.CreatePHI(b.getVoidPtrTy(), 2);
-    zeroBufferPhi->addIncoming(currentBuffer, entry);
-    zeroBufferPhi->addIncoming(newBuffer, expandZeroExtension);
-    if (LLVM_UNLIKELY(mCheckStreamSets)) {
-        PHINode * const allocedSpacePhi = b.CreatePHI(sizeTy, 2);
-        allocedSpacePhi->addIncoming(currentSpace, entry);
-        allocedSpacePhi->addIncoming(requiredSpace, expandZeroExtension);
-        for (const auto e : make_iterator_range(in_edges(mKernelId, mBufferGraph))) {
-            const BufferPort & br = mBufferGraph[e];
-            Value * const zeroExtended = mIsInputZeroExtended[br.Port];
-            if (zeroExtended) {
-                const auto streamSet = source(e, mBufferGraph);
-                const BufferNode & bn = mBufferGraph[streamSet];
-                const auto ts = b.getTypeSize(dl, bn.Buffer->getType());
-                Rational scaleFactor{blockWidth * blockWidth * br.Maximum.denominator(), ts * br.Maximum.numerator()};
-                Value * const ic = b.CreateMulRational(allocedSpacePhi, scaleFactor);
-                auto & ze = inputBufferCapacity[br.Port.Number];
-                ze = b.CreateSelect(zeroExtended, b.CreateAdd(mCurrentProcessedItemCountPhi[br.Port], ic), ze);
-            }
-        }
-    }
-    return zeroBufferPhi;
-    #else
-    return nullptr;
-    #endif
-}
+    b.CreateMemZero(start, b.CreateSub(endOffset, startOffset), b.getBitBlockWidth() / 8);
 
-/** ------------------------------------------------------------------------------------------------------------- *
- * @brief getZeroExtendedInputVirtualBaseAddresses
- ** ------------------------------------------------------------------------------------------------------------- */
-void PipelineCompiler::getZeroExtendedInputVirtualBaseAddresses(KernelBuilder & b,
-                                                                const Vec<Value *> & baseAddresses,
-                                                                Value * const zeroExtensionSpace,
-                                                                Vec<Value *> & zeroExtendedVirtualBaseAddress) const {
+    const auto numOfInputs = in_degree(mKernelId, mBufferGraph);
 
-    // TODO: if we reserve a "zero extension" block in the thread local memory, we could trade this logic for a memclear
+    Vec<Value *> zeroExtendedVirtualBaseAddress(numOfInputs, nullptr);
 
-    #ifndef DISABLE_ZERO_EXTEND
     for (const auto e : make_iterator_range(in_edges(mKernelId, mBufferGraph))) {
         const BufferPort & rt = mBufferGraph[e];
         assert (rt.Port.Type == PortType::Input);
@@ -139,14 +58,27 @@ void PipelineCompiler::getZeroExtendedInputVirtualBaseAddresses(KernelBuilder & 
 
             // allocateLocalZeroExtensionSpace guarantees this will be large enough to satisfy the kernel
             ExternalBuffer tmp(0, b, binding.getType(), buffer->getAddressSpace());
-            Value * zeroExtension = b.CreatePointerCast(zeroExtensionSpace, bufferType);
+            Value * zeroExtension = b.CreatePointerCast(start, bufferType);
             Value * addr = tmp.getStreamBlockPtr(b, zeroExtension, ZERO, b.CreateNeg(blockIndex));
             addr = b.CreatePointerCast(addr, bufferType);
-            const auto i = rt.Port.Number;
-            assert (addr->getType() == baseAddresses[i]->getType());
+            assert (addr->getType() == mInputVirtualBaseAddressPhi[rt.Port]->getType());
 
-            addr = b.CreateSelect(zeroExtended, addr, baseAddresses[i], "zeroExtendAddr");
-            zeroExtendedVirtualBaseAddress[i] = addr;
+            addr = b.CreateSelect(zeroExtended, addr, mInputVirtualBaseAddressPhi[rt.Port], "zeroExtendAddr");
+            zeroExtendedVirtualBaseAddress[rt.Port.Number] = addr;
+        }
+    }
+    b.CreateBr(clearZeroExtensionExit);
+
+    b.SetInsertPoint(clearZeroExtensionExit);
+    for (const auto e : make_iterator_range(in_edges(mKernelId, mBufferGraph))) {
+        const BufferPort & rt = mBufferGraph[e];
+        assert (rt.Port.Type == PortType::Input);
+        if (mIsInputZeroExtended[rt.Port]) {
+            const auto i = rt.Port.Number;
+            PHINode * const phi = b.CreatePHI(mInputVirtualBaseAddressPhi[rt.Port]->getType(), 2);
+            phi->addIncoming(mInputVirtualBaseAddressPhi[rt.Port], entry);
+            phi->addIncoming(zeroExtendedVirtualBaseAddress[i], clearZeroExtension);
+            mInputVirtualBaseAddressPhi[rt.Port] = phi;
         }
     }
     #endif

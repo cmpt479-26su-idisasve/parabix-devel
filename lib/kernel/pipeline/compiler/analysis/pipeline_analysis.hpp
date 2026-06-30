@@ -294,7 +294,6 @@ public:
 
     size_t                          MinimumThreadLocalSegmentSize = 0;
 
-    bool                            HasZeroExtendedStream = false;
     bool                            RequiresIllustratorObject = false;
 
     unsigned                        MaxNumOfInputPorts = 0;

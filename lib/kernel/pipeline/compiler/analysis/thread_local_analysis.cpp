@@ -450,6 +450,7 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
                 for (const auto input : make_iterator_range(in_edges(kernel, mBufferGraph))) {
                     const BufferPort & bp = mBufferGraph[input];
                     if (LLVM_UNLIKELY(bp.isZeroExtended())) {
+                        assert (mBufferGraph[source(input, mBufferGraph)].isNonThreadLocal());
                         const auto k = LastStreamSet + partitionId + 1U;
                         const auto j = mapStreamSetToThreadLocal[k - FirstStreamSet];
                         assert (mapThreadLocalToStreamSet[j] == 0 || mapThreadLocalToStreamSet[j] == k);
@@ -538,7 +539,7 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
         }
         #endif
 
-        const auto l = n - PartitionCount;
+        const auto l = LastStreamSet - FirstStreamSet + 1U;
 
         ThreadLocalConflictGraph = ThreadLocalConflictGraphType(l);
 
@@ -660,7 +661,7 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
         for (auto i = PartitionCount; i < m; ++i) {
             const auto a = in_degree(i, D);
             unvisitedAncestors[i] = a;
-            if (a != 0 && out_degree(i, D) == 0) {                
+            if (a != 0 && out_degree(i, D) == 0) {
                 const auto streamSet = FirstStreamSet + i - PartitionCount;
                 const TLVertData & N = D[PartitionCount + streamSet - FirstStreamSet];
                 add_edge(i, N.PartitionId, D);
@@ -675,15 +676,15 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
         BEGIN_SCOPED_REGION
         auto & out = errs();
         out << "digraph \"" << "D" << "\" {\n";
-        for (unsigned i = 0; i < n; ++i) {
+        for (unsigned i = 0; i < w; ++i) {
             if (degree(i, D) > 0) {
                 out << "v" << i << " [label=\"";
                 if (i < PartitionCount) {
                     out << "P_" << i;
-                } else if (i < m) {
+                } else if (i < n) {
                     out << "S_" << (FirstStreamSet + i - PartitionCount);
-                } else if (i < m + PartitionCount) {
-                    out << "Z_" << (FirstStreamSet + i - PartitionCount - PartitionCount);
+                } else if (i < m) {
+                    out << "Z_" << (i - n);
                 } else {
                     out << 'X';
                 }
@@ -1032,7 +1033,7 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
                 out << "v" << i << " [label=\"";
                 if (i < PartitionCount) {
                     out << "P_" << i;
-                } else if (i < m) {
+                } else if (i < n) {
                     out << "S_" << (FirstStreamSet + i - PartitionCount);
                     const auto & Ti = T[i];
                     if (Ti.OverflowStrideAdjustment) {
@@ -1041,8 +1042,8 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
                     if (Ti.Terminal) {
                         out << '*';
                     }
-                } else if (i < m + PartitionCount) {
-                    out << "Z_" << (FirstStreamSet + i - PartitionCount - PartitionCount);
+                } else if (i < m) {
+                    out << "Z_" << (i - n);
                     const auto & Ti = T[i];
                     if (Ti.OverflowStrideAdjustment) {
                         out << '+' << Ti.OverflowStrideAdjustment;
@@ -1084,7 +1085,7 @@ void PipelineAnalysis::determineInitialThreadLocalBufferLayout(KernelBuilder & b
         #endif
     }
 
-    ThreadLocalPlacement.swap(T);
+    ThreadLocalPlacement = T;
 }
 
 /** ------------------------------------------------------------------------------------------------------------- *
