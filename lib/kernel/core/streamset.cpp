@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Part of the Parabix Project, under the Open Software License 3.0.
  *  SPDX-License-Identifier: OSL-3.0
  */
@@ -645,11 +645,7 @@ void ManagedDynamicBuffer::allocateBuffer(KernelBuilder & b, Value * const capac
 
         f = Function::Create(funcTy, Function::InternalLinkage, name.str(), m);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-            #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-            f->setHasUWTable();
-            #else
             f->setUWTableKind(UWTableKind::Default);
-            #endif
         }
 
         BasicBlock * const entry = BasicBlock::Create(C, "entry", f);
@@ -1009,11 +1005,7 @@ static void removeFromPendingDeletions(KernelBuilder & b, Value * const pendingS
 
         Function * const innerFunc = Function::Create(funcTy, Function::InternalLinkage, name.str() + "_I", m);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-            #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-            innerFunc->setHasUWTable();
-            #else
             innerFunc->setUWTableKind(UWTableKind::Default);
-            #endif
         }
 
         BEGIN_SCOPED_REGION
@@ -1237,11 +1229,7 @@ static void removeFromPendingDeletions(KernelBuilder & b, Value * const pendingS
 
         f = Function::Create(funcTy2, Function::InternalLinkage, name.str(), m);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-            #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-            f->setHasUWTable();
-            #else
             f->setUWTableKind(UWTableKind::Default);
-            #endif
         }
         f->addFnAttr(llvm::Attribute::AttrKind::AlwaysInline);
 
@@ -1337,11 +1325,7 @@ static void addToPendingDeletions(KernelBuilder & b, Value * const pendingStruct
 
         f = Function::Create(funcTy, Function::InternalLinkage, "__addPendingStreamSetDeletion", m);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-            #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-            f->setHasUWTable();
-            #else
             f->setUWTableKind(UWTableKind::Default);
-            #endif
         }
 
         BasicBlock * const entry = BasicBlock::Create(C, "entry", f);
@@ -1586,11 +1570,7 @@ Value * ManagedDynamicBuffer::reserveCapacity(KernelBuilder & b, Value * produce
 
         f = Function::Create(funcTy, Function::InternalLinkage, name.str(), m);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-            #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-            f->setHasUWTable();
-            #else
             f->setUWTableKind(UWTableKind::Default);
-            #endif
         }
 
         BasicBlock * const entry = BasicBlock::Create(C, "entry", f);
@@ -1978,11 +1958,7 @@ void FdBackedDynamicBuffer::allocateBuffer(KernelBuilder & b, Value * const capa
 
         f = Function::Create(funcTy, Function::InternalLinkage, name.str(), m);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-            #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-            f->setHasUWTable();
-            #else
             f->setUWTableKind(UWTableKind::Default);
-            #endif
         }
 
         BasicBlock * const entry = BasicBlock::Create(C, "entry", f);
@@ -2227,11 +2203,7 @@ Value * FdBackedDynamicBuffer::reserveCapacity(KernelBuilder & b, Value * produc
 
         f = Function::Create(funcTy, Function::InternalLinkage, name.str(), m);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-            #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-            f->setHasUWTable();
-            #else
             f->setUWTableKind(UWTableKind::Default);
-            #endif
         }
 
         BasicBlock * const entry = BasicBlock::Create(C, "entry", f);

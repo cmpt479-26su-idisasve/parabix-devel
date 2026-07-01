@@ -75,17 +75,9 @@ static constexpr auto ALIGNED_ALLOC_NAME = "std_aligned_alloc";
 #endif
 #endif
 
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(10, 0, 0)
-    typedef unsigned            AlignType;
-#else
-    typedef llvm::Align         AlignType;
-#endif
+typedef llvm::Align         AlignType;
 
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(11, 0, 0)
-    using FixedVectorType = llvm::VectorType;
-#else
-    using FixedVectorType = llvm::FixedVectorType;
-#endif
+using FixedVectorType = llvm::FixedVectorType;
 
 #define BEGIN_SCOPED_REGION {
 #define END_SCOPED_REGION }
@@ -183,17 +175,11 @@ Value * CBuilder::CreateRoundUp(Value * const number, Value * const divisor, con
 Value * CBuilder::CreateUnsignedSaturatingAdd(Value * const a, Value * const b, const Twine Name) {
     // TODO: this seems to be an intrinsic in later versions of LLVM. Determine which.
     assert (a->getType() == b->getType());
-    #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(14, 0, 0)
     Function * const uaddSat = Intrinsic::getDeclaration(getModule(), Intrinsic::uadd_sat); assert (uaddSat);
     FixedArray<Value *, 2> args;
     args[0] = a;
     args[1] = b;
     return CreateCall(uaddSat, args, Name);
-    #else
-    Value * const c = CreateAdd(a, b);
-    Constant * const max = ConstantInt::getAllOnesValue(a->getType());
-    return CreateSelect(CreateICmpULT(c, a), max, c, Name);
-    #endif
 }
 
 Value * CBuilder::CreateUnsignedSaturatingSub(Value * const a, Value * const b, const Twine Name) {
@@ -928,13 +914,7 @@ Value * CBuilder::CreateAtomicFetchAndAdd(Value * const val, Value * const ptr, 
         Constant * const Size = getTypeSize(val->getType());
         CheckAddress(ptr, Size, "CreateAtomicFetchAndAdd: ptr");
     }
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(13, 0, 0)
-    return CreateAtomicRMW(AtomicRMWInst::Add, ptr, val, AtomicOrdering::AcquireRelease);
-#elif LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(16, 0, 0)
-    return CreateAtomicRMW(AtomicRMWInst::Add, ptr, val, None, AtomicOrdering::AcquireRelease);
-#else
     return CreateAtomicRMW(AtomicRMWInst::Add, ptr, val, align, AtomicOrdering::AcquireRelease);
-#endif
 }
 
 Value * CBuilder::CreateAtomicFetchAndSub(Value * const val, Value * const ptr, MaybeAlign align) {
@@ -942,13 +922,7 @@ Value * CBuilder::CreateAtomicFetchAndSub(Value * const val, Value * const ptr, 
         Constant * const Size = getTypeSize(val->getType());
         CheckAddress(ptr, Size, "CreateAtomicFetchAndSub: ptr");
     }
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(13, 0, 0)
-    return CreateAtomicRMW(AtomicRMWInst::Sub, ptr, val, AtomicOrdering::AcquireRelease);
-#elif LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(16, 0, 0)
-    return CreateAtomicRMW(AtomicRMWInst::Add, ptr, val, None, AtomicOrdering::AcquireRelease);
-#else
     return CreateAtomicRMW(AtomicRMWInst::Sub, ptr, val, align, AtomicOrdering::AcquireRelease);
-#endif
 }
 
 LoadInst * CBuilder::CreateAtomicLoadAcquire(Type * type, Value * ptr) {
@@ -1256,11 +1230,7 @@ void CBuilder::__CreateAssert(Value * const assertion, const Twine format, std::
         arg->setName("depth");
         Value * depth = &*arg++;
         SetInsertPoint(entry);
-        #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-        assertFunc->setHasUWTable();
-        #else
         assertFunc->setUWTableKind(UWTableKind::Default);
-        #endif
         assertFunc->setPersonalityFn(getDefaultPersonalityFunction());
 
         Value * const vaList = CreatePointerCast(CreateAlignedAlloca(vaListTy, mCacheLineAlignment), int8PtrTy);
@@ -1344,12 +1314,7 @@ void CBuilder::__CreateAssert(Value * const assertion, const Twine format, std::
         SmallVector<Constant *, 64> traceArray(n);
         const auto state = reinterpret_cast<backtrace_state *>(mBacktraceState);
 
-
-        #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-        StructType * const structTy = cast<StructType>(structPtrTy->getPointerElementType());
-        #else
         StructType * const structTy = StructType::getTypeByName(getContext(), __BACKTRACE_STRUCT_NAME);
-        #endif
         assert (getTypeSize(structTy)->getLimitedValue() == sizeof(__backtrace_data));
 
         char * demangled = nullptr;
@@ -1538,49 +1503,21 @@ Function * CBuilder::LinkFunction(StringRef name, FunctionType * type, void * fu
     return mDriver->addLinkFunction(getModule(), name, type, functionPtr);
 }
 
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-Value * CBuilder::CreateGEP(Type * Ty, Value * Ptr, ArrayRef<Value *> IdxList, const Twine & Name, bool IsInBounds) {
-    assert (Ty->canLosslesslyBitCastTo(Ptr->getType()->getPointerElementType()));
-    if (IsInBounds) {
-        return IRBuilder<>::CreateInBoundsGEP(Ty, CreatePointerCast(Ptr, Ty->getPointerTo()), IdxList, Name);
-    } else {
-        return IRBuilder<>::CreateGEP(Ty, CreatePointerCast(Ptr, Ty->getPointerTo()), IdxList, Name);
-    }
-}
-#endif
-
 LoadInst * CBuilder::CreateLoad(Type * type, Value * Ptr, const char * Name) {
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-    assert (type->canLosslesslyBitCastTo(Ptr->getType()->getPointerElementType()));
-    #endif
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(Ptr, getTypeSize(type), "CreateLoad");
     }
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-    return IRBuilder<>::CreateLoad(IRBuilder<>::CreatePointerCast(Ptr, type->getPointerTo()), Name);
-    #else
     return IRBuilder<>::CreateLoad(type, Ptr, Name);
-    #endif
 }
 
 LoadInst * CBuilder::CreateLoad(Type * type, Value *Ptr, const Twine Name) {
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-    assert (type->canLosslesslyBitCastTo(Ptr->getType()->getPointerElementType()));
-    #endif
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(Ptr, getTypeSize(type), "CreateLoad");
     }
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-    return IRBuilder<>::CreateLoad(IRBuilder<>::CreatePointerCast(Ptr, type->getPointerTo()), Name);
-    #else
     return IRBuilder<>::CreateLoad(type, Ptr, Name);
-    #endif
 }
 
 LoadInst * CBuilder::CreateLoad(Type * type, Value * Ptr, bool isVolatile, const Twine Name) {
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-    assert (type->canLosslesslyBitCastTo(Ptr->getType()->getPointerElementType()));
-    #endif
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(Ptr, getTypeSize(type), "CreateLoad");
     }
@@ -1594,15 +1531,9 @@ LoadInst * CBuilder::CreateLoad(Type * type, Value * Ptr, bool isVolatile, const
 StoreInst * CBuilder::CreateStore(Value * Val, Value * Ptr, bool isVolatile) {
     assert ("Ptr (Arg2) was expected to be a pointer type" &&
             Ptr->getType()->isPointerTy());
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-    assert (Val->getType()->canLosslesslyBitCastTo(Ptr->getType()->getPointerElementType()));
-    #endif
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(Ptr, getTypeSize(Val->getType()), "CreateStore");
     }
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-    Val = IRBuilder<>::CreateBitCast(Val, Ptr->getType()->getPointerElementType());
-    #endif
     return IRBuilder<>::CreateStore(Val, Ptr, isVolatile);
 }
 
@@ -1700,12 +1631,7 @@ CallInst * CBuilder::CreateMemMove(Value * Dst, Value * Src, Value *Size, const 
 
         }
     }
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(7, 0, 0)
-    return IRBuilder<>::CreateMemMove(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, ScopeTag, NoAliasTag);
-#else
-    return IRBuilder<>::CreateMemMove(Dst, Src, Size, AlignType{Align}, isVolatile, TBAATag, ScopeTag, NoAliasTag);
-#endif
-}
+    return IRBuilder<>::CreateMemMove(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, ScopeTag, NoAliasTag);}
 
 CallInst * CBuilder::CreateMemCpy(Value *Dst, Value *Src, Value *Size, const unsigned Align, bool isVolatile,
                                   MDNode *TBAATag, MDNode *TBAAStructTag, MDNode *ScopeTag, MDNode *NoAliasTag) {
@@ -1729,11 +1655,7 @@ CallInst * CBuilder::CreateMemCpy(Value *Dst, Value *Src, Value *Size, const uns
         Value * const nonOverlapping = CreateOr(srcEndsBeforeDst, dstEndsBeforeSrc);
         CreateAssert(nonOverlapping, "CreateMemCpy: overlapping ranges is undefined");
     }
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(7, 0, 0)
     return IRBuilder<>::CreateMemCpy(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, TBAAStructTag, ScopeTag, NoAliasTag);
-#else
-    return IRBuilder<>::CreateMemCpy(Dst, Src, Size, AlignType{Align}, isVolatile, TBAATag, TBAAStructTag, ScopeTag, NoAliasTag);
-#endif
 }
 
 CallInst * CBuilder::CreateMemSet(Value * Ptr, Value * Val, Value * Size, const unsigned Align,
@@ -1880,11 +1802,7 @@ BasicBlock * CBuilder::WriteDefaultRethrowBlock() {
     Function * const f = current->getParent();
 
     f->setPersonalityFn(getDefaultPersonalityFunction());
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-    f->setHasUWTable();
-    #else
     f->setUWTableKind(UWTableKind::Default);
-    #endif
 
     LLVMContext & C = getContext();
 
@@ -1909,13 +1827,8 @@ BasicBlock * CBuilder::WriteDefaultRethrowBlock() {
     CallInst * beginCatch = CreateCall(catchTy, catchFn, {exception});
     beginCatch->setTailCall(true);
     InvokeInst * const rethrowInst = CreateInvoke(getRethrow(), handleUnreachable, handleRethrow);
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-    beginCatch->addAttribute(-1, Attribute::NoUnwind);
-    rethrowInst->addAttribute(-1, Attribute::NoReturn);
-#else
     beginCatch->setDoesNotThrow();
     rethrowInst->setDoesNotReturn();
-#endif
 
     SetInsertPoint(handleRethrow);
     LandingPadInst * const caughtResult2 = CreateLandingPad(caughtResultType, 1);
@@ -1931,11 +1844,7 @@ BasicBlock * CBuilder::WriteDefaultRethrowBlock() {
     Value * const exception3 = CreateExtractValue(caughtResult3, 0);
     CallInst * beginCatch2 = CreateCall(catchTy, catchFn, {exception3});
     beginCatch2->setTailCall(true);
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-    beginCatch2->addAttribute(-1, Attribute::NoUnwind);
-#else
     beginCatch2->setDoesNotThrow();
-#endif
     // should call std::terminate
     CreateExit(-1);
     CreateBr(handleUnreachable);
@@ -2427,13 +2336,7 @@ ConstantInt * LLVM_READNONE CBuilder::getTypeSize(Type * type, IntegerType * val
 uintptr_t LLVM_READNONE CBuilder::getTypeSize(const llvm::DataLayout & DL, llvm::Type * type) {
     uintptr_t size = 0;
     if (LLVM_LIKELY(type != nullptr)) {
-        #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(11, 0, 0)
-        size = DL.getTypeAllocSize(type);
-        #elif LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(16, 0, 0)
-        size = DL.getTypeAllocSize(type).getFixedSize();
-        #else
         size = DL.getTypeAllocSize(type).getFixedValue();
-        #endif
     }
     return size;
 }
