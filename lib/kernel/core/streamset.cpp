@@ -246,11 +246,7 @@ unsigned StreamSetBuffer::getFieldWidth() const {
 Value * StreamSetBuffer::getRawItemPointer(KernelBuilder & b, Value * streamIndex, Value * absolutePosition) const {
     Type * const elemTy = cast<ArrayType>(mBaseType)->getElementType();
     Type * itemTy = cast<VectorType>(elemTy)->getElementType();
-    #if LLVM_VERSION_CODE < LLVM_VERSION_CODE(12, 0, 0)
-    const unsigned itemWidth = itemTy->getPrimitiveSizeInBits();
-    #else
-    const unsigned itemWidth = itemTy->getPrimitiveSizeInBits().getFixedSize();
-    #endif
+    const unsigned itemWidth = itemTy->getPrimitiveSizeInBits().getFixedValue();
     IntegerType * const sizeTy = b.getSizeTy();
     absolutePosition = b.CreateZExt(absolutePosition, sizeTy);
     streamIndex = b.CreateZExt(streamIndex, sizeTy);
@@ -2431,11 +2427,7 @@ Value * RepeatingBuffer::getVirtualBasePtr(KernelBuilder & b, Value * const base
         Value * offset = b.CreateSub(transferredItems, b.CreateURem(transferredItems, mModulus));
         Type * const elemTy = cast<ArrayType>(mBaseType)->getElementType();
         Type * itemTy = cast<VectorType>(elemTy)->getElementType();
-        #if LLVM_VERSION_CODE < LLVM_VERSION_CODE(12, 0, 0)
-        const unsigned itemWidth = itemTy->getPrimitiveSizeInBits();
-        #else
-        const unsigned itemWidth = itemTy->getPrimitiveSizeInBits().getFixedSize();
-        #endif
+        const unsigned itemWidth = itemTy->getPrimitiveSizeInBits().getFixedValue();
         PointerType * itemPtrTy = nullptr;
         if (LLVM_UNLIKELY(itemWidth < 8)) {
             const Rational itemsPerByte{8, itemWidth};

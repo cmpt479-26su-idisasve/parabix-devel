@@ -271,26 +271,16 @@ void * CPUDriver::finalizeObject(kernel::Kernel * const pk) {
     mCompiledKernel.clear();
 
     mEngine->finalizeObject();
-    #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(11, 0, 0)
     auto mainFnPtr = mEngine->getFunctionAddress(main->getName().str());
-    #else
-    auto mainFnPtr = mEngine->getFunctionAddress(main->getName());
-    #endif
     removeModules(Normal);
     removeModules(Infrequent);
-    //#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(12, 0, 0)
     mEngine->removeModule(mainModulePtr);
     mEngine->removeModule(mMainModule);
-    //#endif
     return reinterpret_cast<void *>(mainFnPtr);
 }
 
 bool CPUDriver::hasExternalFunction(llvm::StringRef functionName) const {
-    #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(11, 0, 0)
     return RTDyldMemoryManager::getSymbolAddressInProcess(functionName.str());
-    #else
-    return RTDyldMemoryManager::getSymbolAddressInProcess(functionName);
-    #endif
 }
 
 CPUDriver::~CPUDriver() {
