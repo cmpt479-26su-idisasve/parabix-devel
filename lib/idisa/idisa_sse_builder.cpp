@@ -6,6 +6,7 @@
 #include <idisa/idisa_sse_builder.h>
 
 #include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/IntrinsicsX86.h>
 #include <llvm/IR/Module.h>
 
 using namespace llvm;

@@ -8,6 +8,7 @@
 #include <toolchain/toolchain.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/IntrinsicsX86.h>
 #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
 #include <llvm/TargetParser/Host.h>
 #else
