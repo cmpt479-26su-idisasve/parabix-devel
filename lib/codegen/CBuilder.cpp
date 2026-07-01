@@ -173,9 +173,8 @@ Value * CBuilder::CreateRoundUp(Value * const number, Value * const divisor, con
 
 
 Value * CBuilder::CreateUnsignedSaturatingAdd(Value * const a, Value * const b, const Twine Name) {
-    // TODO: this seems to be an intrinsic in later versions of LLVM. Determine which.
     assert (a->getType() == b->getType());
-    Function * const uaddSat = Intrinsic::getDeclaration(getModule(), Intrinsic::uadd_sat); assert (uaddSat);
+    Function * const uaddSat = Intrinsic::getDeclaration(getModule(), Intrinsic::uadd_sat, a->getType()); assert (uaddSat);
     FixedArray<Value *, 2> args;
     args[0] = a;
     args[1] = b;
@@ -183,74 +182,12 @@ Value * CBuilder::CreateUnsignedSaturatingAdd(Value * const a, Value * const b, 
 }
 
 Value * CBuilder::CreateUnsignedSaturatingSub(Value * const a, Value * const b, const Twine Name) {
-    // TODO: this seems to be an intrinsic in later versions of LLVM. Determine which.
-    assert (isFromCurrentFunction(*this, a, false));
-    assert (isFromCurrentFunction(*this, b, false));
     assert (a->getType() == b->getType() && a->getType()->isIntOrIntVectorTy());
-    #if 0 // LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(16, 0, 0)
-    Function * const usubSat = Intrinsic::getDeclaration(getModule(), Intrinsic::usub_sat); assert (usubSat);
+    Function * const usubSat = Intrinsic::getDeclaration(getModule(), Intrinsic::usub_sat, a->getType()); assert (usubSat);
     FixedArray<Value *, 2> args;
     args[0] = a;
     args[1] = b;
     return CreateCall(usubSat, args, Name);
-    #else
-
-    // TODO: for some reason, LLVM 12 incorrectly handles (a - constant)? The select statement returns a - b?
-    // Even when I inline this, it returns the wrong result so the error is likely in the backend.
-    // Similar bug is reported in 2022.
-
-    Module * const m = getModule();
-
-    SmallVector<char, 32> tmp;
-    raw_svector_ostream nm(tmp);
-    nm << "__usatsub";
-    Type * const ty = a->getType();
-    if (LLVM_UNLIKELY(ty->isVectorTy())) {
-        nm << cast<FixedVectorType>(ty)->getNumElements() << 'x' << cast<FixedVectorType>(ty)->getElementType()->getScalarSizeInBits();
-    } else {
-        nm << ty->getScalarSizeInBits();
-    }
-    Function * uSatSub = m->getFunction(nm.str());
-    if (uSatSub == nullptr) {
-
-        FixedArray<Type *, 2> paramTypes;
-        paramTypes[0] = ty;
-        paramTypes[1] = ty;
-
-        FunctionType * funcTy = FunctionType::get(ty, paramTypes, false);
-
-        const auto ip = saveIP();
-        uSatSub = Function::Create(funcTy, Function::InternalLinkage, nm.str(), m);
-        uSatSub->addFnAttr(llvm::Attribute::AttrKind::NoInline);
-
-        BasicBlock * const entry = BasicBlock::Create(getContext(), "entry", uSatSub);
-
-        SetInsertPoint(entry);
-        auto arg = uSatSub->arg_begin();
-        auto nextArg = [&]() {
-            assert (arg != uSatSub->arg_end());
-            Value * const v = &*arg;
-            std::advance(arg, 1);
-            return v;
-        };
-
-        Value * const a = nextArg();
-        Value * const b = nextArg();
-        assert (arg == uSatSub->arg_end());
-
-        Value * const c = CreateSub(a, b);
-        Value * const d = CreateICmpULT(a, b);
-        CreateRet(CreateSelect(d, ConstantInt::getNullValue(ty), c, Name));
-
-        restoreIP(ip);
-    }
-
-    FixedArray<Value *, 2> args;
-    args[0] = a;
-    args[1] = b;
-    return CreateCall(uSatSub, args, Name);
-
-    #endif
 }
 
 Value * CBuilder::CreateOpenCall(Value * filename, Value * oflag, Value * mode) {
@@ -1521,11 +1458,7 @@ LoadInst * CBuilder::CreateLoad(Type * type, Value * Ptr, bool isVolatile, const
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(Ptr, getTypeSize(type), "CreateLoad");
     }
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-    return IRBuilder<>::CreateLoad(IRBuilder<>::CreatePointerCast(Ptr, type->getPointerTo()), Name);
-    #else
     return IRBuilder<>::CreateLoad(type, Ptr, isVolatile, Name);
-    #endif
 }
 
 StoreInst * CBuilder::CreateStore(Value * Val, Value * Ptr, bool isVolatile) {
