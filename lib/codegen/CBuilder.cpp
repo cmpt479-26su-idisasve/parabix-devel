@@ -30,9 +30,7 @@
 #include <boost/filesystem.hpp>
 #include <cxxabi.h>
 using boost::intrusive::detail::floor_log2;
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(10, 0, 0)
 #include <llvm/Support/Alignment.h>
-#endif
 #include <unistd.h>
 
 #include <boost/icl/interval_set.hpp>
@@ -171,7 +169,6 @@ Value * CBuilder::CreateRoundUp(Value * const number, Value * const divisor, con
     return CreateMul(CreateCeilUDiv(number, divisor), divisor, Name);
 }
 
-
 Value * CBuilder::CreateUnsignedSaturatingAdd(Value * const a, Value * const b, const Twine Name) {
     assert (a->getType() == b->getType());
     Function * const uaddSat = Intrinsic::getDeclaration(getModule(), Intrinsic::uadd_sat, a->getType()); assert (uaddSat);
@@ -212,11 +209,7 @@ Value * CBuilder::CreateWriteCall(Value * fileDescriptor, Value * buf, Value * n
     Function * write = m->getFunction("write");
     if (write == nullptr) {
         write = Function::Create(writeTy, Function::ExternalLinkage, "write", m);
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-        write->addAttribute(2U, Attribute::NoAlias);
-#else
-    //TODO: update for LLVM14+
-#endif
+        write->addParamAttr(1U, Attribute::NoAlias);
     }
     buf = CreatePointerCast(buf, voidPtrTy);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
@@ -234,11 +227,7 @@ Value * CBuilder::CreateReadCall(Value * fileDescriptor, Value * buf, Value * nb
     Function * readFn = m->getFunction("read");
     if (readFn == nullptr) {
         readFn = Function::Create(readTy, Function::ExternalLinkage, "read", m);
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-       readFn->addAttribute(2U, Attribute::NoAlias);
-#else
-    //TODO: update for LLVM14+
-#endif
+        readFn->addParamAttr(1U, Attribute::NoAlias);
     }
     buf = CreatePointerCast(buf, voidPtrTy);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
@@ -323,11 +312,7 @@ Function * CBuilder::GetPrintf() {
     if (LLVM_UNLIKELY(printf == nullptr)) {
         FunctionType * const fty = FunctionType::get(getInt32Ty(), {getInt8PtrTy()}, true);
         printf = Function::Create(fty, Function::ExternalLinkage, "printf", m);
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(14, 0, 0)
-        printf->addAttribute(1, Attribute::NoAlias);
-#else
-    //TODO: update for LLVM14+
-#endif
+        printf->addParamAttr(0, Attribute::NoAlias);
     }
     return printf;
 }

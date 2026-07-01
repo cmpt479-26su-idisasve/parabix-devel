@@ -21,12 +21,6 @@
 #include <toolchain/toolchain.h>
 #include <array>
 
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(11, 0, 0)
-    using FixedVectorType = llvm::VectorType;
-#else
-    using FixedVectorType = llvm::FixedVectorType;
-#endif
-
 enum NonCarryCollapsingMode {
     NestedCapacity = 0,
     LastIncomingCarryLoopIteration = 1,
