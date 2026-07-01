@@ -454,6 +454,7 @@ void ElemMergeKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * c
     b.SetInsertPoint(elemMergeDone);
 }
 
+#define USE_SHORT_STRIDE_POPCOUNT
 ElemSpreadShortStrides::ElemSpreadShortStrides(LLVMTypeSystemInterface & ts,
                                        StreamSet * mask,
                                        StreamSet * source,
@@ -469,8 +470,11 @@ ElemSpreadShortStrides::ElemSpreadShortStrides(LLVMTypeSystemInterface & ts,
                     }(),
 {Binding("mask", mask, FixedRate(1), Principal()),
  // The following would be preferred, but is currently buggy.
- // Binding("source", source, PopcountOf("mask"), EmptyReadOverflow())},
- Binding("source", source, BoundedRate(0, 1), ZeroExtended())}, 
+#ifdef USE_SHORT_STRIDE_POPCOUNT
+ Binding("source", source, PopcountOf("mask"), ZeroExtended())},
+#else
+ Binding("source", source, BoundedRate(0, 1), ZeroExtended())},
+#endif
 {Binding{"spread", spread}},
 {}, {}, {}), mElemWidth(source->getFieldWidth()) {
     setStride(ts.getBitBlockWidth()/mElemWidth);
@@ -595,12 +599,13 @@ void ElemSpreadShortStrides::generateMultiBlockLogic(KernelBuilder & b, llvm::Va
     b.CreateCondBr(moreStridesToDo, strideAtATimeLoop, multiStrideExit);
 
     b.SetInsertPoint(multiStrideExit);
+#ifdef USE_SHORT_STRIDE_POPCOUNT
     PHINode * const finalOffsetPhi = b.CreatePHI(sizeTy, 2);
     finalOffsetPhi->addIncoming(sourceOffsetPhi, strideAtATimeLoop);
     finalOffsetPhi->addIncoming(updatedSourceOffset, spreadAndWrite);
 
     b.setProcessedItemCount("source", b.CreateAdd(processedSourceBase, finalOffsetPhi));
-
+#endif
 }
 
 ElemSpreadKernel::ElemSpreadKernel(LLVMTypeSystemInterface & ts,
