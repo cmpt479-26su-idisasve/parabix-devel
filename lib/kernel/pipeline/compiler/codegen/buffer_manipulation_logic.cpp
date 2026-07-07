@@ -277,11 +277,7 @@ void PipelineCompiler::zeroInputAfterFinalItemCount(KernelBuilder & b,
             FunctionType * const funcTy = FunctionType::get(retTy, params, false);
             maskInput = Function::Create(funcTy, Function::InternalLinkage, name.str(), m);
             if (LLVM_UNLIKELY(CheckAssertions())) {
-                #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(15, 0, 0)
-                maskInput->setHasUWTable();
-                #else
                 maskInput->setUWTableKind(UWTableKind::Default);
-                #endif
             }
 
             BasicBlock * const entry = BasicBlock::Create(C, "entry", maskInput);

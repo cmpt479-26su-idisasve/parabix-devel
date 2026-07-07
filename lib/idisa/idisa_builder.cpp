@@ -117,13 +117,7 @@ CallInst * IDISA_Builder::CallPrintRegister(StringRef name, Value * const value,
 }
 
 Constant *IDISA_Builder::getSplat(const unsigned fieldCount, Constant *Elt) {
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(12, 0, 0)
-    return ConstantVector::getSplat(ElementCount::get(fieldCount, false), Elt);
-#elif LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(11, 0, 0)
-    return ConstantVector::getSplat({fieldCount, false}, Elt);
-#else
-    return ConstantVector::getSplat(fieldCount, Elt);
-#endif
+return ConstantVector::getSplat(ElementCount::get(fieldCount, false), Elt);
 }
 
 Constant * IDISA_Builder::simd_himask(unsigned fw) {

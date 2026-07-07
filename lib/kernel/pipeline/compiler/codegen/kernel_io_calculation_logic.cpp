@@ -1703,7 +1703,7 @@ void PipelineCompiler::calculateFinalItemCounts(KernelBuilder & b,
             if (LLVM_LIKELY(k > 0)) {
                 selected = b.CreateAdd(accessible, b.getSize(k));
             } else  {
-                selected = b.CreateUnsignedSaturatingSub(accessible, b.getSize(k));
+                selected = b.CreateUnsignedSaturatingSub(accessible, b.getSize(-k));
             }
             Value * closed = isClosed(b, port.Port, true);
             accessible = b.CreateSelect(closed, selected, accessible, "accessible");
