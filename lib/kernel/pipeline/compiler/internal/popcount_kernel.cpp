@@ -105,86 +105,83 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
     Value * negativeArray = nullptr;
     Value * initialNegativeCount = nullptr;
 
-    Value * initPos = nullptr;
-    Value * initNeg = nullptr;
-
-    auto getArrays = [&](Value * const outputPosition) {
-        if (LLVM_LIKELY(mType == PopCountType::POSITIVE || mType == PopCountType::NEGATIVE)) {
-            Value * const array = b.getRawOutputPointer(OUTPUT_STREAM, outputPosition);
-            #ifdef USE_LOOKBEHIND_FOR_LAST_VALUE
-            Value * const count = b.CreateLoad(b.CreateInBoundsGEP(sizeTy, array, NEG_ONE));
-            #else
-            Value * const count = b.getScalarField("count");
-            #endif
-            if (LLVM_LIKELY(mType == PopCountType::POSITIVE)) {
-                positiveArray = array;
-                initPos = initialPositiveCount = count;
-                #if defined(PRINT_POP_COUNTS_TO_STDERR) || defined(PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY)
-                debugPrint("initial count(pos) = %" PRIu64, count);
-                #endif
-            } else { // if (mType == PopCountType::NEGATIVE) {
-                negativeArray = array;
-                initNeg = initialNegativeCount = count;
-                #if defined(PRINT_POP_COUNTS_TO_STDERR) || defined(PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY)
-                debugPrint("initial count(neg) = %" PRIu64, count);
-                #endif
-            }
-        } else { // if (mType == PopCountType::BOTH) {
-            positiveArray = b.getRawOutputPointer(POSITIVE_STREAM, outputPosition);
-            negativeArray = b.getRawOutputPointer(NEGATIVE_STREAM, outputPosition);
-            #ifdef USE_LOOKBEHIND_FOR_LAST_VALUE
-            initialPositiveCount = b.CreateLoad(b.CreateInBoundsGEP(sizeTy, positiveArray, NEG_ONE));
-            initialNegativeCount = b.CreateLoad(b.CreateInBoundsGEP(sizeTy, negativeArray, NEG_ONE));
-            #else
-            initPos = initialPositiveCount = b.getScalarField("posCount");
-            initNeg = initialNegativeCount = b.getScalarField("negCount");
-            #endif
+    if (LLVM_LIKELY(mType == PopCountType::POSITIVE || mType == PopCountType::NEGATIVE)) {
+        Value * const array = b.getRawOutputPointer(OUTPUT_STREAM, position);
+        #ifdef USE_LOOKBEHIND_FOR_LAST_VALUE
+        Value * const count = b.CreateLoad(b.CreateInBoundsGEP(sizeTy, array, NEG_ONE));
+        #else
+        Value * const count = b.getScalarField("count");
+        #endif
+        if (LLVM_LIKELY(mType == PopCountType::POSITIVE)) {
+            positiveArray = array;
+            initialPositiveCount = count;
             #if defined(PRINT_POP_COUNTS_TO_STDERR) || defined(PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY)
-            debugPrint("initial count(pos) = %" PRIu64, initialPositiveCount);
-            debugPrint("initial count(neg) = %" PRIu64, initialNegativeCount);
+            debugPrint("initial count(pos) = %" PRIu64, count);
+            #endif
+        } else { // if (mType == PopCountType::NEGATIVE) {
+            negativeArray = array;
+            initialNegativeCount = count;
+            #if defined(PRINT_POP_COUNTS_TO_STDERR) || defined(PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY)
+            debugPrint("initial count(neg) = %" PRIu64, count);
             #endif
         }
-    };
+    } else { // if (mType == PopCountType::BOTH) {
+        positiveArray = b.getRawOutputPointer(POSITIVE_STREAM, position);
+        negativeArray = b.getRawOutputPointer(NEGATIVE_STREAM, position);
+        #ifdef USE_LOOKBEHIND_FOR_LAST_VALUE
+        initialPositiveCount = b.CreateLoad(b.CreateInBoundsGEP(sizeTy, positiveArray, NEG_ONE));
+        initialNegativeCount = b.CreateLoad(b.CreateInBoundsGEP(sizeTy, negativeArray, NEG_ONE));
+        #else
+        initialPositiveCount = b.getScalarField("posCount");
+        initialNegativeCount = b.getScalarField("negCount");
+        #endif
+        #if defined(PRINT_POP_COUNTS_TO_STDERR) || defined(PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY)
+        debugPrint("initial count(pos) = %" PRIu64, initialPositiveCount);
+        debugPrint("initial count(neg) = %" PRIu64, initialNegativeCount);
+        #endif
+    }
+
 
     Value * positivePartialSum = nullptr;
     Value * negativePartialSum = nullptr;
+
+    Module * const m = b.getModule();
+    auto & DL = m->getDataLayout();
+
+    IntegerType * const intTy = b.getIntNTy(inputWidth);
+
+    const auto sizeTyAlign = b.getAlignOf(DL, sizeTy);
+
 
     // ----------------------------------------------------------------------------------------
     // handle initial partial blocks for short strides
     // ----------------------------------------------------------------------------------------
     if (inputWidth < blockWidth) {
 
-        Module * const m = b.getModule();
-        auto & DL = m->getDataLayout();
+
+
+        const auto outputFieldsPerBlock = blockWidth / sizeWidth;
+
 
         const auto steps = blockWidth / inputWidth;
         assert (is_power_2(steps));
         ConstantInt * const sz_STEP_MASK = b.getSize(steps - 1);
         ConstantInt * const sz_STEPS = b.getSize(steps);
 
-        IntegerType * const intTy = b.getIntNTy(inputWidth);
-
         VectorType * const vecTy = VectorType::get(intTy, steps, false);
 
         const auto vecTyAlign = b.getAlignOf(DL, vecTy);
 
-        const auto sizeTyAlign = b.getAlignOf(DL, sizeTy);
-
         PointerType * const ptrVecTy = vecTy->getPointerTo();
 
-        const auto fieldsPerBlock = blockWidth / sizeWidth;
+        VectorType * const sizeVecTy = VectorType::get(sizeTy, outputFieldsPerBlock, false);
 
-        VectorType * const sizeVecTy = VectorType::get(sizeTy, fieldsPerBlock, false);
-
-        getArrays(b.CreateAnd(position, ConstantExpr::getNeg(sz_STEP_MASK)));
-
-        const auto sizeTypePerInputField = (sizeWidth < inputWidth) ? (inputWidth / sizeWidth) : 1U;
-
-        auto generateIterativePopCountCode = [&](Value * const start, Value * const end, Value * const blockIndex, const bool fromOffset,
+        auto generateIterativePopCountCode = [&](Value * const writeStart,
+                Value * const inputIndex, Value * const inputOffset,
+                const bool fromOffset,
                 Value *& positiveCount, Value *& negativeCount) -> Value * {
 
             if (LLVM_LIKELY(b.supportsIndirectBr())) {
-
 
                 PointerType * const i8PtrTy = b.getInt8PtrTy();
                 const auto i8PtrTyAlign = DL.getABITypeAlign(i8PtrTy).value();
@@ -200,7 +197,7 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
 
                 SmallVector<Constant *, 32> stepEntryPointAddr(steps);
                 for (unsigned i = 0; i < steps; ++i) {
-                    unsigned jumpIndex = 0;
+                    unsigned jumpIndex;
                     if (fromOffset) {
                         jumpIndex = i;
                     } else {
@@ -216,18 +213,16 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
                 GlobalVariable * const stepEntryTargetArray =
                     new GlobalVariable(*m, stepEntryPointAddrTy, true, GlobalValue::InternalLinkage, stepEntryPointAddrArray);
 
-                Value * blockValue = b.CreateBitCast(b.loadInputStreamBlock(INPUT, sz_ZERO, blockIndex), vecTy);
-                if (LLVM_UNLIKELY(positiveArray == nullptr)) { // only negative count
-                    blockValue = b.CreateNot(blockValue);
-                }
+                Value * const inputPtr = b.CreatePointerCast(b.getInputStreamBlockPtr(INPUT, sz_ZERO, inputIndex), intTy->getPointerTo());
 
                 FixedArray<Value *, 2> jumpIndex;
                 jumpIndex[0] = sz_ZERO;
-                Value * const remaining = b.CreateSub(end, start);  // remaining
+                Value * const remaining = b.CreateSub(numOfStrides, writeStart);
+                Value * c = nullptr;
                 Value * jumpPoint = nullptr;
                 if (fromOffset) {
-                    Value * const c = b.CreateICmpULT(remaining, sz_STEPS);
-                    jumpPoint = b.CreateSelect(c, remaining, start);
+                    c = b.CreateICmpULT(remaining, sz_STEPS);
+                    jumpPoint = b.CreateSelect(c, sz_ZERO, inputOffset);
                 } else {
                     jumpPoint = remaining;
                 }
@@ -238,7 +233,6 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
                 IndirectBrInst * const br = b.CreateIndirectBr(initialJumpTarget, steps);
 
                 SmallVector<PHINode *, 32> offsetPhi(steps);
-
                 SmallVector<PHINode *, 32> positiveSumPhi(steps);
                 SmallVector<PHINode *, 32> negativeSumPhi(steps);
                 for (unsigned i = 0; i < steps; ++i) {
@@ -255,68 +249,72 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
                     br->addDestination(stepEntryPoint[i]);
                 }
 
+                Value * nextOffset = nullptr;
+
                 for (unsigned i = 1; i < steps; ++i) {
                     b.SetInsertPoint(stepEntryPoint[i]);
-                    Value * const value = b.CreateExtractElement(blockValue, offsetPhi[i]);
-                    Value * sum = b.CreateZExt(b.CreatePopcount(value), sizeTy);
-                    Value * pos = b.CreateAdd(start, offsetPhi[i]);
-
+                    Value * const readOffset = b.CreateAdd(inputOffset, offsetPhi[i]);
+                    Value * const ptr = b.CreateInBoundsGEP(intTy, inputPtr, readOffset);
+                    Value * const value = b.CreateAlignedLoad(intTy, ptr, b.getAlignOf(DL, intTy));
+                    Value * const sum = b.CreateZExt(b.CreatePopcount(value), sizeTy);
+                    Value * writeOffset = b.CreateAdd(writeStart, offsetPhi[i]);
                     const auto next = (i + 1) % steps;
                     if (positiveArray) {
                         Value * positivePartialSum = b.CreateAdd(positiveSumPhi[i], sum);
-                        Value * const ptr = b.CreateInBoundsGEP(sizeTy, positiveArray, pos);
+                        Value * const ptr = b.CreateInBoundsGEP(sizeTy, positiveArray, writeOffset);
                         b.CreateAlignedStore(positivePartialSum, ptr, sizeTyAlign);
                         positiveSumPhi[next]->addIncoming(positivePartialSum, stepEntryPoint[i]);
                     }
                     if (negativeArray) {
-                        if (positiveArray) {
-                            sum = b.CreateSub(b.getSize(inputWidth), sum);
-                        }
-                        Value * negativePartialSum = b.CreateAdd(negativeSumPhi[i], sum);
-                        Value * const ptr = b.CreateInBoundsGEP(sizeTy, negativeArray, pos);
+                        Value * negSum = b.CreateSub(b.getSize(inputWidth), sum);
+                        Value * negativePartialSum = b.CreateAdd(negativeSumPhi[i], negSum);
+                        Value * const ptr = b.CreateInBoundsGEP(sizeTy, negativeArray, writeOffset);
                         b.CreateAlignedStore(negativePartialSum, ptr, sizeTyAlign);
                         negativeSumPhi[next]->addIncoming(negativePartialSum, stepEntryPoint[i]);
                     }
-                    Value * const nextOffset = b.CreateAdd(offsetPhi[i], sz_ONE);
+                    nextOffset = b.CreateAdd(offsetPhi[i], sz_ONE);
                     offsetPhi[next]->addIncoming(nextOffset, stepEntryPoint[i]);
                     b.CreateBr(stepEntryPoint[next]);
                 }
 
                 b.SetInsertPoint(stepEntryPoint[0]);
-                if (fromOffset) {
-                    PHINode * const nextBlockIndexPhi = b.CreatePHI(sizeTy, 2);
-                    nextBlockIndexPhi->addIncoming(sz_ZERO, entry);
-                    nextBlockIndexPhi->addIncoming(sz_ONE, stepEntryPoint[steps - 1]);
-                    if (positiveArray) {
-                        positiveCount = b.simd_fill(sizeWidth, positiveSumPhi[0]);
-                    }
-                    if (negativeArray) {
-                        negativeCount = b.simd_fill(sizeWidth, negativeSumPhi[0]);
-                    }
-                    return nextBlockIndexPhi;
+                if (positiveArray) {
+                    positiveCount = positiveSumPhi[0];
                 }
+                if (negativeArray) {
+                    negativeCount = negativeSumPhi[0];
+                }
+                return offsetPhi[0];
 
             } else { // no non-indirect branch support
 
                 llvm::report_fatal_error("Not supported yet");
 
             }
-
-            return nullptr;
         };
 
-        Value * const initialPosOffset = b.CreateAnd(position, sz_STEP_MASK);
+        Value * startBlockOffset = b.CreateAnd(position, sz_STEP_MASK);
 
-        Value * const total = b.CreateAdd(initialPosOffset, numOfStrides);
+        ConstantInt * const sz_LOG_2_STEPS = b.getSize(floor_log2(steps));
 
-        Value * const initialBlockIndex =
-            generateIterativePopCountCode(initialPosOffset, total, sz_ZERO, true,
-                                          initialPositiveCount, initialNegativeCount);
+        Value * posCount = initialPositiveCount;
+        Value * negCount = initialNegativeCount;
 
+        Value * const numProcessed =
+            generateIterativePopCountCode(sz_ZERO, sz_ZERO, startBlockOffset, true, posCount, negCount);
 
-        Value * const initPosition = b.CreateAnd(b.CreateNeg(initialPosOffset), sz_STEP_MASK);
+        if (positiveArray) {
+            posCount = b.simd_fill(sizeWidth, posCount);
+        }
+        if (negativeArray) {
+            negCount = b.simd_fill(sizeWidth, negCount);
+        }
 
-        Value * const numOfFullVectors = b.CreateLShr(b.CreateSub(total, initPosition), floor_log2(steps));
+        startBlockOffset = b.CreateAdd(startBlockOffset, numProcessed);
+
+        Value * const firstIndex = b.CreateLShr(startBlockOffset, sz_LOG_2_STEPS);
+
+        Value * const totalNumOfStrides = b.CreateAdd(b.CreateLShr(b.CreateSub(numOfStrides, numProcessed), sz_LOG_2_STEPS), firstIndex);
 
         // ----------------------------------------------------------------------------------------
         // process all full vector width blocks
@@ -325,30 +323,29 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
         BasicBlock * const entry = b.GetInsertBlock();
         BasicBlock * const popCountLoop = b.CreateBasicBlock("Loop");
         BasicBlock * const popCountExit = b.CreateBasicBlock("Exit");
-        b.CreateCondBr(b.CreateICmpULT(initialBlockIndex, numOfFullVectors), popCountLoop, popCountExit);
+
+        b.CreateCondBr(b.CreateICmpNE(firstIndex, totalNumOfStrides), popCountLoop, popCountExit);
 
         b.SetInsertPoint(popCountLoop);
         PHINode * const indexPhi = b.CreatePHI(sizeTy, 2);
-        indexPhi->addIncoming(initialBlockIndex, entry);
-        PHINode * const posPhi = b.CreatePHI(sizeTy, 2);
-        posPhi->addIncoming(initPosition, entry);
+        indexPhi->addIncoming(firstIndex, entry);
+        PHINode * const writePosPhi = b.CreatePHI(sizeTy, 2);
+        writePosPhi->addIncoming(numProcessed, entry);
 
         PHINode * positiveSumPhi = nullptr;
         if (positiveArray) {
             positiveSumPhi = b.CreatePHI(sizeVecTy, 2);
-            positiveSumPhi->addIncoming(initialPositiveCount, entry);
+            positiveSumPhi->addIncoming(posCount, entry);
         }
         PHINode * negativeSumPhi = nullptr;
         if (negativeArray) {
             negativeSumPhi = b.CreatePHI(sizeVecTy, 2);
-            negativeSumPhi->addIncoming(initialNegativeCount, entry);
+            negativeSumPhi->addIncoming(negCount, entry);
         }
-
         Value * value = b.loadInputStreamBlock(INPUT, sz_ZERO, indexPhi);
         if (LLVM_UNLIKELY(positiveSumPhi == nullptr)) { // only negative count
             value = b.CreateNot(value);
         }
-
         Value * const count = b.simd_popcount(inputWidth, value);
         Value * partialSum = b.hsimd_partial_sum(inputWidth, count);
         assert (partialSum->getType() == vecTy);
@@ -362,43 +359,28 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
 
             const auto inputTypePerSizeField = (sizeWidth / inputWidth);
 
-            assert ((fieldsPerBlock * inputTypePerSizeField) == steps);
+            assert ((outputFieldsPerBlock * inputTypePerSizeField) == steps);
 
             SmallVector<Value *, 16> partialSumArray(inputTypePerSizeField, nullptr);
             partialSumArray[0] = partialSum;
+            for (unsigned i = 1; i < inputTypePerSizeField; i *= 2) {
+                const auto fw = inputWidth * i;
+                assert ((blockWidth % fw) == 0);
+                const auto fieldCount = blockWidth / fw;
 
-            if (inputTypePerSizeField > 1) {
-                SmallVector<int, 16> selectors;
-                for (unsigned i = 1; i < inputTypePerSizeField; i *= 2) {
-                    const auto fw = inputWidth * i;
-                    assert ((blockWidth % fw) == 0);
-                    const auto fieldCount = blockWidth / fw;
+                const auto count = inputTypePerSizeField / i;
+                const auto half = count / 2; assert (half > 0);
 
-                    const auto count = inputTypePerSizeField / i;
-                    const auto half = count / 2; assert (half > 0);
+                VectorType * const unpackTy = VectorType::get(b.getIntNTy(fw), fieldCount, false);
+                Constant * const nil = ConstantVector::getNullValue(unpackTy);
 
-                    const auto halfFieldCount = fieldCount / 2;
-
-                    VectorType * const unpackTy = VectorType::get(b.getIntNTy(fw), fieldCount, false);
-                    Constant * const nil = ConstantVector::getNullValue(unpackTy);
-
-                    selectors.resize(fieldCount);
-
-                    for (unsigned j = 0; j < inputTypePerSizeField; j += count) {
-                        Value * vec = b.CreateBitCast(partialSumArray[j], unpackTy);
-                        for (unsigned k = 0; k < halfFieldCount; ++k) {
-                            selectors[k * 2] = k;
-                            selectors[k * 2 + 1] = k + fieldCount;
-                        }
-                        partialSumArray[j] = b.CreateShuffleVector(vec, nil, selectors);
-                        for (unsigned k = 0; k < halfFieldCount; ++k) {
-                            selectors[k * 2] = k + halfFieldCount;
-                            selectors[k * 2 + 1] = k + fieldCount + halfFieldCount;
-                        }
-                        assert ((j + half) < inputTypePerSizeField);
-                        assert (partialSumArray[j + half] == nullptr);
-                        partialSumArray[j + half] = b.CreateShuffleVector(vec, nil, selectors);
-                    }
+                for (unsigned j = 0; j < inputTypePerSizeField; j += count) {
+                    assert (partialSumArray[j]);
+                    Value * vec = b.CreateBitCast(partialSumArray[j], unpackTy);
+                    partialSumArray[j] = b.esimd_mergel(fw, vec, nil);
+                    assert ((j + half) < inputTypePerSizeField);
+                    assert (partialSumArray[j + half] == nullptr);
+                    partialSumArray[j + half] = b.esimd_mergeh(fw, vec, nil);
                 }
             }
 
@@ -406,12 +388,12 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
                 for (unsigned i = 0; i < inputTypePerSizeField; ++i) {
                     Value * const sum = b.CreateBitCast(partialSumArray[i], sizeVecTy);
                     newPositiveSum = b.CreateAdd(sum, positiveSumPhi);
-                    Value * const idx = b.CreateAdd(posPhi, b.getSize(i * fieldsPerBlock));
+                    Value * const idx = b.CreateAdd(writePosPhi, b.getSize(i * outputFieldsPerBlock));
                     Value * const ptr = b.CreateInBoundsGEP(sizeTy, positiveArray, idx);
                     b.CreateAlignedStore(newPositiveSum, b.CreatePointerCast(ptr, ptrVecTy), vecTyAlign);
                 }
-                newPositiveSum = b.mvmd_srli(sizeWidth, newPositiveSum, fieldsPerBlock - 1);
-                for (unsigned j = 1; j < fieldsPerBlock; j *= 2) {
+                newPositiveSum = b.mvmd_srli(sizeWidth, newPositiveSum, outputFieldsPerBlock - 1);
+                for (unsigned j = 1; j < outputFieldsPerBlock; j *= 2) {
                     Value * const shifted = b.mvmd_slli(sizeWidth, newPositiveSum, j);
                     newPositiveSum = b.CreateOr(newPositiveSum, shifted);
                 }
@@ -429,12 +411,12 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
                         sum = b.CreateSub(vec_IW, sum);
                     }
                     newNegativeSum = b.CreateAdd(sum, negativeSumPhi);
-                    Value * const idx = b.CreateAdd(posPhi, b.getSize(i * fieldsPerBlock));
+                    Value * const idx = b.CreateAdd(writePosPhi, b.getSize(i * outputFieldsPerBlock));
                     Value * const ptr = b.CreateInBoundsGEP(sizeTy, negativeArray, idx);
                     b.CreateAlignedStore(newNegativeSum, b.CreatePointerCast(ptr, ptrVecTy), vecTyAlign);
                 }
-                newNegativeSum = b.mvmd_srli(sizeWidth, newNegativeSum, fieldsPerBlock - 1);
-                for (unsigned j = 1; j < fieldsPerBlock; j *= 2) {
+                newNegativeSum = b.mvmd_srli(sizeWidth, newNegativeSum, outputFieldsPerBlock - 1);
+                for (unsigned j = 1; j < outputFieldsPerBlock; j *= 2) {
                     Value * const shifted = b.mvmd_slli(sizeWidth, newNegativeSum, j);
                     newNegativeSum = b.CreateOr(newNegativeSum, shifted);
                 }
@@ -465,12 +447,13 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
 
 
 
-        Value * const nextPos = b.CreateAdd(posPhi, sz_STEPS);
-        posPhi->addIncoming(nextPos, popCountLoop);
+        Value * const nextPos = b.CreateAdd(writePosPhi, sz_STEPS);
+        writePosPhi->addIncoming(nextPos, popCountLoop);
+
         Value * const nextIndex = b.CreateAdd(indexPhi, sz_ONE);
         indexPhi->addIncoming(nextIndex, popCountLoop);
 
-        b.CreateCondBr(b.CreateICmpNE(nextIndex, numOfFullVectors), popCountLoop, popCountExit);
+        b.CreateCondBr(b.CreateICmpNE(nextIndex, totalNumOfStrides), popCountLoop, popCountExit);
 
         // ----------------------------------------------------------------------------------------
         // process any remaining partial vectors
@@ -478,28 +461,37 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
 
         b.SetInsertPoint(popCountExit);
         PHINode * const finalPosPhi = b.CreatePHI(sizeTy, 2);
-        finalPosPhi->addIncoming(initPosition, entry);
+        finalPosPhi->addIncoming(numProcessed, entry);
         finalPosPhi->addIncoming(nextPos, popCountLoop);
+        PHINode * const finalBlockOffsetPhi = b.CreatePHI(sizeTy, 2);
+        finalBlockOffsetPhi->addIncoming(startBlockOffset, entry);
+        finalBlockOffsetPhi->addIncoming(sz_ZERO, popCountLoop);
+
         PHINode * finalPositiveSumPhi = nullptr;
         if (positiveArray) {
             finalPositiveSumPhi = b.CreatePHI(sizeVecTy, 2);
-            finalPositiveSumPhi->addIncoming(initialPositiveCount, entry);
+            finalPositiveSumPhi->addIncoming(posCount, entry);
             finalPositiveSumPhi->addIncoming(newPositiveSum, popCountLoop);
         }
         PHINode * finalNegativeSumPhi = nullptr;
         if (negativeArray) {
             finalNegativeSumPhi = b.CreatePHI(sizeVecTy, 2);
-            finalNegativeSumPhi->addIncoming(initialNegativeCount, entry);
+            finalNegativeSumPhi->addIncoming(negCount, entry);
             finalNegativeSumPhi->addIncoming(newNegativeSum, popCountLoop);
         }
+
         if (positiveArray) {
-            positivePartialSum = b.mvmd_extract(sizeWidth, finalPositiveSumPhi, fieldsPerBlock - 1);
+            positivePartialSum = b.mvmd_extract(sizeWidth, finalPositiveSumPhi, outputFieldsPerBlock - 1);
         }
         if (negativeArray) {
-            negativePartialSum = b.mvmd_extract(sizeWidth, finalNegativeSumPhi, fieldsPerBlock - 1);
+            negativePartialSum = b.mvmd_extract(sizeWidth, finalNegativeSumPhi, outputFieldsPerBlock - 1);
         }
 
-        generateIterativePopCountCode(finalPosPhi, total, numOfFullVectors, false,
+        Value * finalStartPos = finalPosPhi;
+
+        Value * finalBlockOffset = finalBlockOffsetPhi;
+
+        generateIterativePopCountCode(finalStartPos, totalNumOfStrides, finalBlockOffset, false,
                                       positivePartialSum, negativePartialSum);
 
     } else { // inputWidth >= blockWidth
@@ -507,8 +499,6 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
         // ----------------------------------------------------------------------------------------
         // process all full vector width blocks
         // ----------------------------------------------------------------------------------------
-
-        getArrays(position);
 
         BasicBlock * const entry = b.GetInsertBlock();
         BasicBlock * const popCountLoop = b.CreateBasicBlock("Loop");
@@ -602,12 +592,7 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
             positivePartialSum = b.CreateAdd(positiveSumPhi, sum);
             positiveSumPhi->addIncoming(positivePartialSum, popCountLoop);
             Value * const ptr = b.CreateInBoundsGEP(sizeTy, positiveArray, index);
-            b.CreateStore(positivePartialSum, ptr);
-            #ifdef PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY
-            debugPrint("> pos[%" PRIu64 "] = %" PRIu64, b.CreateAdd(position, index), positivePartialSum);
-            #elif defined(PRINT_POP_COUNTS_TO_STDERR)
-            debugPrint("> pos[%" PRIu64 "] = %" PRIu64 " (0x%" PRIx64 ")", b.CreateAdd(position, index), positivePartialSum, ptr);
-            #endif
+            b.CreateAlignedStore(positivePartialSum, ptr, sizeTyAlign);
         }
 
         if (negativeArray) {
@@ -619,12 +604,7 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
             negativePartialSum = b.CreateAdd(negativeSumPhi, negSum);
             negativeSumPhi->addIncoming(negativePartialSum, popCountLoop);
             Value * const ptr = b.CreateInBoundsGEP(sizeTy, negativeArray, index);
-            b.CreateStore(negativePartialSum, ptr);
-            #ifdef PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY
-            debugPrint("> neg[%" PRIu64 "] = %" PRIu64, b.CreateAdd(position, index), negativePartialSum);
-            #elif defined(PRINT_POP_COUNTS_TO_STDERR)
-            debugPrint("> neg[%" PRIu64 "] = %" PRIu64 " (0x%" PRIx64 ")", b.CreateAdd(position, index), negativePartialSum, ptr);
-            #endif
+            b.CreateAlignedStore(negativePartialSum, ptr, sizeTyAlign);
         }
 
 
@@ -651,53 +631,79 @@ void PopCountKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * co
     }
     #endif
 
+    #if !defined(PRINT_POP_COUNTS_TO_STDERR) && !defined(PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY)
     if (codegen::DebugOptionIsSet(codegen::EnablePipelineAsserts)) {
-
+    #endif
         BasicBlock * const entry = b.GetInsertBlock();
         BasicBlock * const checkLoop = b.CreateBasicBlock();
         BasicBlock * const checkExit = b.CreateBasicBlock();
-
-
-        b.CreateCondBr(b.CreateICmpNE(numOfStrides, sz_ZERO), checkLoop, checkExit);
+        b.CreateBr(checkLoop);
 
         b.SetInsertPoint(checkLoop);
-        PHINode * idx = b.CreatePHI(sizeTy, 2);
-        idx->addIncoming(sz_ZERO, entry);
+        PHINode * idxPhi = b.CreatePHI(sizeTy, 2);
+        idxPhi->addIncoming(sz_ZERO, entry);
         PHINode * priorPos = nullptr;
         if (positiveArray) {
             priorPos = b.CreatePHI(sizeTy, 2);
-            priorPos->addIncoming(initPos, entry);
+            priorPos->addIncoming(initialPositiveCount, entry);
         }
         PHINode * priorNeg = nullptr;
         if (negativeArray) {
             priorNeg = b.CreatePHI(sizeTy, 2);
-            priorNeg->addIncoming(initNeg, entry);
+            priorNeg->addIncoming(initialNegativeCount, entry);
         }
+        Value * lastPosVal = nullptr;
         if (positiveArray) {
-            Value * ptr = b.CreateGEP(sizeTy, positiveArray, idx);
-            Value * val = b.CreateLoad(sizeTy, ptr);
+            Value * ptr = b.CreateGEP(sizeTy, positiveArray, idxPhi);
+            Value * val = b.CreateAlignedLoad(sizeTy, ptr, sizeTyAlign);
+            lastPosVal = val;
+            #ifdef PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY
+            debugPrint("> pos[%" PRIu64 "] = %" PRIu64, b.CreateAdd(position, idx), val);
+            #elif defined(PRINT_POP_COUNTS_TO_STDERR)
+            debugPrint("> pos[%" PRIu64 "] = %" PRIu64 " (0x%" PRIx64 ")", b.CreateAdd(position, idxPhi), val, ptr);
+            #endif
             b.CreateAssert(b.CreateICmpULE(priorPos, val),
                            "Prior positive popcount value %" PRIu64 " is not less than current %" PRIu64 " at index %" PRIu64,
-                           priorPos, val, idx);
+                           priorPos, val, idxPhi);
             priorPos->addIncoming(val, checkLoop);
         }
+        Value * lastNegVal = nullptr;
         if (negativeArray) {
-            Value * ptr = b.CreateGEP(sizeTy, negativeArray, idx);
-            Value * val = b.CreateLoad(sizeTy, ptr);
+            Value * ptr = b.CreateGEP(sizeTy, negativeArray, idxPhi);
+            Value * val = b.CreateAlignedLoad(sizeTy, ptr, sizeTyAlign);
+            lastNegVal = val;
+            #ifdef PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY
+            debugPrint("> neg[%" PRIu64 "] = %" PRIu64, b.CreateAdd(position, idx), val);
+            #elif defined(PRINT_POP_COUNTS_TO_STDERR)
+            debugPrint("> neg[%" PRIu64 "] = %" PRIu64 " (0x%" PRIx64 ")", b.CreateAdd(position, idxPhi), val, ptr);
+            #endif
             b.CreateAssert(b.CreateICmpULE(priorNeg, val),
                            "Prior negative popcount value %" PRIu64 " is not less than current %" PRIu64 " at index %" PRIu64,
-                           priorNeg, val, idx);
+                           priorNeg, val, idxPhi);
             priorNeg->addIncoming(val, checkLoop);
         }
-        Value * nextIdx = b.CreateAdd(idx, sz_ONE);
-        idx->addIncoming(nextIdx, checkLoop);
+        Value * const nextIdx = b.CreateAdd(idxPhi, sz_ONE);
+        idxPhi->addIncoming(nextIdx, checkLoop);
 
-        b.CreateCondBr(b.CreateICmpNE(numOfStrides, nextIdx), checkLoop, checkExit);
+        b.CreateCondBr(b.CreateICmpULT(nextIdx, numOfStrides), checkLoop, checkExit);
 
         b.SetInsertPoint(checkExit);
-    }
+        if (positiveArray) {
+            b.CreateAssert(b.CreateICmpEQ(lastPosVal, positivePartialSum),
+                           "Last positive popcount value %" PRIu64 " should be %" PRIu64 " at index %" PRIu64,
+                           lastPosVal, positivePartialSum, idxPhi);
+        }
+        if (negativeArray) {
+            b.CreateAssert(b.CreateICmpEQ(lastNegVal, negativePartialSum),
+                           "Last negative popcount value %" PRIu64 " should be %" PRIu64 " at index %" PRIu64,
+                           lastNegVal, negativePartialSum, idxPhi);
+        }
 
+    #if !defined(PRINT_POP_COUNTS_TO_STDERR) && !defined(PRINT_POP_COUNTS_TO_STDERR_NO_ADDRESS_DISPLAY)
+    }
+    #endif
 }
+
 
 #ifdef USE_LOOKBEHIND_FOR_LAST_VALUE
 #define LOOK_BEHIND_ATTR , LookBehind(1)

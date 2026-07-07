@@ -471,7 +471,7 @@ ElemSpreadShortStrides::ElemSpreadShortStrides(LLVMTypeSystemInterface & ts,
 {Binding("mask", mask, FixedRate(1), Principal()),
  // The following would be preferred, but is currently buggy.
 #ifdef USE_SHORT_STRIDE_POPCOUNT
- Binding("source", source, PopcountOf("mask"), ZeroExtended())},
+ Binding("source", source, PopcountOf("mask"), EmptyReadOverflow())},
 #else
  Binding("source", source, BoundedRate(0, 1), ZeroExtended())},
 #endif
