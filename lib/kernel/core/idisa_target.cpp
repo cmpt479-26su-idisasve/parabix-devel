@@ -10,6 +10,7 @@
 #ifdef PARABIX_ARM_TARGET
 #include <llvm/TargetParser/AArch64TargetParser.h>
 #include <idisa/idisa_arm_builder.h>
+#include <idisa/idisa_sve_builder.h>
 #endif
 #ifdef PARABIX_X86_TARGET
 #include <idisa/idisa_sse_builder.h>
