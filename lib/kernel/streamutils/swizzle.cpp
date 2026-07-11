@@ -160,9 +160,8 @@ void SwizzleByGather::generateDoBlockMethod(KernelBuilder & b) {
 
     for (unsigned i = 0; i < 2; i++) {
         std::vector<llvm::Value*> inputStream;
-        Value* inputPtr = b.getInputStreamBlockPtr("inputGroup" + std::to_string(i), b.getSize(0));
+        Value* inputBytePtr = b.getInputStreamBlockPtr("inputGroup" + std::to_string(i), b.getSize(0));
 
-        Value* inputBytePtr = b.CreatePointerCast(inputPtr, b.getInt8PtrTy());
         Value *addresses = ConstantVector::get(
                 {b.getInt32(0), b.getInt32(32), b.getInt32(64), b.getInt32(96)});
 

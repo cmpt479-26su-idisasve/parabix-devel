@@ -104,7 +104,6 @@ void P2SKernelWithCompressedOutput::generateDoBlockMethod(KernelBuilder & b) {
     Value * unitCounts = b.hsimd_partial_sum(unitsPerRegister, fieldCounts);
 
     Value * output_ptr = b.getOutputStreamBlockPtr("byteStream", b.getInt32(0));
-    output_ptr = b.CreatePointerCast(output_ptr, b.getInt8PtrTy());
     Value * offset = b.getInt32(0);
     for (unsigned j = 0; j < 8; ++j) {
         b.CreateStore(bytePack[j], b.CreateBitCast(b.CreateGEP(i8, output_ptr, offset), bitBlockPtrTy));
@@ -181,7 +180,6 @@ void P2S16Kernel::generateDoBlockMethod(KernelBuilder & b) {
 void P2S16KernelWithCompressedOutput::generateDoBlockMethod(KernelBuilder & b) {
     IntegerType * i16Ty = b.getInt16Ty();
     IntegerType * i32Ty = b.getInt32Ty();
-    PointerType * int16PtrTy = b.getInt16Ty()->getPointerTo();
     PointerType * bitBlockPtrTy = b.getBitBlockType()->getPointerTo();
     ConstantInt * blockMask = b.getSize(b.getBitBlockWidth() - 1);
     ConstantInt * ZERO = b.getInt32(0);
@@ -205,7 +203,6 @@ void P2S16KernelWithCompressedOutput::generateDoBlockMethod(KernelBuilder & b) {
     Value * const fieldCounts = b.simd_popcount(unitsPerRegister, extractionMask);
     Value * unitCounts = b.hsimd_partial_sum(unitsPerRegister, fieldCounts);
     Value * outputPtr = b.getOutputStreamBlockPtr("i16Stream", ZERO);
-    outputPtr = b.CreatePointerCast(outputPtr, int16PtrTy);
     Value * const i16UnitsGenerated = b.getProducedItemCount("i16Stream"); // units generated to buffer
     outputPtr = b.CreateGEP(i16Ty, outputPtr, b.CreateAnd(i16UnitsGenerated, blockMask));
 
@@ -334,7 +331,6 @@ P2S21Kernel::P2S21Kernel(LLVMTypeSystemInterface & ts, StreamSet *u21bits, Strea
 void P2S16KernelWithCompressedOutputOld::generateDoBlockMethod(KernelBuilder & b) {
     IntegerType * i16Ty = b.getInt16Ty();
     IntegerType * i32Ty = b.getInt32Ty();
-    PointerType * int16PtrTy = b.getInt16Ty()->getPointerTo();
     PointerType * bitBlockPtrTy = b.getBitBlockType()->getPointerTo();
     ConstantInt * stride = b.getSize(getStride());
 
@@ -359,7 +355,6 @@ void P2S16KernelWithCompressedOutputOld::generateDoBlockMethod(KernelBuilder & b
     Value * unit_counts = b.CreateBlockAlignedLoad(vecTy, delCountBlock_ptr);
 
     Value * u16_output_ptr = b.getOutputStreamBlockPtr("i16Stream", b.getInt32(0));
-    u16_output_ptr = b.CreatePointerCast(u16_output_ptr, int16PtrTy);
     Value * i16UnitsGenerated = b.getProducedItemCount("i16Stream"); // units generated to buffer
     u16_output_ptr = b.CreateGEP(i16Ty, u16_output_ptr, b.CreateURem(i16UnitsGenerated, stride));
 
