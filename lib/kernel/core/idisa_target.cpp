@@ -67,6 +67,7 @@ bool SVE_available() {
     #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
     if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        llvm::errs() << "SVE_available failed to get host CPU features";
         return false;
     }
     #else
@@ -81,6 +82,24 @@ bool SVE_available() {
     llvm::errs() << "\n";
 
     return features.lookup("sve");
+#else
+    return false;
+#endif
+}
+
+bool SVE2_available() {
+#ifdef PARABIX_ARM_TARGET
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
+    StringMap<bool> features;
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        llvm::errs() << "SVE2_available failed to get host CPU features";
+        return false;
+    }
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+
+    return features.lookup("sve2");
 #else
     return false;
 #endif

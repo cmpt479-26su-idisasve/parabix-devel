@@ -68,8 +68,14 @@ CPUDriver::CPUDriver(std::string && moduleName)
     builder.setOptLevel(codegen::BackEndOptLevel);
 
     // TODO: make a path for a command-line override, or fix the feature detection under QEMU, or something
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
-    sys::getHostCPUFeatures(features);
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        throw std::runtime_error("CPUDriver failed to get host CPU features");
+    }
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
 
     std::vector<std::string> attrs;
     for (auto & flag : features) {
