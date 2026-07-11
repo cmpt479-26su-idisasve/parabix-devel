@@ -383,8 +383,7 @@ Kernel::ParamMap::PairEntry PipelineKernel::createRepeatingStreamSet(KernelBuild
         new GlobalVariable(mod, arrTy, true, GlobalValue::ExternalLinkage, patternVec);
     const auto align = blockWidth / 8;
     patternData->setAlignment(MaybeAlign{align});
-    Value * const ptr = b.CreatePointerCast(patternData, b.getVoidPtrTy());
-    return ParamMap::PairEntry{ptr, b.getSize(patternLength)};
+    return ParamMap::PairEntry{patternData, b.getSize(patternLength)};
 }
 
 /** ------------------------------------------------------------------------------------------------------------- *

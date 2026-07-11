@@ -1024,7 +1024,6 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
 
         StructType * const logChunkTy = StructType::get(C, fields);
         PointerType * const logChunkPtrTy = logChunkTy->getPointerTo();
-        PointerType * const logChunkPtrPtrTy = logChunkPtrTy->getPointerTo();
 
         Value * const logChunkPtrPtr = nextArg();
         Value * const segNo = nextArg();

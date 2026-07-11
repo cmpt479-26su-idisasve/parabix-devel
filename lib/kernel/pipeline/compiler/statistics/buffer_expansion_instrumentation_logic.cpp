@@ -50,8 +50,6 @@ generate_function:
     const auto int8PtrTyAlign = DL.getABITypeAlign(i8PtrTy).value();
 
     StructType * handleTy = mTarget->getSharedStateType();
-    PointerType * handlePtrTy = handleTy->getPointerTo();
-
 
     FixedArray<Type *, 4> paramTypes;
     paramTypes[0] = voidPtrTy; // pipeline handle

@@ -136,7 +136,6 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
 
     Value * threadStateArray = b.CreateAlignedMalloc(threadStateArraySize, b.getCacheAlignment());
     b.CreateMemZero(threadStateArray, threadStateArraySize, b.getCacheAlignment());
-    threadStateArray = b.CreatePointerCast(threadStateArray, threadStructTy->getPointerTo());
 
     IntegerType * const intPtrTy = b.getIntPtrTy(DL);
 
@@ -199,8 +198,8 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
     pthreadCreateArgs[0] = b.CreateInBoundsGEP(threadStructTy, threadStateArray, fieldIndex);
     assert (pthreadCreateArgs[0]->getType() == pThreadTy->getPointerTo());
     pthreadCreateArgs[1] = ConstantPointerNull::get(voidPtrTy);
-    pthreadCreateArgs[2] = b.CreatePointerCast(threadFunc, voidPtrTy);
-    pthreadCreateArgs[3] = b.CreatePointerCast(cThreadState, voidPtrTy);
+    pthreadCreateArgs[2] = threadFunc;
+    pthreadCreateArgs[3] = cThreadState;
     b.CreateCall(pthreadCreateFn->getFunctionType(), pthreadCreateFn, pthreadCreateArgs);
     if (mUseDynamicMultithreading) {
         b.CreateBr(constructNextThread);
@@ -361,7 +360,7 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
         arg->setName("threadStruct");
 
         b.SetInsertPoint(BasicBlock::Create(m->getContext(), "entry", threadFunc));
-        Value * const threadStruct = b.CreatePointerCast(arg, threadStructPtrTy);
+        Value * const threadStruct = arg;
         readThreadStructObject(b, threadStructTy, threadStruct);
         assert (isFromCurrentFunction(b, getHandle(), !mTarget->isStateful()));
         assert (isFromCurrentFunction(b, getThreadLocalHandle(), !mTarget->hasThreadLocal()));
@@ -623,7 +622,7 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
                 b.CreateAlignedStore(sz_ONE, addThreadStateFlagPtr, SizeTyABIAlignment);
                 pthreadCreateArgs[0] = threadIdPtr;
                 Value * const ts = b.CreateInBoundsGEP(threadStructTy, threadStruct, selectToAddPhi);
-                pthreadCreateArgs[3] = b.CreatePointerCast(ts, voidPtrTy);
+                pthreadCreateArgs[3] = ts;
                 b.CreateCall(pthreadCreateFn->getFunctionType(), pthreadCreateFn, pthreadCreateArgs);
                 Value * numOfThreadsAfterAdd = b.CreateAdd(activeThreadsPhi, sz_ONE);
                 b.CreateBr(recordBeforeNextSegment);
@@ -815,7 +814,7 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
 
     b.restoreIP(resumePoint);
     FixedArray<Value *, 1> processArgs;
-    processArgs[0] = b.CreatePointerCast(processState, voidPtrTy);
+    processArgs[0] = processState;
     Value * const mainThreadRetVal = b.CreateCall(threadFuncType, processThreadFunc, processArgs);
 
     Value * firstSegNo = nullptr;
@@ -891,7 +890,6 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
     // calculate the last segment # used by any kernel in case any reports require it.
     Value * finalSegNo = nullptr;
     if (LLVM_UNLIKELY(anyDebugOptionIsSet)) {
-        // Value * const retVal = b.CreatePointerCast(status, intPtrPtrTy);
         Value * const retVal = b.CreatePtrToInt(b.CreateAlignedLoad(voidPtrTy, status, PtrTyABIAlignment), intPtrTy);
         finalSegNo = b.CreateUMax(finalSegNoPhi, retVal);
     }

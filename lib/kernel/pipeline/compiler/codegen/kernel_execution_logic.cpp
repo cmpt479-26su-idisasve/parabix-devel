@@ -471,7 +471,7 @@ void PipelineCompiler::buildKernelCallArgumentList(KernelBuilder & b, ArgVec & a
             debugPrint(b, makeBufferName(mKernelId, inputPort) + "_addr = %" PRIx64, addr);
             StreamSetBuffer * bf = mBufferGraph[source(port, mBufferGraph)].Buffer;
             if (isa<ManagedDynamicBuffer>(bf)) {
-                Value * start = b.CreatePointerCast(bf->getMallocAddress(b), b.getInt8PtrTy());
+                Value * start = bf->getMallocAddress(b);
                 Value * const cap = bf->getInternalCapacity(b);
                 auto & dl = b.getModule()->getDataLayout();
                 Value * const bytes = b.CreateMulRational(cap, Rational{b.getTypeSize(dl, bf->getType()), b.getBitBlockWidth()});
@@ -480,7 +480,7 @@ void PipelineCompiler::buildKernelCallArgumentList(KernelBuilder & b, ArgVec & a
             }
             #endif
             #endif
-            addNextArg(b.CreatePointerCast(addr, voidPtrTy));
+            addNextArg(addr);
             if (LLVM_UNLIKELY(mKernelIsInternallySynchronized)) {
                 Value * isExhausted = nullptr;
                 if (mExhaustedInputPortPhi[inputPort]) {
@@ -540,7 +540,7 @@ void PipelineCompiler::buildKernelCallArgumentList(KernelBuilder & b, ArgVec & a
         Value * vba = nullptr;
 
         if (LLVM_UNLIKELY(rt.isShared())) {
-            addNextArg(b.CreatePointerCast(buffer->getHandle(), voidPtrTy));
+            addNextArg(buffer->getHandle());
         } else if (LLVM_UNLIKELY(rt.isManaged())) {
             if (LLVM_UNLIKELY(numOfVirtualBaseAddresses == mVirtualBaseAddressPtr.size())) {
                 auto vba = b.CreateAllocaAtEntryPoint(voidPtrTy);
@@ -550,7 +550,7 @@ void PipelineCompiler::buildKernelCallArgumentList(KernelBuilder & b, ArgVec & a
             #ifdef PRINT_DEBUG_MESSAGES
             debugPrint(b, makeBufferName(mKernelId, rt.Port) + "_produced = %" PRIu64, produced);
             #endif
-            addNextArg(b.CreatePointerCast(ptr, voidPtrPtrTy));
+            addNextArg(ptr);
             mReturnedOutputVirtualBaseAddressPtr[rt.Port] = ptr;
             hasManagedOutput = true;
         } else {
@@ -561,13 +561,13 @@ void PipelineCompiler::buildKernelCallArgumentList(KernelBuilder & b, ArgVec & a
             debugPrint(b, makeBufferName(mKernelId, rt.Port) + "_vba = %" PRIx64, vba);
             #endif
             #endif
-            addNextArg(b.CreatePointerCast(vba, voidPtrTy));
+            addNextArg(vba);
         }
 
         #ifdef PRINT_DEBUG_MESSAGES
         #ifndef PRINT_DEBUG_MESSAGES_NO_ADDRESS_DISPLAY
         if (isa<ManagedDynamicBuffer>(buffer)) {
-        Value * start = b.CreatePointerCast(buffer->getMallocAddress(b), b.getInt8PtrTy());
+        Value * start = buffer->getMallocAddress(b);
         Value * const cap = buffer->getInternalCapacity(b);
         auto & dl = b.getModule()->getDataLayout();
         Value * const bytes = b.CreateMulRational(cap, Rational{b.getTypeSize(dl, buffer->getType()), b.getBitBlockWidth()});
@@ -612,7 +612,7 @@ void PipelineCompiler::buildKernelCallArgumentList(KernelBuilder & b, ArgVec & a
     if (LLVM_UNLIKELY(mTraceDynamicBuffers && hasManagedOutput)) {
         assert (mBufferExpansionFunction);
         addNextArg(mBufferExpansionFunction);
-        addNextArg(b.CreatePointerCast(getHandle(), voidPtrTy));
+        addNextArg(getHandle());
     }
 
     assert (args.size() == mKernelDoSegmentFunctionType->getNumParams());
