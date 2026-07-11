@@ -1313,7 +1313,7 @@ Value * Kernel::createInstance(KernelBuilder & b) const {
         Value * const stateObj = b.CreatePageAlignedMalloc(stateTySize);
         const auto align = DL.getABITypeAlign(stateTy).value();
         b.CreateMemZero(stateObj, stateTySize, align);
-        return b.CreatePointerCast(stateObj, stateTy->getPointerTo());
+        return stateObj;
     }
     llvm_unreachable("createInstance should not be called on stateless kernels");
     return nullptr;
@@ -1434,7 +1434,7 @@ Value * Kernel::constructFamilyKernels(KernelBuilder & b, InitArgs & hostArgs, P
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
             b.CreateAssert(ptr, "constructFamilyKernels cannot pass a null value to pipeline");
         }
-        hostArgs.push_back(b.CreatePointerCast(ptr, voidPtrTy));
+        hostArgs.push_back(ptr);
     };
 
     auto addHostVoidArg = [&]() {
