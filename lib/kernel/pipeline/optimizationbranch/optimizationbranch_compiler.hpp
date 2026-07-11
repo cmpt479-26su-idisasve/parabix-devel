@@ -464,9 +464,6 @@ Value * OptimizationBranchCompiler::loadSharedHandle(KernelBuilder & b, const un
     Value * handle = nullptr;
     if (LLVM_LIKELY(kernel->isStateful())) {
         handle = b.getScalarField(SHARED_PREFIX + std::to_string(branchType));
-        if (kernel->getNumOfNestedKernelFamilyCalls()) {
-            handle = b.CreatePointerCast(handle, kernel->getSharedStateType()->getPointerTo());
-        }
     }
     return handle;
 }
@@ -479,9 +476,6 @@ Value * OptimizationBranchCompiler::loadThreadLocalHandle(KernelBuilder & b, con
     Value * handle = nullptr;
     if (LLVM_LIKELY(kernel->hasThreadLocal())) {
         handle = b.getScalarField(THREAD_LOCAL_PREFIX + std::to_string(branchType));
-        if (kernel->getNumOfNestedKernelFamilyCalls()) {
-            handle = b.CreatePointerCast(handle, kernel->getThreadLocalStateType()->getPointerTo());
-        }
     }
     return handle;
 }
@@ -575,7 +569,7 @@ void OptimizationBranchCompiler::executeBranch(KernelBuilder & b, const unsigned
         const RelationshipRef & host = mStreamSetGraph[e];
         const RelationshipRef & path = mStreamSetGraph[parent(e, mStreamSetGraph)];
         const auto & buffer = mStreamSetInputBuffers[host.Index];
-        addNextArg(b.CreatePointerCast(buffer->getBaseAddress(b), voidPtrTy));
+        addNextArg(buffer->getBaseAddress(b));
         const Binding & input = kernel->getInputStreamSetBinding(path.Index);
         Value * processed = mProcessedInputItemPtr[host.Index];
         if (isAddressable(input)) {
@@ -603,12 +597,12 @@ void OptimizationBranchCompiler::executeBranch(KernelBuilder & b, const unsigned
         /// ----------------------------------------------------
         if (LLVM_UNLIKELY(isShared)) {
             Value * const handle = buffer->getHandle();
-            addNextArg(b.CreatePointerCast(handle, buffer->getHandlePointerType(b)));
+            addNextArg(handle);
         } else if (LLVM_UNLIKELY(isLocal)) {
             addNextArg(mUpdatableOutputBaseVirtualAddressPtr[path.Index]);
         } else {
             Value * const vba = buffer->getBaseAddress(b);
-            addNextArg(b.CreatePointerCast(vba, voidPtrTy));
+            addNextArg(vba);
         }
 
         /// ----------------------------------------------------

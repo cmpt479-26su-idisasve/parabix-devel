@@ -33,7 +33,7 @@ generate_function:
 
     Function * const f0 = m->getFunction(name.str());
     if (f0) {
-        return b.CreatePointerCast(f0, voidPtrTy, name.str());
+        return f0;
     }
 
     auto ip = b.saveIP();
@@ -88,7 +88,6 @@ generate_function:
 
     Value * handle = nextArg();
     handle->setName("handle");
-    handle = b.CreatePointerCast(handle, handlePtrTy);
     Value * outputPortNum = nextArg();
     outputPortNum->setName("outputPortNum");
     Value * produced = nextArg();
@@ -214,7 +213,6 @@ generate_function:
             Value * const newTraceSizeBytes = b.CreateMul(newTraceSize, sz_TraceDataTySize);
             Value * newEntryArray = b.CreateAlignedMalloc(newTraceSizeBytes, traceDataTyAlign);
             b.CreateMemCpy(newEntryArray, entryArray, b.CreateMul(traceIndex, sz_TraceDataTySize), traceDataTyAlign);
-            newEntryArray = b.CreatePointerCast(newEntryArray, entryPtrTy);
             b.CreateAlignedStore(newEntryArray, traceLogArrayField, PtrTyABIAlignment);
             b.CreateFree(entryArray);
 
@@ -276,7 +274,7 @@ generate_function:
 
     b.restoreIP(ip);
 
-    return b.CreatePointerCast(f, voidPtrTy, name.str());
+    return f;
 }
 
 /** ------------------------------------------------------------------------------------------------------------- *

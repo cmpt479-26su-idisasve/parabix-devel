@@ -106,7 +106,6 @@ void PipelineCompiler::recordDynamicThreadingState(KernelBuilder & b, Value * se
     Value * currentNextPtr = b.CreateGEP(DMEntryGroupTy, data, groupIndices);
     assert (newChunk->getType() == b.getVoidPtrTy());
     b.CreateAlignedStore(newChunk, currentNextPtr, PtrTyABIAlignment);
-    newChunk = b.CreatePointerCast(newChunk, cast<PointerType>(data->getType()));
     b.CreateAlignedStore(newChunk, dataPtr, PtrTyABIAlignment);
     BasicBlock * const mallocExit = b.GetInsertBlock();
     b.CreateBr(updateDynamicThreading);
@@ -192,7 +191,7 @@ void PipelineCompiler::printDynamicThreadingReport(KernelBuilder & b) const {
 
     Function * const printFn = b.getModule()->getFunction("__print_dynamic_multithreading_report");
     FixedArray<Value *, 3> args;
-    args[0] = b.CreatePointerCast(dataPtr, b.getVoidPtrTy());
+    args[0] = dataPtr;
     args[1] = b.CreateTrunc(b.getScalarField(MAXIMUM_NUM_OF_THREADS), b.getInt32Ty());
     args[2] = getMaxSegmentNumber(b);
 

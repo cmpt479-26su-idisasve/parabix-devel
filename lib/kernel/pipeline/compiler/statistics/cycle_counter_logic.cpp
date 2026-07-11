@@ -441,9 +441,7 @@ void PipelineCompiler::printOptionalCycleCounter(KernelBuilder & b) {
 
         IntegerType * int64Ty = b.getInt64Ty();
 
-        PointerType * const int64PtrTy = int64Ty->getPointerTo();
-
-        Value * const values = b.CreatePointerCast(b.CreateAlignedMalloc(requiredSpace, sizeof(uint64_t)), int64PtrTy);
+        Value * const values = b.CreateAlignedMalloc(requiredSpace, sizeof(uint64_t));
 
         auto currentPartitionId = -1U;
 
@@ -1028,7 +1026,7 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
         PointerType * const logChunkPtrTy = logChunkTy->getPointerTo();
         PointerType * const logChunkPtrPtrTy = logChunkPtrTy->getPointerTo();
 
-        Value * const logChunkPtrPtr = b.CreatePointerCast(nextArg(), logChunkPtrPtrTy);
+        Value * const logChunkPtrPtr = nextArg();
         Value * const segNo = nextArg();
         Value * const N = nextArg();
         Value * const currentArray = nextArg();
@@ -1067,7 +1065,7 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
         b.SetInsertPoint(allocateNewLogChunk);
         Value * const m = b.CreateAdd(b.CreateMul(N, CHUNK_LENGTH), b.getSize(1));
         Value * const sizeLength = b.CreateAdd(b.CreateMul(m, b.getSize(sizeTySize)), b.getSize(voidPtrTySize));
-        Value * const newLog = b.CreatePointerCast(b.CreatePageAlignedMalloc(sizeLength), logChunkPtrTy);
+        Value * const newLog = b.CreatePageAlignedMalloc(sizeLength);
         b.CreateAlignedStore(b.CreateSub(segNo, segIndex), b.CreateGEP(logChunkTy, newLog, offset), SizeTyABIAlignment);
         offset[1] = i32_ONE;
         b.CreateAlignedStore(currentLog, b.CreateGEP(logChunkTy, newLog, offset), PtrTyABIAlignment);
@@ -1109,7 +1107,7 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
     }
 
     FixedArray<Value *, 4> args;
-    args[0] = b.CreatePointerCast(trace, voidPtrTy);
+    args[0] = trace;
     const auto n = out_degree(mKernelId, mBufferGraph);
     args[1] = mSegNo;
     ConstantInt * N = b.getSize(n);
