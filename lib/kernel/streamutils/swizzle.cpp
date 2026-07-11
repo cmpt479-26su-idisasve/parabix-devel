@@ -14,6 +14,10 @@
 
 using boost::intrusive::detail::floor_log2;
 
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
+#define getOrInsertDeclaration getDeclaration
+#endif
+
 using namespace llvm;
 
 namespace kernel {
@@ -155,7 +159,7 @@ SwizzleByGather::SwizzleByGather(LLVMTypeSystemInterface & ts)
 
 void SwizzleByGather::generateDoBlockMethod(KernelBuilder & b) {
     Value* outputStreamPtr = b.getOutputStreamBlockPtr("outputGroup0", b.getSize(0));
-    Function *gatherFunc = Intrinsic::getDeclaration(b.getModule(), Intrinsic::x86_avx2_gather_d_q_256);
+    Function *gatherFunc = Intrinsic::getOrInsertDeclaration(b.getModule(), Intrinsic::x86_avx2_gather_d_q_256);
     FunctionType * fTy = gatherFunc->getFunctionType();
 
     for (unsigned i = 0; i < 2; i++) {

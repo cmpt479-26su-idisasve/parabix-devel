@@ -35,6 +35,10 @@ using boost::intrusive::detail::floor_log2;
 #include <llvm/Support/Alignment.h>
 #include <unistd.h>
 
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
+#define getOrInsertDeclaration getDeclaration
+#endif
+
 using IntervalSet = boost::icl::interval_set<uintptr_t>;
 
 using Interval = IntervalSet::interval_type;
@@ -172,7 +176,7 @@ Value * CBuilder::CreateRoundUp(Value * const number, Value * const divisor, con
 
 Value * CBuilder::CreateUnsignedSaturatingAdd(Value * const a, Value * const b, const Twine Name) {
     assert (a->getType() == b->getType());
-    Function * const uaddSat = Intrinsic::getDeclaration(getModule(), Intrinsic::uadd_sat, a->getType()); assert (uaddSat);
+    Function * const uaddSat = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::uadd_sat, a->getType()); assert (uaddSat);
     FixedArray<Value *, 2> args;
     args[0] = a;
     args[1] = b;
@@ -181,7 +185,7 @@ Value * CBuilder::CreateUnsignedSaturatingAdd(Value * const a, Value * const b, 
 
 Value * CBuilder::CreateUnsignedSaturatingSub(Value * const a, Value * const b, const Twine Name) {
     assert (a->getType() == b->getType() && a->getType()->isIntOrIntVectorTy());
-    Function * const usubSat = Intrinsic::getDeclaration(getModule(), Intrinsic::usub_sat, a->getType()); assert (usubSat);
+    Function * const usubSat = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::usub_sat, a->getType()); assert (usubSat);
     FixedArray<Value *, 2> args;
     args[0] = a;
     args[1] = b;
@@ -859,7 +863,7 @@ void CBuilder::setNontemporal(StoreInst * s) {
 }
 
 Value * CBuilder::CreatePrefetch(Value * ptr, PrefetchRW mode, unsigned locality, CacheType c) {
-    Function * prefetchIntrin = Intrinsic::getDeclaration(getModule(), Intrinsic::prefetch);
+    Function * prefetchIntrin = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::prefetch);
     Value * modeVal = getInt32(mode == PrefetchRW::Read ? 0 : 1);
     Value * localityVal = getInt32(locality > 3 ? 3 : locality);
     Value * cacheKind = getInt32(c == CacheType::Instruction ? 0 : 1);
@@ -1338,7 +1342,7 @@ BranchInst * CBuilder::CreateLikelyCondBr(Value * Cond, BasicBlock * True, Basic
 }
 
 Value * CBuilder::CreatePopcount(Value * bits) {
-    Function * ctpopFunc = Intrinsic::getDeclaration(getModule(), Intrinsic::ctpop, bits->getType());
+    Function * ctpopFunc = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::ctpop, bits->getType());
     return CreateCall(ctpopFunc->getFunctionType(), ctpopFunc, bits);
 }
 
@@ -1346,7 +1350,7 @@ Value * CBuilder::CreateCountForwardZeroes(Value * value, const Twine Name, cons
     if (LLVM_UNLIKELY(guaranteedNonZero && codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CreateAssert(value, "CreateCountForwardZeroes: value cannot be zero!");
     }
-    Function * cttzFunc = Intrinsic::getDeclaration(getModule(), Intrinsic::cttz, value->getType());
+    Function * cttzFunc = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::cttz, value->getType());
     return CreateCall(cttzFunc->getFunctionType(), cttzFunc, {value, getInt1(guaranteedNonZero)}, Name);
 }
 
@@ -1354,7 +1358,7 @@ Value * CBuilder::CreateCountReverseZeroes(Value * value, const Twine Name, cons
     if (LLVM_UNLIKELY(guaranteedNonZero && codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CreateAssert(value, "CreateCountReverseZeroes: value cannot be zero!");
     }
-    Function * ctlzFunc = Intrinsic::getDeclaration(getModule(), Intrinsic::ctlz, value->getType());
+    Function * ctlzFunc = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::ctlz, value->getType());
     return CreateCall(ctlzFunc->getFunctionType(), ctlzFunc, {value, getInt1(guaranteedNonZero)}, Name);
 }
 
@@ -1409,7 +1413,7 @@ Constant * CBuilder::GetString(StringRef Str) {
 
 Value * CBuilder::CreateReadCycleCounter() {
     Module * const m = getModule();
-    Function * cycleCountFunc = Intrinsic::getDeclaration(m, Intrinsic::readcyclecounter);
+    Function * cycleCountFunc = Intrinsic::getOrInsertDeclaration(m, Intrinsic::readcyclecounter);
     return CreateCall(cycleCountFunc->getFunctionType(), cycleCountFunc, std::vector<Value *>({}));
 }
 

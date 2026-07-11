@@ -856,7 +856,7 @@ Value * PipelineCompiler::getVirtualBaseAddress(KernelBuilder & b,
 void PipelineCompiler::prefetchAtLeastThreeCacheLinesFrom(KernelBuilder & b, Value * const addr, const bool write) const {
 #if 0
     Module * const m = b.getModule();
-    Function * const prefetchFunc = Intrinsic::getDeclaration(m, Intrinsic::prefetch);
+    Function * const prefetchFunc = Intrinsic::getOrInsertDeclaration(m, Intrinsic::prefetch);
 
     DataLayout dl(m);
     Type * const elemTy = addr->getType()->getPointerElementType();

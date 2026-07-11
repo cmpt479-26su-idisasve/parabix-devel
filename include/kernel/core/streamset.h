@@ -49,10 +49,6 @@ public:
         return mAddressSpace;
     }
 
-    __attribute__((const)) llvm::PointerType * getPointerType()  const {
-        return getType()->getPointerTo(getAddressSpace());
-    }
-
     bool isLinear() const {
         return mLinear;
     }
@@ -96,10 +92,6 @@ public:
     virtual llvm::Value * getLinearlyWritableItems(kernel::KernelBuilder & b, llvm::Value * fromPosition, llvm::Value * consumedItems, llvm::Value * requiredOverflow) const = 0;
 
     virtual llvm::StructType * getHandleType(kernel::KernelBuilder & b) const = 0;
-
-    llvm::PointerType * getHandlePointerType(kernel::KernelBuilder & b) const {
-        return getHandleType(b)->getPointerTo(getAddressSpace());
-    }
 
     virtual llvm::Value * getStreamBlockPtr(kernel::KernelBuilder & b, llvm::Value * baseAddress, llvm::Value * streamIndex, llvm::Value * blockIndex) const;
 
