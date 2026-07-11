@@ -190,8 +190,7 @@ void DirectorySearch::generateDoSegmentMethod(KernelBuilder & b) {
 
 
     // parse the entry
-    Value * const bufferOffset = b->CreateGEP(buffer, offset);
-    Value * const dirEntry = b->CreatePointerCast(bufferOffset, dirEntryTy);
+    Value * const dirEntry = b->CreateGEP(buffer, offset);
     Value * const iNodePtr = b->CreateGEP(dirEntry, {b->getInt32(0), b->getInt32(d_ino)});
     Value * const iNode = b->CreateLoad(iNodePtr);
     Constant * const firstNonSystemINode = ConstantInt::get(iNode->getType(), FIRST_NONSYSTEM_INODE);

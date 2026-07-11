@@ -936,7 +936,7 @@ void KernelCompiler::setDoSegmentProperties(KernelBuilder & b, const ArrayRef<Va
         if (LLVM_UNLIKELY(isLocal.isShared())) {
             Value * const handle = nextArg();
             assert (buffer->isDynamic());
-            buffer->setHandle(b.CreatePointerCast(handle, buffer->getHandlePointerType(b)));
+            buffer->setHandle(handle);
         } else if (LLVM_UNLIKELY(isMainPipeline || isLocal.any())) {
             // If an output is a managed buffer, the address is stored within the state instead
             // of being passed in through the function call.

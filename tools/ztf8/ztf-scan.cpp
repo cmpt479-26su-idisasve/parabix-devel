@@ -39,7 +39,6 @@ struct ScanWordParameters {
     unsigned width;
     unsigned indexWidth;
     Type * const Ty;
-    Type * const pointerTy;
     Constant * const WIDTH;
     Constant * const ix_MAXBIT;
     Constant * WORDS_PER_BLOCK;
@@ -53,7 +52,6 @@ struct ScanWordParameters {
 #endif
         indexWidth(stride/width),
         Ty(b.getIntNTy(width)),
-        pointerTy(Ty->getPointerTo()),
         WIDTH(b.getSize(width)),
         ix_MAXBIT(b.getSize(indexWidth - 1)),
         WORDS_PER_BLOCK(b.getSize(b.getBitBlockWidth()/width)),
@@ -279,7 +277,6 @@ void LengthGroupCompression::generateMultiBlockLogic(KernelBuilder & b, Value * 
     //       symbol.
     //
     Value * keyWordBasePtr = b.getInputStreamBlockPtr("symbolMarks", sz_ZERO, strideBlockOffset);
-    keyWordBasePtr = b.CreatePointerCast(keyWordBasePtr, sw.pointerTy);
     b.CreateUnlikelyCondBr(b.CreateICmpEQ(keyMask, sz_ZERO), keysDone, keyProcessingLoop);
 
     b.SetInsertPoint(keyProcessingLoop);
@@ -583,7 +580,6 @@ void LengthGroupDecompression::generateMultiBlockLogic(KernelBuilder & b, Value 
     // appropriate.   Each key is hashed, and is entered into the hash
     // table if there is not already an entry for that hash code.
     Value * keyWordBasePtr = b.getInputStreamBlockPtr("keyMarks0", sz_ZERO, strideBlockOffset);
-    keyWordBasePtr = b.CreateBitCast(keyWordBasePtr, sw.pointerTy);
     DEBUG_PRINT("keyMask", keyMask);
     b.CreateUnlikelyCondBr(b.CreateICmpEQ(keyMask, sz_ZERO), keysDone, keyProcessingLoop);
 
@@ -654,7 +650,6 @@ void LengthGroupDecompression::generateMultiBlockLogic(KernelBuilder & b, Value 
 
     b.SetInsertPoint(keysDone);
     Value * hashWordBasePtr = b.getInputStreamBlockPtr("hashMarks0", sz_ZERO, strideBlockOffset);
-    hashWordBasePtr = b.CreateBitCast(hashWordBasePtr, sw.pointerTy);
     b.CreateUnlikelyCondBr(b.CreateICmpEQ(hashMask, sz_ZERO), hashesDone, hashProcessingLoop);
 
     b.SetInsertPoint(hashProcessingLoop);
@@ -851,7 +846,6 @@ void generateKeyProcessingLoops(KernelBuilder & b,
         Value * extensionMapPtr; Type * extMapTy;
         std::tie(extensionMapPtr, extMapTy) = b.getScalarFieldPtr("prefixMapTable");
         Value * keyWordBasePtr = b.getInputStreamBlockPtr("symbolMarks" + (length > lo ? std::to_string(length-lo) : ""), sz_ZERO, strideBlockOffset);
-        keyWordBasePtr = b.CreateBitCast(keyWordBasePtr, sw.pointerTy);
         b.CreateUnlikelyCondBr(b.CreateICmpEQ(keyMasks[length-lo], sz_ZERO), loopExit, keyProcessingLoop);
 
         b.SetInsertPoint(keyProcessingLoop);
@@ -1145,7 +1139,6 @@ void generateDecompKeyProcessingLoops(KernelBuilder & b,
             loopExit = b.CreateBasicBlock("loopExit");
         }
         Value * keyWordBasePtr = b.getInputStreamBlockPtr("keyMarks" + std::to_string(length-lo), sz_ZERO, strideBlockOffset);
-        keyWordBasePtr = b.CreateBitCast(keyWordBasePtr, sw.pointerTy);
         Value * hashTablePtr; Type * hashTy;
         std::tie(hashTablePtr, hashTy) = b.getScalarFieldPtr("hashTable");
         b.CreateUnlikelyCondBr(b.CreateICmpEQ(keyMasks[length-lo], sz_ZERO), loopExit, keyProcessingLoop);
@@ -1227,7 +1220,6 @@ void generateHashProcessingLoops(KernelBuilder & b,
         Value * hashTablePtr; Type * hashTy;
         std::tie(hashTablePtr, hashTy) = b.getScalarFieldPtr("hashTable");
         Value * hashWordBasePtr = b.getInputStreamBlockPtr("hashMarks" + std::to_string(length-lo), sz_ZERO, strideBlockOffset);
-        hashWordBasePtr = b.CreateBitCast(hashWordBasePtr, sw.pointerTy);
         b.CreateUnlikelyCondBr(b.CreateICmpEQ(hashMasks[length-lo], sz_ZERO), loopExit, hashProcessingLoop);
 
         b.SetInsertPoint(hashProcessingLoop);

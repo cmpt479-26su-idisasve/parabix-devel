@@ -1283,7 +1283,6 @@ void CBuilder::__CreateAssert(Value * const assertion, const Twine format, std::
         assert (getTypeSize(traceTy)->getLimitedValue() == sizeof(__backtrace_data *) * n);
         trace = ConstantArray::get(traceTy, traceArray);
         trace = new GlobalVariable(*m, trace->getType(), true, GlobalVariable::PrivateLinkage, trace);
-        trace = ConstantExpr::getPointerCast(trace, structPtrTy);
         depth = getInt32(n);
         free(demangled);
     } else {
@@ -1895,8 +1894,7 @@ void CBuilder::CheckAddress(Value * const Ptr, Value * const Size, Constant * co
             isPoisoned->setCallingConv(CallingConv::C);
             isPoisoned->setReturnDoesNotAlias();
         }
-        Value * const addr = CreatePointerCast(Ptr, voidPtrTy);
-        Value * const firstPoisoned = CreateCall(isPoisoned->getFunctionType(), isPoisoned, { addr, CreateTrunc(Size, sizeTy) });
+        Value * const firstPoisoned = CreateCall(isPoisoned->getFunctionType(), isPoisoned, { Ptr, CreateTrunc(Size, sizeTy) });
         Value * const valid = CreateICmpEQ(firstPoisoned, ConstantPointerNull::get(voidPtrTy));
         IntegerType * const intPtrTy = getIntPtrTy(getModule()->getDataLayout());
         Value * const startInt = CreatePtrToInt(Ptr, intPtrTy);

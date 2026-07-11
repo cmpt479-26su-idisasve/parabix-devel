@@ -149,7 +149,6 @@ void AbortOnNull::generateMultiBlockLogic(KernelBuilder & b, Value * const numOf
     Module * const m = b.getModule();
     DataLayout DL(m);
     IntegerType * const intPtrTy = DL.getIntPtrType(m->getContext());
-    Type * voidPtrTy = b.getVoidPtrTy();
     Type * blockTy = b.getBitBlockType();
     const auto blocksPerStride = getStride() / b.getBitBlockWidth();
     Constant * const BLOCKS_PER_STRIDE = b.getSize(blocksPerStride);
@@ -217,7 +216,7 @@ void AbortOnNull::generateMultiBlockLogic(KernelBuilder & b, Value * const numOf
 
 
     b.SetInsertPoint(finalStride);
-    b.CreateMemCpy(outputStreamBasePtr, b.CreatePointerCast(byteStreamBasePtr, voidPtrTy), itemsToDo, 1);
+    b.CreateMemCpy(outputStreamBasePtr, byteStreamBasePtr, itemsToDo, 1);
     b.CreateBr(nullByteDetection);
 
     b.SetInsertPoint(nullByteDetection);

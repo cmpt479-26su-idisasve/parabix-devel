@@ -49,8 +49,6 @@ generate_function:
 
     const auto int8PtrTyAlign = DL.getABITypeAlign(i8PtrTy).value();
 
-    StructType * handleTy = mTarget->getSharedStateType();
-
     FixedArray<Type *, 4> paramTypes;
     paramTypes[0] = voidPtrTy; // pipeline handle
     paramTypes[1] = sizeTy; // port num

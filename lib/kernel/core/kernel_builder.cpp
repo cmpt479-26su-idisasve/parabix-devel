@@ -530,10 +530,6 @@ void KernelBuilder::reserveCapacity(const StringRef name, Value * capacity) {
             Function * f = m->getFunction(name.str());
 
             if (f == nullptr) {
-
-                StructType * const handleTy = buffer->getHandleType(*this);
-                PointerType * const handlePtrTy = handleTy->getPointerTo(buffer->getAddressSpace());
-
                 SmallVector<Type *, 7> paramTypes(traceDynamicBuffers ? 7 : 4);
                 paramTypes[0] = voidPtrTy; // shared struct ptr
                 paramTypes[1] = intPtrTy;
