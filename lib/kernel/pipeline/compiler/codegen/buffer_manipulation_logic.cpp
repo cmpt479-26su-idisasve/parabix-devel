@@ -599,7 +599,8 @@ void PipelineCompiler::clearUnwrittenOutputData(KernelBuilder & b) {
 
             Value * const baseAddress = buffer->getBaseAddress(b);
 
-            DataLayout DL(b.getModule());
+            auto & DL = b.getModule()->getDataLayout();
+
             Type * const intPtrTy = DL.getIntPtrType(baseAddress->getType());
 
 

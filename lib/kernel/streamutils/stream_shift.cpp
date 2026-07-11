@@ -279,8 +279,7 @@ void IndexedShiftBack::generateMultiBlockLogic(KernelBuilder & b, Value * const 
 
     b.SetInsertPoint(strideFinalize);
     //  Determining the producedItemCount == the position prior to the last index bit
-    Value * const indexStreamPtr = b.getInputStreamBlockPtr("indexStream", sz_ZERO, strideBlockOffset);
-    Value * const indexWordBasePtr = b.CreateBitCast(indexStreamPtr, sw.pointerTy);
+    Value * const indexWordBasePtr = b.getInputStreamBlockPtr("indexStream", sz_ZERO, strideBlockOffset);
     //
     // Make sure that we are counting zeroes confined to the index width.
     Value * emptyWordsAtEnd = b.CreateCountReverseZeroes(b.CreateTrunc(indexMask, b.getIntNTy(sw.indexWidth)));

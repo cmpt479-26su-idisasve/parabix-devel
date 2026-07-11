@@ -865,7 +865,7 @@ Value * CBuilder::CreatePrefetch(Value * ptr, PrefetchRW mode, unsigned locality
     Value * modeVal = getInt32(mode == PrefetchRW::Read ? 0 : 1);
     Value * localityVal = getInt32(locality > 3 ? 3 : locality);
     Value * cacheKind = getInt32(c == CacheType::Instruction ? 0 : 1);
-    return CreateCall(prefetchIntrin->getFunctionType(), prefetchIntrin, {CreateBitCast(ptr, getInt8PtrTy()), modeVal, localityVal, cacheKind});
+    return CreateCall(prefetchIntrin->getFunctionType(), prefetchIntrin, {ptr, modeVal, localityVal, cacheKind});
 }
 
 PointerType * LLVM_READNONE CBuilder::getFILEptrTy() {
@@ -1105,7 +1105,6 @@ void CBuilder::__CreateAssert(Value * const assertion, const Twine format, std::
         IntegerType * const int1Ty = getInt1Ty();
         IntegerType * const int32Ty = getInt32Ty();
         PointerType * const int8PtrTy = getInt8PtrTy();
-        PointerType * const int8PtrPtrTy = int8PtrTy->getPointerTo();
         // va_list is platform specific but since we are not directly modifying
         // any use of this type in LLVM code, just ensure it is large enough.
         ArrayType * const vaListTy = ArrayType::get(getInt8Ty(), sizeof(va_list));
@@ -1186,7 +1185,7 @@ void CBuilder::__CreateAssert(Value * const assertion, const Twine format, std::
         Function * alloc_exception = getAllocateException();
         Value * const exception = CreateCall(alloc_exception->getFunctionType(), alloc_exception, { getTypeSize(int8PtrTy) } );
         Constant * const nil = ConstantPointerNull::get(int8PtrTy);
-        IRBuilder<>::CreateStore(nil, CreateBitCast(exception, int8PtrPtrTy));
+        IRBuilder<>::CreateStore(nil, exception);
         // NOTE: the second argument is supposed to point to a std::type_info object.
         // The external value Clang passes into it resolves to "null" when RTTI is disabled.
         // This appears to work here but ought to be verified.

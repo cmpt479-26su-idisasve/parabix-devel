@@ -90,7 +90,6 @@ void P2SMultipleStreamsKernel::generateDoBlockMethod(KernelBuilder & b) {
 void P2SKernelWithCompressedOutput::generateDoBlockMethod(KernelBuilder & b) {
     IntegerType * i8 = b.getInt8Ty();
     IntegerType * i32 = b.getInt32Ty();
-    PointerType * bitBlockPtrTy = PointerType::get(b.getBitBlockType(), 0);
     unsigned const unitsPerRegister = b.getBitBlockWidth()/8;
 
     Value * basisBits[8];
@@ -106,7 +105,7 @@ void P2SKernelWithCompressedOutput::generateDoBlockMethod(KernelBuilder & b) {
     Value * output_ptr = b.getOutputStreamBlockPtr("byteStream", b.getInt32(0));
     Value * offset = b.getInt32(0);
     for (unsigned j = 0; j < 8; ++j) {
-        b.CreateStore(bytePack[j], b.CreateBitCast(b.CreateGEP(i8, output_ptr, offset), bitBlockPtrTy));
+        b.CreateStore(bytePack[j], b.CreateGEP(i8, output_ptr, offset));
         offset = b.CreateZExt(b.CreateExtractElement(unitCounts, b.getInt32(j)), i32);
     }
 
@@ -180,7 +179,6 @@ void P2S16Kernel::generateDoBlockMethod(KernelBuilder & b) {
 void P2S16KernelWithCompressedOutput::generateDoBlockMethod(KernelBuilder & b) {
     IntegerType * i16Ty = b.getInt16Ty();
     IntegerType * i32Ty = b.getInt32Ty();
-    PointerType * bitBlockPtrTy = b.getBitBlockType()->getPointerTo();
     ConstantInt * blockMask = b.getSize(b.getBitBlockWidth() - 1);
     ConstantInt * ZERO = b.getInt32(0);
     unsigned const unitsPerRegister = b.getBitBlockWidth()/16;
@@ -216,12 +214,12 @@ void P2S16KernelWithCompressedOutput::generateDoBlockMethod(KernelBuilder & b) {
             merged[0] = b.bitCast(b.esimd_mergel(8, lo_bytes[j], hi_bytes[j]));
             merged[1] = b.bitCast(b.esimd_mergeh(8, lo_bytes[j], hi_bytes[j]));
         }
-        b.CreateAlignedStore(merged[0], b.CreateBitCast(b.CreateGEP(i16Ty, outputPtr, offset), bitBlockPtrTy), 1);
+        b.CreateAlignedStore(merged[0], b.CreateGEP(i16Ty, outputPtr, offset), 1);
         Value * const nextOffset1 = b.CreateZExt(b.CreateExtractElement(unitCounts, b.getInt32(2 * j)), i32Ty);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
             b.CreateAssert(b.CreateICmpULE(offset, nextOffset1), "deletion offset is not monotonically non-decreasing");
         }
-        b.CreateAlignedStore(merged[1], b.CreateBitCast(b.CreateGEP(i16Ty, outputPtr, nextOffset1), bitBlockPtrTy), 1);
+        b.CreateAlignedStore(merged[1], b.CreateGEP(i16Ty, outputPtr, nextOffset1), 1);
         Value * const nextOffset2 = b.CreateZExt(b.CreateExtractElement(unitCounts, b.getInt32(2 * j + 1)), i32Ty);
         if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
             b.CreateAssert(b.CreateICmpULE(nextOffset1, nextOffset2), "deletion offset is not monotonically non-decreasing");
@@ -331,7 +329,6 @@ P2S21Kernel::P2S21Kernel(LLVMTypeSystemInterface & ts, StreamSet *u21bits, Strea
 void P2S16KernelWithCompressedOutputOld::generateDoBlockMethod(KernelBuilder & b) {
     IntegerType * i16Ty = b.getInt16Ty();
     IntegerType * i32Ty = b.getInt32Ty();
-    PointerType * bitBlockPtrTy = b.getBitBlockType()->getPointerTo();
     ConstantInt * stride = b.getSize(getStride());
 
     Value * hi_input[8];
@@ -362,11 +359,11 @@ void P2S16KernelWithCompressedOutputOld::generateDoBlockMethod(KernelBuilder & b
 
     for (unsigned j = 0; j < 8; ++j) {
         Value * merge0 = b.bitCast(b.esimd_mergel(8, hi_bytes[j], lo_bytes[j]));
-        b.CreateAlignedStore(merge0, b.CreateBitCast(b.CreateGEP(i16Ty, u16_output_ptr, offset), bitBlockPtrTy), 1);
+        b.CreateAlignedStore(merge0, b.CreateGEP(i16Ty, u16_output_ptr, offset), 1);
         offset = b.CreateZExt(b.CreateExtractElement(unit_counts, b.getInt32(2 * j)), i32Ty);
 
         Value * merge1 = b.bitCast(b.esimd_mergeh(8, hi_bytes[j], lo_bytes[j]));
-        b.CreateAlignedStore(merge1, b.CreateBitCast(b.CreateGEP(i16Ty, u16_output_ptr, offset), bitBlockPtrTy), 1);
+        b.CreateAlignedStore(merge1, b.CreateGEP(i16Ty, u16_output_ptr, offset), 1);
         offset = b.CreateZExt(b.CreateExtractElement(unit_counts, b.getInt32(2 * j + 1)), i32Ty);
     }
     Value * i16UnitsFinal = b.CreateAdd(i16UnitsGenerated, b.CreateZExt(offset, b.getSizeTy()));

@@ -1485,7 +1485,6 @@ void MatchFilterKernel::generateMultiBlockLogic(KernelBuilder & b, Value * const
 
     b.SetInsertPoint(writeLF);
     Value * finalBytePtr = b.getRawOutputPointer("Output", b.CreateSub(producedPos1, sz_ONE));
-    finalBytePtr = b.CreateBitCast(finalBytePtr, b.getInt8PtrTy());
     b.CreateStore(b.getInt8(0x0A), finalBytePtr);
     b.CreateBr(strideInitialDone);
 
