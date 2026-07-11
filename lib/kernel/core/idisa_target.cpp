@@ -56,60 +56,34 @@ Features getHostCPUFeatures(const StringMap<bool> & features) {
 
 bool NEON_available() {
 #ifdef PARABIX_ARM_TARGET
-    std::vector<StringRef> extNames;
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
-    auto hostCPU = sys::getHostCPUName();
-    auto info = llvm::AArch64::getArchForCpu(hostCPU);
-    if(hostCPU == "generic") {
-        llvm::errs() << "Host CPU has type 'generic', inferring ARMv9\n";
-        info = &llvm::AArch64::ARMV9A;
-    }
-    if (info) {
-        llvm::AArch64::getExtensionFeatures(info->DefaultExts, extNames);
-    } else {
-        llvm::errs() << "NEON_available failed to get CPU info!\n";
-    }
+    return true;
 #else
-    const llvm::AArch64::CpuInfo & info = llvm::AArch64::parseCpu(sys::getHostCPUName());
-    llvm::AArch64::getExtensionFeatures(info.Arch.DefaultExts | info.DefaultExtensions, extNames);
-#endif
-    for (const auto eName : extNames) {
-        //llvm::errs() << "Extension: " << eName << "\n";
-        if (eName == "+neon") return true;
-    }
     return false;
 #endif
-    return false;
 }
 
 bool SVE_available() {
 #ifdef PARABIX_ARM_TARGET
-    std::vector<StringRef> extNames;
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
-    auto hostCPU = sys::getHostCPUName();
-    auto info = llvm::AArch64::getArchForCpu(hostCPU);
-    if(hostCPU == "generic") {
-        llvm::errs() << "Host CPU has type 'generic', inferring ARMv9\n";
-        info = &llvm::AArch64::ARMV9A;
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
+    StringMap<bool> features;
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return false;
     }
-    if (info) {
-        llvm::AArch64::getExtensionFeatures(info->DefaultExts, extNames);
-    } else {
-        llvm::errs() << "SVE_available failed to get CPU info!\n";
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+
+    llvm::errs() << "SVE_available discovered features:";
+    std::vector<std::string> attrs;
+    for (auto & flag : features) {
+        llvm::errs() << " " << (flag.second ? '+' : '-') << flag.first();
     }
+    llvm::errs() << "\n";
+
+    return features.lookup("sve");
 #else
-    const llvm::AArch64::CpuInfo& info =
-        llvm::AArch64::parseCpu(sys::getHostCPUName());
-    llvm::AArch64::getExtensionFeatures(
-        info.Arch.DefaultExts | info.DefaultExtensions, extNames);
-#endif
-    for (const auto eName : extNames) {
-        // llvm::errs() << "Extension: " << eName << "\n";
-        if (eName == "+sve")
-            return true;
-    }
-#endif
     return false;
+#endif
 }
 
 bool AVX2_available() {

@@ -71,15 +71,12 @@ CPUDriver::CPUDriver(std::string && moduleName)
     StringMap<bool> features;
     sys::getHostCPUFeatures(features);
 
-    llvm::errs() << "Features mattrs:";
     std::vector<std::string> attrs;
     for (auto & flag : features) {
         if (flag.second) {
             attrs.push_back("+" + flag.first().str());
-            llvm::errs() << " " << flag.first();
         }
     }
-    llvm::errs() << "\n";
     builder.setMAttrs(attrs);
 
     mTarget.reset(builder.selectTarget());
