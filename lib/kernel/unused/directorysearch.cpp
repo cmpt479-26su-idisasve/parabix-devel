@@ -219,7 +219,7 @@ void DirectorySearch::generateDoSegmentMethod(KernelBuilder & b) {
     }
 
     // compute the name length
-    DataLayout DL(b->getModule());
+    auto & DL = b->getModule()->getDataLayout();
     const StructLayout * const dirEntLayout = DL.getStructLayout(dirEntryTy);
     const auto nameOffset = dirEntLayout->getElementOffset(d_name);
     Constant * const nonNameBytes = ConstantInt::get(recLen->getType(), nameOffset + NON_NAME_PADDING_BYTES);

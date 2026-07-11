@@ -86,7 +86,7 @@ LoadInst * KernelBuilder::CreateMonitoredScalarFieldLoad(const StringRef fieldNa
  * @brief CreateMonitoredScalarFieldStore
  ** ------------------------------------------------------------------------------------------------------------- */
 StoreInst * KernelBuilder::CreateMonitoredScalarFieldStore(const StringRef fieldName, Value * toStore, Value * internalPtr) {
-    DataLayout DL(getModule());
+    auto & DL = getModule()->getDataLayout();
     Type * scalarTy;
     Value * scalarPtr;
     std::tie(scalarPtr, scalarTy) = getScalarFieldPtr(fieldName);
@@ -943,7 +943,7 @@ KernelBuilder::AddressableValue KernelBuilder::makeAddressableValue(Type * type,
         av.To = to;
     } else {
 
-        DataLayout DL(getModule());
+        auto & DL = getModule()->getDataLayout();
         Type * vecTy = type;
         size_t rowCount = 1;
         assert (type->canLosslesslyBitCastTo(value->getType()));

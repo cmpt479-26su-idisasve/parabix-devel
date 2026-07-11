@@ -49,6 +49,10 @@ public:
         return mAddressSpace;
     }
 
+    __attribute__((const)) llvm::PointerType * getPointerType()  const {
+        return getType()->getPointerTo(getAddressSpace());
+    }
+
     bool isLinear() const {
         return mLinear;
     }

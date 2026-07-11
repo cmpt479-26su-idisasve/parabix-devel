@@ -147,7 +147,7 @@ PopcountKernel::PopcountKernel (LLVMTypeSystemInterface & ts, StreamSet * const 
 
 void AbortOnNull::generateMultiBlockLogic(KernelBuilder & b, Value * const numOfStrides) {
     Module * const m = b.getModule();
-    DataLayout DL(m);
+    auto & DL = m->getDataLayout();
     IntegerType * const intPtrTy = DL.getIntPtrType(m->getContext());
     Type * blockTy = b.getBitBlockType();
     const auto blocksPerStride = getStride() / b.getBitBlockWidth();

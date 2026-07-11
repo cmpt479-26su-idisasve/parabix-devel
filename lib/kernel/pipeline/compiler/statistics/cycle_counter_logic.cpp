@@ -1033,7 +1033,8 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
 
         ConstantInt * const CHUNK_LENGTH =  ConstantInt::get(sizeTy, ITEM_COUNT_DELTA_CHUNK_LENGTH);
 
-        DataLayout DL(b.getModule());
+        auto & DL = b.getModule()->getDataLayout();
+
         const auto sizeTySize = b.getTypeSize(DL, sizeTy);
         const auto voidPtrTySize = b.getTypeSize(DL, voidPtrTy);
         Value * const currentLog = b.CreateAlignedLoad(logChunkPtrTy, logChunkPtrPtr, voidPtrTySize);

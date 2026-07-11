@@ -350,7 +350,7 @@ void CarryManager::enterLoopBody(kernel::KernelBuilder & b, BasicBlock * const e
 
         assert (mCarryInfo->getNestedCarryStateType());
 
-        DataLayout DL(b.getModule());
+        auto & DL = b.getModule()->getDataLayout();
 
         IntegerType * const sizeTy = b.getSizeTy();
 

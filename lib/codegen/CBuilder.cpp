@@ -631,7 +631,7 @@ Value * CBuilder::CreateMMap(Value * const addr, Value * size, Value * const pro
 
     Value * ptr = CreateCall(fMMap->getFunctionType(), fMMap, args);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-        DataLayout DL(m);
+        auto & DL = m->getDataLayout();
         IntegerType * const intTy = getIntPtrTy(DL);
         Value * success = CreateICmpNE(CreatePtrToInt(addr, intTy), ConstantInt::get(intTy, (uint64_t)MAP_FAILED));
         CreateAssert(success, "CreateMMap: mmap failed to allocate memory");
@@ -649,7 +649,6 @@ Value * CBuilder::CreateMemFdCreate(Value * const name, Value * const flags) {
     }
     Value * retVal = CreateCall(fShmOpen->getFunctionType(), fShmOpen, {name, flags});
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-        DataLayout DL(m);
         Value * success = CreateICmpNE(retVal, ConstantInt::get(getInt32Ty(), -1ULL));
         CreateAssert(success, "CreateMemFdCreate: failed to create anonymous memory file");
     }
@@ -668,7 +667,6 @@ Value * CBuilder::CreateFTruncate(Value * const fd, Value * size) {
     }
     Value * retVal = CreateCall(fTruncate->getFunctionType(), fTruncate, {fd, size});
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-        DataLayout DL(m);
         Value * success = CreateICmpNE(retVal, ConstantInt::get(getInt32Ty(), -1ULL));
         __CreateAssert(success, "CreateFTruncate: failed to truncate fd", {});
     }
@@ -730,7 +728,7 @@ Value * CBuilder::CreateMRemap(Value * addr, Value * oldSize, Value * newSize) {
     Value * ptr = nullptr;
     if (T.isOSLinux()) {
         Module * const m = getModule();
-        DataLayout DL(m);
+        auto & DL = m->getDataLayout();
         PointerType * const voidPtrTy = getVoidPtrTy();
         IntegerType * const sizeTy = getSizeTy();
         IntegerType * const intTy = getIntPtrTy(DL);
@@ -1619,7 +1617,11 @@ AllocaInst * CBuilder::CreateAllocaAtEntryPoint(Type * Ty, Value * ArraySize, co
     const auto addrSize = DL.getAllocaAddrSpace();
     auto const first = entryBlock->getFirstNonPHIOrDbgOrLifetime();
     AllocaInst * alloca = nullptr;
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
     if (LLVM_UNLIKELY(first == nullptr)) {
+#else
+    if (LLVM_UNLIKELY(first == entryBlock->end())) {
+#endif
         alloca = new AllocaInst(Ty, addrSize, ArraySize, Name, &*entryBlock);
     } else {
         alloca = new AllocaInst(Ty, addrSize, ArraySize, Name, first);
@@ -1645,7 +1647,11 @@ AllocaInst * CBuilder::CreateAlignedAllocaAtEntryPoint(llvm::Type * const Ty, co
     const auto addrSize = DL.getAllocaAddrSpace();
     auto const first = entryBlock->getFirstNonPHIOrDbgOrLifetime();
     AllocaInst * alloca = nullptr;
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
     if (LLVM_UNLIKELY(first == nullptr)) {
+#else
+    if (LLVM_UNLIKELY(first == entryBlock->end())) {
+#endif
         alloca = new AllocaInst(Ty, addrSize, ArraySize, "", &*entryBlock);
     } else {
         alloca = new AllocaInst(Ty, addrSize, ArraySize, "", first);
