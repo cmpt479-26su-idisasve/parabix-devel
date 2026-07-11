@@ -67,19 +67,19 @@ CPUDriver::CPUDriver(std::string && moduleName)
     builder.setTargetOptions(codegen::target_Options);
     builder.setOptLevel(codegen::BackEndOptLevel);
 
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
+    // TODO: make a path for a command-line override, or fix the feature detection under QEMU, or something
     StringMap<bool> features;
     sys::getHostCPUFeatures(features);
-    #else
-    const StringMap<bool> features = sys::getHostCPUFeatures();
-    #endif
 
+    llvm::errs() << "Features mattrs:";
     std::vector<std::string> attrs;
     for (auto & flag : features) {
         if (flag.second) {
             attrs.push_back("+" + flag.first().str());
+            llvm::errs() << " " << flag.first();
         }
     }
+    llvm::errs() << "\n";
     builder.setMAttrs(attrs);
 
     mTarget.reset(builder.selectTarget());

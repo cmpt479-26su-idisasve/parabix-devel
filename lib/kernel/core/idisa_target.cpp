@@ -43,8 +43,7 @@ struct Features {
     bool hasAVX2;
     bool hasAVX512F;
 
-    bool hasSVE;
-    Features() : hasAVX(0), hasAVX2(0), hasAVX512F(0), hasSVE(0) {}
+    Features() : hasAVX(0), hasAVX2(0), hasAVX512F(0) {}
 };
 
 Features getHostCPUFeatures(const StringMap<bool> & features) {
@@ -52,21 +51,26 @@ Features getHostCPUFeatures(const StringMap<bool> & features) {
     hostCPUFeatures.hasAVX = features.lookup("avx");
     hostCPUFeatures.hasAVX2 = features.lookup("avx2");
     hostCPUFeatures.hasAVX512F = features.lookup("avx512f");
-    hostCPUFeatures.hasSVE = features.lookup("sve");
     return hostCPUFeatures;
 }
 
 bool NEON_available() {
 #ifdef PARABIX_ARM_TARGET
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
-    auto info = llvm::AArch64::parseCpu(sys::getHostCPUName());
     std::vector<StringRef> extNames;
+#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
+    auto hostCPU = sys::getHostCPUName();
+    auto info = llvm::AArch64::getArchForCpu(hostCPU);
+    if(hostCPU == "generic") {
+        llvm::errs() << "Host CPU has type 'generic', inferring ARMv9\n";
+        info = &llvm::AArch64::ARMV9A;
+    }
     if (info) {
-        llvm::AArch64::getExtensionFeatures(info->Arch.DefaultExts | info->DefaultExtensions, extNames);
+        llvm::AArch64::getExtensionFeatures(info->DefaultExts, extNames);
+    } else {
+        llvm::errs() << "NEON_available failed to get CPU info!\n";
     }
 #else
     const llvm::AArch64::CpuInfo & info = llvm::AArch64::parseCpu(sys::getHostCPUName());
-    std::vector<StringRef> extNames;
     llvm::AArch64::getExtensionFeatures(info.Arch.DefaultExts | info.DefaultExtensions, extNames);
 #endif
     for (const auto eName : extNames) {
@@ -80,17 +84,22 @@ bool NEON_available() {
 
 bool SVE_available() {
 #ifdef PARABIX_ARM_TARGET
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
-    auto info = llvm::AArch64::parseCpu(sys::getHostCPUName());
     std::vector<StringRef> extNames;
+#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
+    auto hostCPU = sys::getHostCPUName();
+    auto info = llvm::AArch64::getArchForCpu(hostCPU);
+    if(hostCPU == "generic") {
+        llvm::errs() << "Host CPU has type 'generic', inferring ARMv9\n";
+        info = &llvm::AArch64::ARMV9A;
+    }
     if (info) {
-        llvm::AArch64::getExtensionFeatures(
-            info->Arch.DefaultExts | info->DefaultExtensions, extNames);
+        llvm::AArch64::getExtensionFeatures(info->DefaultExts, extNames);
+    } else {
+        llvm::errs() << "SVE_available failed to get CPU info!\n";
     }
 #else
     const llvm::AArch64::CpuInfo& info =
         llvm::AArch64::parseCpu(sys::getHostCPUName());
-    std::vector<StringRef> extNames;
     llvm::AArch64::getExtensionFeatures(
         info.Arch.DefaultExts | info.DefaultExtensions, extNames);
 #endif
@@ -99,7 +108,6 @@ bool SVE_available() {
         if (eName == "+sve")
             return true;
     }
-    return false;
 #endif
     return false;
 }
@@ -139,14 +147,16 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
     if (LLVM_LIKELY(codegen::BlockSize == 0)) {  // No BlockSize override: use processor SIMD width
         codegen::BlockSize = 128;
     }
-    printf("NEON available: %d\n", NEON_available());
-    printf("SVE available: %d\n", SVE_available());
-    if (NEON_available()) {
-        return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
-    }
+    // TODO maybe don't check for NEON, it should always be available on aarch64
+    // Try for SVE/SVE2
     if (SVE_available()) {
         return new KernelBuilderImpl<IDISA_SVE_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
     }
+    // If not available, use NEON
+    if (NEON_available()) {
+        return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
+    }
+    // aarch64 is supposed to always include NEON so shouldn't get here, but if we do, we'll fall back to scalar
 #endif
 #ifdef PARABIX_X86_TARGET
 
@@ -200,6 +210,7 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
             return new KernelBuilderImpl<IDISA_SSE2_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
         }
     }
+    // Otherwise, fall through...
 #endif
     llvm::errs() << "BlockSize 64 default!\n";
     codegen::BlockSize = 64;
