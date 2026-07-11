@@ -217,13 +217,13 @@ void AbortOnNull::generateMultiBlockLogic(KernelBuilder & b, Value * const numOf
 
 
     b.SetInsertPoint(finalStride);
-    b.CreateMemCpy(b.CreatePointerCast(outputStreamBasePtr, voidPtrTy), b.CreatePointerCast(byteStreamBasePtr, voidPtrTy), itemsToDo, 1);
+    b.CreateMemCpy(outputStreamBasePtr, b.CreatePointerCast(byteStreamBasePtr, voidPtrTy), itemsToDo, 1);
     b.CreateBr(nullByteDetection);
 
     b.SetInsertPoint(nullByteDetection);
     //  Find the exact location using memchr, which should be fast enough.
     //
-    Value * ptrToNull = b.CreateMemChr(b.CreatePointerCast(byteStreamBasePtr, voidPtrTy), b.getInt32(0), itemsToDo);
+    Value * ptrToNull = b.CreateMemChr(byteStreamBasePtr, b.getInt32(0), itemsToDo);
     Value * ptrAddr = b.CreatePtrToInt(ptrToNull, intPtrTy);
     b.CreateCondBr(b.CreateICmpEQ(ptrAddr, ConstantInt::getNullValue(intPtrTy)), segmentDone, nullByteFound);
 

@@ -407,9 +407,8 @@ void CarryManager::enterLoopBody(kernel::KernelBuilder & b, BasicBlock * const e
         Value * newCarryStateArray = b.CreatePageAlignedMalloc(newCapacitySize);
         b.CreateMemCpy(newCarryStateArray, carryStateArray, capacitySize, b.getCacheAlignment());
         b.CreateFree(carryStateArray);
-        Value * const startNewArrayPtr = b.CreateGEP(b.getInt8Ty(), b.CreatePointerCast(newCarryStateArray, b.getInt8PtrTy()), capacitySize);
+        Value * const startNewArrayPtr = b.CreateGEP(b.getInt8Ty(), newCarryStateArray, capacitySize);
         b.CreateMemZero(startNewArrayPtr, capacitySize, blockSize);
-        newCarryStateArray = b.CreatePointerCast(newCarryStateArray, nestedCarryPtrTy);
         b.CreateStore(newCarryStateArray, carryStateArrayPtr);
         b.CreateBr(resumeKernel);
 
@@ -421,7 +420,6 @@ void CarryManager::enterLoopBody(kernel::KernelBuilder & b, BasicBlock * const e
         Constant * const initialCapacitySize = ConstantExpr::getMul(initialCarryStateCapacity, carryStateTySize);
         Value * initialArray = b.CreatePageAlignedMalloc(initialCapacitySize);
         b.CreateMemZero(initialArray, initialCapacitySize, blockSize);
-        initialArray = b.CreatePointerCast(initialArray, nestedCarryPtrTy);
         b.CreateStore(initialArray, carryStateArrayPtr);
         b.CreateBr(resumeKernel);
 

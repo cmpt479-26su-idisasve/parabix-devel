@@ -90,10 +90,8 @@ void CompressedCarryManager::writeCurrentCarryOutSummary(kernel::KernelBuilder &
         const auto n = mCarrySummaryStack.size(); assert (n > 0);
         writeCarryOutSummary(b, mCarrySummaryStack[n - 1]);
     } else if (mCarryInfo->hasImplicitSummary()) {
-        PointerType * const pty = mCarryInfo->getSummarySizeTy()->getPointerTo();
-        Value * const ptr = b.CreatePointerCast(mCurrentFrame, pty);
         const auto n = mCarrySummaryStack.size(); assert (n > 0);
-        mCarrySummaryStack[n - 1] = b.CreateLoad(mCarryInfo->getSummarySizeTy(), ptr);
+        mCarrySummaryStack[n - 1] = b.CreateLoad(mCarryInfo->getSummarySizeTy(), mCurrentFrame);
     }
 }
 
@@ -160,9 +158,7 @@ Value * CompressedCarryManager::readCarryInSummary(kernel::KernelBuilder & b) co
     assert (mCarryInfo->hasSummary());
     Value * summary = nullptr;
     if (LLVM_LIKELY(mCarryInfo->hasImplicitSummary())) {
-        PointerType * const pty = mCarryInfo->getSummarySizeTy()->getPointerTo();
-        Value * const ptr = b.CreatePointerCast(mCurrentFrame, pty);
-        summary = b.CreateLoad(mCarryInfo->getSummarySizeTy(), ptr);
+        summary = b.CreateLoad(mCarryInfo->getSummarySizeTy(), mCurrentFrame);
     } else {
         assert (mCarryInfo->hasExplicitSummary());
         Value * ptr = nullptr;

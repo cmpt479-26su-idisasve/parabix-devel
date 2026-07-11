@@ -212,7 +212,6 @@ Value * CBuilder::CreateWriteCall(Value * fileDescriptor, Value * buf, Value * n
         write = Function::Create(writeTy, Function::ExternalLinkage, "write", m);
         write->addParamAttr(1U, Attribute::NoAlias);
     }
-    buf = CreatePointerCast(buf, voidPtrTy);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(buf, nbyte, "CreateWriteCall");
     }
@@ -230,7 +229,6 @@ Value * CBuilder::CreateReadCall(Value * fileDescriptor, Value * buf, Value * nb
         readFn = Function::Create(readTy, Function::ExternalLinkage, "read", m);
         readFn->addParamAttr(1U, Attribute::NoAlias);
     }
-    buf = CreatePointerCast(buf, voidPtrTy);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(buf, nbyte, "CreateReadCall");
     }
@@ -489,7 +487,7 @@ Value * CBuilder::CreateAlignedMalloc(Type * const type, Value * const ArraySize
     }
     ConstantInt * const align = ConstantInt::get(sizeTy, alignment);
     size = CreateRoundUp(size, align);
-    return CreatePointerCast(CreateAlignedMalloc(size, alignment), type->getPointerTo(addressSpace));
+    return CreateAlignedMalloc(size, alignment);
 }
 
 Value * CBuilder::CreateAlignedMalloc(Value * size, const unsigned alignment) {
@@ -528,7 +526,7 @@ Value * CBuilder::CreateRealloc(Type * const type, Value * const base, Value * c
     if (ArraySize) {
         size = CreateMul(size, CreateZExtOrTrunc(ArraySize, size->getType()));
     }
-    return CreatePointerCast(CreateRealloc(base, size), type->getPointerTo());
+    return CreateRealloc(base, size);
 }
 
 Value * CBuilder::CreateRealloc(Value * const base, Value * const size) {
@@ -544,17 +542,14 @@ Value * CBuilder::CreateRealloc(Value * const base, Value * const size) {
         f->setCallingConv(CallingConv::C);
         f->setReturnDoesNotAlias();
     }    
-    Value * basePtr = CreatePointerCast(base, voidPtrTy);
-    CallInst * const ci = CreateCall(fty, f, {basePtr, CreateZExtOrTrunc(size, sizeTy)});
-    Value * ptr = CreatePointerCast(ci, base->getType());
-    return ptr;
+    CallInst * const ci = CreateCall(fty, f, {base, CreateZExtOrTrunc(size, sizeTy)});
+    return ci;
 }
 
 void CBuilder::CreateFree(Value * const ptr) {
     assert (ptr->getType()->isPointerTy());
     Module * const m = getModule();
     Type * const voidPtrTy =  getVoidPtrTy();
-    Value * castPtr = CreatePointerCast(ptr, voidPtrTy);
     if (codegen::FreeCallBisectLimit >= 0) {
         FunctionType * fty = FunctionType::get(getVoidTy(), {voidPtrTy}, false);
         Function * dispatcher = m->getFunction("free_debug_wrapper");
@@ -562,7 +557,7 @@ void CBuilder::CreateFree(Value * const ptr) {
             dispatcher = Function::Create(fty, Function::ExternalLinkage, "free_debug_wrapper", m);
             dispatcher->setCallingConv(CallingConv::C);
             assert (dispatcher);
-            CreateCall(fty, dispatcher, castPtr);
+            CreateCall(fty, dispatcher, ptr);
         }
     } else {
         FunctionType * fty = FunctionType::get(getVoidTy(), {voidPtrTy}, false);
@@ -571,7 +566,7 @@ void CBuilder::CreateFree(Value * const ptr) {
             f = Function::Create(fty, Function::ExternalLinkage, "free", m);
             f->setCallingConv(CallingConv::C);
         }
-        CreateCall(fty, f, castPtr);
+        CreateCall(fty, f, ptr);
     }
 }
 
@@ -716,7 +711,6 @@ Value * CBuilder::CreateMAdvise(Value * addr, Value * length, const int advice) 
         if (LLVM_UNLIKELY(MAdviseFunc == nullptr)) {
             MAdviseFunc = Function::Create(fty, Function::ExternalLinkage, "madvise", m);
         }
-        addr = CreatePointerCast(addr, voidPtrTy);
         length = CreateZExtOrTrunc(length, sizeTy);
         result = CreateCall(fty, MAdviseFunc, {addr, length, ConstantInt::get(intTy, advice)});
     }
@@ -741,7 +735,6 @@ Value * CBuilder::CreateMRemap(Value * addr, Value * oldSize, Value * newSize) {
         if (LLVM_UNLIKELY(fMRemap == nullptr)) {
             fMRemap = Function::Create(fty, Function::ExternalLinkage, "mremap", m);
         }
-        addr = CreatePointerCast(addr, voidPtrTy);
         oldSize = CreateZExtOrTrunc(oldSize, sizeTy);
         newSize = CreateZExtOrTrunc(newSize, sizeTy);
         ConstantInt * const flags = ConstantInt::get(intTy, MREMAP_MAYMOVE);
@@ -768,7 +761,6 @@ Value * CBuilder::CreateMUnmap(Value * addr, Value * len) {
         munmapFunc = Function::Create(fty, Function::ExternalLinkage, "munmap", m);
     }
     len = CreateZExtOrTrunc(len, sizeTy);
-    addr = CreatePointerCast(addr, voidPtrTy);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         auto & DL = getModule()->getDataLayout();
         IntegerType * const intPtrTy = getIntPtrTy(DL);
@@ -813,7 +805,6 @@ Value * CBuilder::CreateMProtect(Value * addr, Value * size, const Protect prote
     if (LLVM_UNLIKELY(mprotectFunc == nullptr)) {
         mprotectFunc = Function::Create(fty, Function::ExternalLinkage, "mprotect", m);
     }
-    addr = CreatePointerCast(addr, voidPtrTy);
     size = CreateZExtOrTrunc(size, sizeTy);
     Value * const result = CreateCall(fty, mprotectFunc, {addr, size, ConstantInt::get(int32Ty, (int)protect)});
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
@@ -904,7 +895,6 @@ Value * CBuilder::CreateFReadCall(Value * ptr, Value * size, Value * nitems, Val
         fReadFunc = Function::Create(fty, Function::ExternalLinkage, "fread", m);
         fReadFunc->setCallingConv(CallingConv::C);
     }
-    ptr = CreatePointerCast(ptr, voidPtrTy);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(ptr, CreateMul(size, nitems), "CreateFReadCall");
     }
@@ -921,7 +911,6 @@ Value * CBuilder::CreateFWriteCall(Value * ptr, Value * size, Value * nitems, Va
         fWriteFunc = Function::Create(fty, Function::ExternalLinkage, "fwrite", m);
         fWriteFunc->setCallingConv(CallingConv::C);
     }
-    ptr = CreatePointerCast(ptr, voidPtrTy);
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
         CheckAddress(ptr, CreateMul(size, nitems), "CreateFReadCall");
     }
@@ -1416,7 +1405,7 @@ Constant * CBuilder::GetString(StringRef Str) {
     if (ptr == nullptr) {
         ptr = CreateGlobalString(Str, Str, 0, m);
     }
-    return ConstantExpr::getPointerCast(ptr, getInt8PtrTy());
+    return ptr;
 }
 
 Value * CBuilder::CreateReadCycleCounter() {
@@ -1610,8 +1599,6 @@ CallInst * CBuilder::CreateMemCmp(Value * Ptr1, Value * Ptr2, Value * Num) {
         f = Function::Create(fty, Function::ExternalLinkage, "memcmp", m);
         f->setCallingConv(CallingConv::C);
     }
-    Ptr1 = CreatePointerCast(Ptr1, voidPtrTy);
-    Ptr2 = CreatePointerCast(Ptr2, voidPtrTy);
     Num = CreateZExtOrTrunc(Num, sizeTy);
     return CreateCall(f->getFunctionType(), f, {Ptr1, Ptr2, Num});
 }

@@ -154,8 +154,8 @@ void PabloCompiler::compile(KernelBuilder & b) {
         b.CreateStore(val, ptr);
         Function * enterKernel = b.getModule()->getFunction(KERNEL_ILLUSTRATOR_ENTER_KERNEL);
         FixedArray<Value *, 2> args;
-        args[0] = b.CreatePointerCast(b.getScalarField(KERNEL_ILLUSTRATOR_CALLBACK_OBJECT), b.getVoidPtrTy());
-        args[1] = b.CreatePointerCast(getHandle(), b.getVoidPtrTy());
+        args[0] = b.getScalarField(KERNEL_ILLUSTRATOR_CALLBACK_OBJECT);
+        args[1] = getHandle();
         b.CreateCall(enterKernel, args);
     }
     compileBlock(b, entryBlock);
@@ -163,8 +163,8 @@ void PabloCompiler::compile(KernelBuilder & b) {
     if (LLVM_UNLIKELY(mKernel->getKernelFlags() & Kernel::KernelFlags::RequiresIllustratorObject && !mContainsIllustratedValue.empty())) {
         Function * exitKernel = b.getModule()->getFunction(KERNEL_ILLUSTRATOR_EXIT_KERNEL);
         FixedArray<Value *, 2> args;
-        args[0] = b.CreatePointerCast(b.getScalarField(KERNEL_ILLUSTRATOR_CALLBACK_OBJECT), b.getVoidPtrTy());
-        args[1] = b.CreatePointerCast(getHandle(), b.getVoidPtrTy());
+        args[0] = b.getScalarField(KERNEL_ILLUSTRATOR_CALLBACK_OBJECT);
+        args[1] = getHandle();
         b.CreateCall(exitKernel, args);
     }
 }
@@ -427,11 +427,11 @@ void PabloCompiler::compileWhile(KernelBuilder & b, const While * const whileSta
     if (LLVM_UNLIKELY(mKernel->getKernelFlags() & Kernel::KernelFlags::RequiresIllustratorObject)) {
         const auto f = std::find(mContainsIllustratedValue.begin(), mContainsIllustratedValue.end(), whileStatement);
         if (LLVM_UNLIKELY(f != mContainsIllustratedValue.end())) {
-            illustratorObj = b.CreatePointerCast(b.getScalarField(KERNEL_ILLUSTRATOR_CALLBACK_OBJECT), b.getVoidPtrTy());
+            illustratorObj = b.getScalarField(KERNEL_ILLUSTRATOR_CALLBACK_OBJECT);
             Function * fIllustratorEnterLoop = b.getModule()->getFunction(KERNEL_ILLUSTRATOR_ENTER_LOOP);
             FixedArray<Value *, 2> args;
             args[0] = illustratorObj;
-            args[1] = b.CreatePointerCast(getHandle(), b.getVoidPtrTy());
+            args[1] = getHandle();
             b.CreateCall(fIllustratorEnterLoop, args);
         }
     }
@@ -503,7 +503,7 @@ void PabloCompiler::compileWhile(KernelBuilder & b, const While * const whileSta
         assert (fIllustratorIterateLoop);
         FixedArray<Value *, 2> args;
         args[0] = illustratorObj;
-        args[1] = b.CreatePointerCast(getHandle(), b.getVoidPtrTy());
+        args[1] = getHandle();
         b.CreateCall(fIllustratorIterateLoop, args);
     }
     compileBlock(b, whileStatement->getBody());
@@ -580,7 +580,7 @@ void PabloCompiler::compileWhile(KernelBuilder & b, const While * const whileSta
         assert (fIllustratorExitLoop);
         FixedArray<Value *, 2> args;
         args[0] = illustratorObj;
-        args[1] = b.CreatePointerCast(getHandle(), b.getVoidPtrTy());
+        args[1] = getHandle();
         b.CreateCall(fIllustratorExitLoop, args);
     }
 
