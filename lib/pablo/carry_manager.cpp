@@ -436,7 +436,6 @@ void CarryManager::enterLoopBody(kernel::KernelBuilder & b, BasicBlock * const e
 
         mCurrentFrame = b.CreateGEP(nestedCarryTy, updatedCarryStateArrayPhi, indexPhi);
         assert (mCurrentFrameType->getStructElementType(NestedCarryState)->isPointerTy());
-        assert (nestedCarryTy->getPointerTo() == mCurrentFrameType->getStructElementType(NestedCarryState));
         mCurrentFrameType = nestedCarryTy;
         mCurrentFrameIndex = 0;
 
@@ -1229,7 +1228,7 @@ StructType * CarryManager::analyse(kernel::KernelBuilder & b, const PabloBlock *
         FixedArray<Type *, 3> fields;
         fields[NestedCapacity] = b.getSizeTy();
         fields[LastIncomingCarryLoopIteration] = b.getSizeTy();
-        fields[NestedCarryState] = carryState->getPointerTo();
+        fields[NestedCarryState] = PointerType::getUnqual(b.getContext());
         carryState = StructType::get(b.getContext(), fields);
         assert (isDynamicallyAllocatedType(carryState));
     }

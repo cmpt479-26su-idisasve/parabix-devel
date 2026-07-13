@@ -869,10 +869,7 @@ Value * CBuilder::CreatePrefetch(Value * ptr, PrefetchRW mode, unsigned locality
 }
 
 PointerType * LLVM_READNONE CBuilder::getFILEptrTy() {
-    if (mFILEtype == nullptr) {
-        mFILEtype = StructType::create(getContext(), "struct._IO_FILE");
-    }
-    return mFILEtype->getPointerTo();
+    return PointerType::getUnqual(getContext());
 }
 
 Value * CBuilder::CreateFOpenCall(Value * filename, Value * mode) {
@@ -1935,7 +1932,6 @@ CBuilder::CBuilder(LLVMContext & C)
 : IRBuilder<>(C)
 , mCacheLineAlignment(64)
 , mSizeType(IntegerType::get(getContext(), sizeof(size_t) * 8))
-, mFILEtype(nullptr)
 , mDriver(nullptr) {
     #ifdef ENABLE_LIBBACKTRACE
     if (LLVM_UNLIKELY(codegen::AnyAssertionOptionIsSet())) {

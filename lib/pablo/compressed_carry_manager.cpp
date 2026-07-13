@@ -346,7 +346,7 @@ StructType * CompressedCarryManager::analyse(kernel::KernelBuilder & b, const Pa
             FixedArray<Type *, 3> fields;
             fields[NestedCapacity] = b.getSizeTy();
             fields[LastIncomingCarryLoopIteration] = b.getSizeTy();
-            fields[NestedCarryState] = carryState->getPointerTo();
+            fields[NestedCarryState] = PointerType::getUnqual(b.getContext());
             carryState = StructType::get(b.getContext(), fields);
         }
         cd.setSummarySizeTy(summaryTy);

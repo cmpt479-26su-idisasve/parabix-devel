@@ -40,7 +40,7 @@ void PipelineCompiler::addDynamicThreadingReportProperties(KernelBuilder & b, co
     DMEntryGroupFields[2] = b.getVoidPtrTy();
     StructType * const DMEntryGroupTy = StructType::get(C, DMEntryGroupFields, true);
 
-    mTarget->addInternalScalar(DMEntryGroupTy->getPointerTo(), STATISTICS_DYNAMIC_MULTITHREADING_STATE_CURRENT, groupId);
+    mTarget->addInternalScalar(PointerType::getUnqual(b.getContext()), STATISTICS_DYNAMIC_MULTITHREADING_STATE_CURRENT, groupId);
 
     mTarget->addInternalScalar(DMEntryGroupTy, STATISTICS_DYNAMIC_MULTITHREADING_STATE_DATA, groupId);
 }
@@ -83,7 +83,7 @@ void PipelineCompiler::recordDynamicThreadingState(KernelBuilder & b, Value * se
 
     assert (TraceDynamicMultithreading);
     Value * dataPtr = b.getScalarFieldPtr(STATISTICS_DYNAMIC_MULTITHREADING_STATE_CURRENT).first;
-    Value * data = b.CreateAlignedLoad(DMEntryGroupTy->getPointerTo(), dataPtr, PtrTyABIAlignment);
+    Value * data = b.CreateAlignedLoad(PointerType::getUnqual(b.getContext()), dataPtr, PtrTyABIAlignment);
     Constant * const i32_ZERO = b.getInt32(0);
     Constant * const i32_ONE = b.getInt32(1);
     Constant * const i32_TWO = b.getInt32(2);

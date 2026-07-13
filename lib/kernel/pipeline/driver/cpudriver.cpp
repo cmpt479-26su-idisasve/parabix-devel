@@ -116,8 +116,6 @@ Function * CPUDriver::addLinkFunction(Module * mod, llvm::StringRef name, Functi
         #ifndef ORCJIT
         mEngine->updateGlobalMapping(f, functionPtr);
         #endif
-    } else if (LLVM_UNLIKELY(f->getType() != type->getPointerTo())) {
-        report_fatal_error("Cannot link " + name + ": a function with a different signature already exists with that name in " + mod->getName());
     }
     return f;
 }

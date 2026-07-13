@@ -76,7 +76,6 @@ struct ScanWordParameters {
     unsigned width;
     unsigned indexWidth;
     Type * const Ty;
-    Type * const pointerTy;
     Constant * const WIDTH;
     Constant * const ix_MAXBIT;
     Constant * const WORDS_PER_BLOCK;
@@ -90,7 +89,6 @@ struct ScanWordParameters {
 #endif
     indexWidth(stride/width),
     Ty(b.getIntNTy(width)),
-    pointerTy(Ty->getPointerTo()),
     WIDTH(b.getSize(width)),
     ix_MAXBIT(b.getSize(indexWidth - 1)),
     WORDS_PER_BLOCK(b.getSize(b.getBitBlockWidth()/width)),

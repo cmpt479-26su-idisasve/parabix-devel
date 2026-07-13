@@ -1137,9 +1137,6 @@ Value * PabloCompiler::compileExpression(KernelBuilder & b, const PabloAST * con
             type = b.getBitBlockType();
             align = b.getBitBlockWidth() / 8;
         }
-
-        assert (type->getPointerTo() == value->getType());
-
         value = b.CreateAlignedLoad(type, value, align);
     }
     return value;

@@ -607,7 +607,7 @@ void PipelineCompiler::recordStridesPerSegment(KernelBuilder & b, const unsigned
             auto ip = b.saveIP();
             LLVMContext & C = b.getContext();
             Type * const sizeTy = b.getSizeTy();
-            Type * const tracePtrTy = traceTy->getPointerTo();
+            Type * const tracePtrTy = PointerType::getUnqual(b.getContext());
             FunctionType * fty = FunctionType::get(b.getVoidTy(), { tracePtrTy, sizeTy, sizeTy }, false);
             updateSegmentsPerStrideTrace = Function::Create(fty, Function::PrivateLinkage, "$trace_strides_per_segment", m);
 
@@ -633,7 +633,7 @@ void PipelineCompiler::recordStridesPerSegment(KernelBuilder & b, const unsigned
 //            FixedArray<Type *, 4> traceStruct;
 //            traceStruct[0] = sizeTy; // last num of strides (to avoid unnecessary loads of the trace
 //                                     // log and simplify the logic for first stride)
-//            traceStruct[1] = recordStructTy->getPointerTo(); // pointer to trace log
+//            traceStruct[1] = PointerType::getUnqual(b.getContext()); // pointer to trace log
 //            traceStruct[2] = sizeTy; // trace length
 //            traceStruct[3] = sizeTy; // trace capacity (for realloc)
 
@@ -990,7 +990,7 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
     Function * logFunc = m->getFunction(logName);
     if (logFunc == nullptr) {
 
-        PointerType * const sizePtrTy = sizeTy->getPointerTo();
+        PointerType * const sizePtrTy = PointerType::getUnqual(b.getContext());
 
         FixedArray<Type *, 4> params;
         params[0] = voidPtrTy;
@@ -1083,7 +1083,7 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
         logPhi->addIncoming(currentLog, checkLogOffset);
         logPhi->addIncoming(newLog, allocateNewLogChunk);
 
-        Value * const inputPtr = b.CreateGEP(sizeTy->getPointerTo(), currentArray, indexPhi);
+        Value * const inputPtr = b.CreateGEP(PointerType::getUnqual(b.getContext()), currentArray, indexPhi);
         Value * const val = b.CreateAlignedLoad(sizeTy, inputPtr, SizeTyABIAlignment);
 
         FixedArray<Value *, 3> offset3;

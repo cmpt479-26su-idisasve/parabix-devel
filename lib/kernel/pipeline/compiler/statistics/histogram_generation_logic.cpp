@@ -269,7 +269,7 @@ void PipelineCompiler::freeHistogramProperties(KernelBuilder & b) {
                 fields[2] = voidPtrTy;
                 StructType * const listTy = StructType::get(b.getContext(), fields);
 
-                PointerType * const listPtrTy = listTy->getPointerTo();
+                PointerType * const listPtrTy = PointerType::getUnqual(b.getContext());
 
                 FunctionType * const funcTy = FunctionType::get(b.getVoidTy(), {listPtrTy}, false);
 
@@ -373,10 +373,9 @@ void PipelineCompiler::updateTransferredItemsForHistogramData(KernelBuilder & b)
         Function * func = m->getFunction("updateHistogramList");
         if (func == nullptr) {
 
-          //  PointerType * const entryPtrTy = type->getPointerTo();
             IntegerType * const sizeTy = b.getSizeTy();
 
-            PointerType * const listPtrTy = listTy->getPointerTo();
+            PointerType * const listPtrTy = PointerType::getUnqual(b.getContext());
 
             FunctionType * funcTy = FunctionType::get(b.getVoidTy(), {listPtrTy, sizeTy}, false);
 
@@ -567,7 +566,7 @@ void PipelineCompiler::printHistogramReport(KernelBuilder & b, HistogramReportTy
     hkdFields[0] = b.getInt32Ty(); // Id
     hkdFields[1] = b.getInt32Ty(); // NumOfPorts
     hkdFields[2] = b.getInt8PtrTy(); // KernelName
-    hkdFields[3] = hpdTy->getPointerTo(); // PortData
+    hkdFields[3] = PointerType::getUnqual(b.getContext()); // PortData
     StructType * const hkdTy = StructType::get(b.getContext(), hkdFields);
 
     #ifndef NDEBUG
@@ -804,7 +803,7 @@ free_port_data:
         FixedArray<Value *, 2> offset;
         offset[0] = b.getInt32(index++);
         offset[1] = i32_THREE;
-        b.CreateFree(b.CreateAlignedLoad(hpdTy->getPointerTo(), b.CreateGEP(hkdTy, kernelData, offset), PtrTyABIAlignment));
+        b.CreateFree(b.CreateAlignedLoad(PointerType::getUnqual(b.getContext()), b.CreateGEP(hkdTy, kernelData, offset), PtrTyABIAlignment));
     }
     b.CreateFree(kernelData);
 

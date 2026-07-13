@@ -423,7 +423,7 @@ MMapSourceKernel::MMapSourceKernel(LLVMTypeSystemInterface & ts, Scalar * const 
 // internal scalars
 ,{})
 , mCodeUnitWidth(outputStream->getFieldWidth()) {
-    PointerType * const codeUnitPtrTy = ts.getIntNTy(mCodeUnitWidth)->getPointerTo();
+    PointerType * const codeUnitPtrTy =  PointerType::getUnqual(ts.getContext());
     addInternalScalar(codeUnitPtrTy, "buffer");
     addAttribute(MustExplicitlyTerminate());
     addAttribute(SideEffecting());
@@ -464,7 +464,7 @@ FDSourceKernel::FDSourceKernel(LLVMTypeSystemInterface & ts, Scalar * const useM
 // internal scalars
 ,{})
 , mCodeUnitWidth(outputStream->getFieldWidth()) {
-    PointerType * const codeUnitPtrTy = ts.getIntNTy(mCodeUnitWidth)->getPointerTo();
+    PointerType * const codeUnitPtrTy =  PointerType::getUnqual(ts.getContext());
     addInternalScalar(codeUnitPtrTy, "buffer");
     addAttribute(MustExplicitlyTerminate());
     addAttribute(SideEffecting());

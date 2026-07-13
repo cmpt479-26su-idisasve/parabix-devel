@@ -183,7 +183,7 @@ generate_function:
             indices[1] = i32_ZERO;
 
             Value * const traceLogArrayField = b.CreateGEP(traceDataTy, traceData, indices);
-            PointerType * const entryPtrTy = entryTy->getPointerTo();
+            PointerType * const entryPtrTy = PointerType::getUnqual(b.getContext());
             assert (traceDataTy->getStructElementType(0) == entryPtrTy);
 
             Value * const entryArray = b.CreateAlignedLoad(entryPtrTy, traceLogArrayField, PtrTyABIAlignment);
@@ -426,7 +426,9 @@ void PipelineCompiler::printOptionalBufferExpansionHistory(KernelBuilder & b) {
                     const auto numOfConsumers = std::max(out_degree(streamSet, mConsumerGraph), 1UL);
 
                     Type * const arrayTy = ArrayType::get(sizeTy, numOfConsumers + 3);
-                    Value * const entryArray = b.CreateAlignedLoad(arrayTy->getPointerTo(), traceArrayField, PtrTyABIAlignment);
+                    Value * const entryArray =
+                        b.CreateAlignedLoad(PointerType::getUnqual(b.getContext()),
+                                            traceArrayField, PtrTyABIAlignment);
 
                     indices[1] = i32_ONE;
 

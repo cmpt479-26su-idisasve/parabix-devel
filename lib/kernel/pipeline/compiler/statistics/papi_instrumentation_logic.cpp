@@ -97,7 +97,6 @@ void PipelineCompiler::readPAPIMeasurement(KernelBuilder & b, Value * const meas
     Function * const PAPIReadFn = m->getFunction("PAPI_read"); assert (PAPIReadFn);
     FixedArray<Value *, 2> args;
     args[0] = PAPIEventSetId; assert (PAPIEventSetId);
-    PointerType * const papiCounterPtrTy = TypeBuilder<papi_counter_t, false>::get(b.getContext())->getPointerTo();
     args[1] = measurementArray; assert (measurementArray);
     // TODO: should probably check the error code here but if we do get an error,
     // what can we avoid contaminating the results but also inform the user something
@@ -696,7 +695,7 @@ void PipelineCompiler::printPAPIReportIfRequested(KernelBuilder & b) {
     if (LLVM_UNLIKELY(NumOfPAPIEvents)) {
 
         IntegerType * const papiCounterTy = TypeBuilder<papi_counter_t, false>::get(b.getContext());
-        PointerType * const counterPtrTy = papiCounterTy->getPointerTo();
+        PointerType * const counterPtrTy = PointerType::getUnqual(b.getContext());
 
         IntegerType * const intTy = TypeBuilder<unsigned, false>::get(b.getContext());
 
