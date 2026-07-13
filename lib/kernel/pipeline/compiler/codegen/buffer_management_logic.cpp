@@ -50,9 +50,8 @@ void PipelineCompiler::addBufferHandlesToPipelineKernel(KernelBuilder & b, const
             // produced item count 2
             // consumer processed item count [3,n)
             IntegerType * const sizeTy = b.getSizeTy();
-            Type * const traceStructTy = ArrayType::get(sizeTy, numOfConsumers + 3);
             FixedArray<Type *, 2> traceStruct;
-            traceStruct[0] = traceStructTy->getPointerTo(); // pointer to trace log
+            traceStruct[0] = PointerType::getUnqual(b.getContext()); // pointer to trace log
             traceStruct[1] = sizeTy; // length of trace log
             mTarget->addInternalScalar(StructType::get(b.getContext(), traceStruct),
                                                prefix + STATISTICS_BUFFER_EXPANSION_SUFFIX, groupId);

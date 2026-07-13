@@ -799,7 +799,7 @@ void ManagedDynamicBuffer::releaseBuffer(KernelBuilder & b) const {
 
     auto & DL = m->getDataLayout();
 
-    PointerType * const addrPtrTy = mType->getPointerTo(mAddressSpace);
+    PointerType * const addrPtrTy = PointerType::get(b.getContext(), mAddressSpace);
     const auto voidPtrTyAlign = DL.getABITypeAlign(addrPtrTy).value();
 
     IntegerType * const intPtrTy = b.getIntPtrTy(DL);
@@ -841,7 +841,7 @@ void ManagedDynamicBuffer::releaseBuffer(KernelBuilder & b) const {
 Value * ManagedDynamicBuffer::getBaseAddress(KernelBuilder & b) const {
     assert (mHandle && "has not been set prior to calling setBaseAddress");
     auto & DL = b.getModule()->getDataLayout();
-    PointerType * const addrPtrTy = mType->getPointerTo(mAddressSpace);
+    PointerType * const addrPtrTy = PointerType::get(b.getContext(), mAddressSpace);
     const auto voidPtrTyAlign = DL.getABITypeAlign(addrPtrTy).value();
     FixedArray<Value *, 2> indices;
     indices[0] = b.getInt32(0);
@@ -854,7 +854,7 @@ Value * ManagedDynamicBuffer::getBaseAddress(KernelBuilder & b) const {
 Value * ManagedDynamicBuffer::getMallocAddress(KernelBuilder & b) const {
     assert (mHandle && "has not been set prior to calling setBaseAddress");
     auto & DL = b.getModule()->getDataLayout();
-    PointerType * const addrPtrTy = mType->getPointerTo(mAddressSpace);
+    PointerType * const addrPtrTy = PointerType::get(b.getContext(), mAddressSpace);
     const auto voidPtrTyAlign = DL.getABITypeAlign(addrPtrTy).value();
     FixedArray<Value *, 2> indices;
     indices[0] = b.getInt32(0);
@@ -895,7 +895,7 @@ Value * ManagedDynamicBuffer::getInternalCapacity(KernelBuilder & b) const {
 void ManagedDynamicBuffer::setBaseAddress(KernelBuilder & b, Value * const addr) const {
     assert (mHandle && "has not been set prior to calling setBaseAddress");
     auto & DL = b.getModule()->getDataLayout();
-    PointerType * const addrPtrTy = mType->getPointerTo(mAddressSpace);
+    PointerType * const addrPtrTy = PointerType::get(b.getContext(), mAddressSpace);
     const auto voidPtrTyAlign = DL.getABITypeAlign(addrPtrTy).value();
     FixedArray<Value *, 2> indices;
     indices[0] = b.getInt32(0);
@@ -961,7 +961,7 @@ static void removeFromPendingDeletions(KernelBuilder & b, Value * const pendingS
         auto & C = m->getContext();
 
         StructType * const handleTy = makePendingDeletionStructTy(b);
-        PointerType * const handlePtrTy = handleTy->getPointerTo(addrSpace);
+        PointerType * const handlePtrTy = PointerType::get(b.getContext(), addrSpace);
 
         PointerType * const voidPtrTy = b.getVoidPtrTy();
         IntegerType * const intPtrTy = DL.getIntPtrType(C);
@@ -1303,7 +1303,7 @@ static void addToPendingDeletions(KernelBuilder & b, Value * const pendingStruct
         const auto intPtrTyAlign = DL.getABITypeAlign(intPtrTy).value();
 
         StructType * const handleTy = makePendingDeletionStructTy(b);
-        PointerType * const handlePtrTy = handleTy->getPointerTo();
+        PointerType * const handlePtrTy = PointerType::getUnqual(b.getContext());
 
         FixedArray<Type *, 4> paramTypes;
         paramTypes[0] = handlePtrTy; // pending struct ptr
@@ -1337,7 +1337,7 @@ static void addToPendingDeletions(KernelBuilder & b, Value * const pendingStruct
 
         Constant * const nilVoidPtr = ConstantPointerNull::get(voidPtrTy);
 
-        PointerType * const voidPtrPtrTy = voidPtrTy->getPointerTo(addrSpace);
+        PointerType * const voidPtrPtrTy = PointerType::get(b.getContext(), addrSpace);
 
 
         b.SetInsertPoint(entry);
@@ -2081,7 +2081,7 @@ void FdBackedDynamicBuffer::releaseBuffer(KernelBuilder & b) const {
 
     IntegerType * const intTy = b.getIntNTy(8 * sizeof(int));
 
-    PointerType * const addrPtrTy = mType->getPointerTo(mAddressSpace);
+    PointerType * const addrPtrTy = PointerType::get(b.getContext(), mAddressSpace);
     const auto voidPtrTyAlign = DL.getABITypeAlign(addrPtrTy).value();
 
     IntegerType * const intPtrTy = b.getIntPtrTy(DL);

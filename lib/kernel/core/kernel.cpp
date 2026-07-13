@@ -306,7 +306,7 @@ void Kernel::linkExternalMethods(KernelBuilder & b) {
         params[8] = int8Ty; // illustrator type
         params[9] = int8Ty; // replacement 0
         params[10] = int8Ty; // replacement 1
-        params[11] = sizeTy->getPointerTo(); // loopId array
+        params[11] = PointerType::getUnqual(b.getContext()); // loopId array
         FunctionType * regFunc = FunctionType::get(voidTy, params, false);
         driver.addLinkFunction(m, KERNEL_REGISTER_ILLUSTRATOR_CALLBACK, regFunc, (void*)&illustratorRegisterCapturedData);
         END_SCOPED_REGION
@@ -628,7 +628,7 @@ Function * Kernel::addInitializeDeclaration(KernelBuilder & b) const {
         }
 
         if (LLVM_LIKELY(isStateful())) {
-            params.push_back(getSharedStateType()->getPointerTo());
+            params.push_back(PointerType::getUnqual(b.getContext()));
         }
         for (const Binding & binding : mInputScalars) {
             params.push_back(binding.getType());
@@ -689,7 +689,7 @@ Function * Kernel::addExpectedOutputSizeDeclaration(KernelBuilder & b) const {
     if (LLVM_LIKELY(func == nullptr)) {
         SmallVector<Type *, 1> params;
         if (LLVM_LIKELY(isStateful())) {
-            params.push_back(getSharedStateType()->getPointerTo());
+            params.push_back(PointerType::getUnqual(b.getContext()));
         }
         FunctionType * const funcType = FunctionType::get(b.getSizeTy(), params, false);
         func = Function::Create(funcType, GlobalValue::ExternalLinkage, funcName, m);
@@ -746,10 +746,10 @@ Function * Kernel::addInitializeThreadLocalDeclaration(KernelBuilder & b) const 
         if (LLVM_LIKELY(func == nullptr)) {
             SmallVector<Type *, 2> params;
             if (LLVM_LIKELY(isStateful())) {
-                params.push_back(getSharedStateType()->getPointerTo());
+                params.push_back(PointerType::getUnqual(b.getContext()));
             }
-            params.push_back(getThreadLocalStateType()->getPointerTo());
-            PointerType * const retTy = getThreadLocalStateType()->getPointerTo();
+            params.push_back(PointerType::getUnqual(b.getContext()));
+            PointerType * const retTy = PointerType::getUnqual(b.getContext());
             FunctionType * const funcType = FunctionType::get(retTy, params, false);
             func = Function::Create(funcType, GlobalValue::ExternalLinkage, funcName, m);
             func->setCallingConv(CallingConv::C);
@@ -805,7 +805,7 @@ Function * Kernel::addAllocateSharedInternalStreamSetsDeclaration(KernelBuilder 
 
             SmallVector<Type *, 6> params;
             if (LLVM_LIKELY(isStateful())) {
-                params.push_back(getSharedStateType()->getPointerTo());
+                params.push_back(PointerType::getUnqual(b.getContext()));
             }
             params.push_back(b.getSizeTy());
             const auto tdb = (getKernelFlags() & KernelFlags::HasInternallyManagedStreamSet) && codegen::StatisticsOptionIsSet(codegen::TraceDynamicBuffers);
@@ -885,9 +885,9 @@ Function * Kernel::addAllocateThreadLocalInternalStreamSetsDeclaration(KernelBui
 
             SmallVector<Type *, 3> params;
             if (LLVM_LIKELY(isStateful())) {
-                params.push_back(getSharedStateType()->getPointerTo());
+                params.push_back(PointerType::getUnqual(b.getContext()));
             }
-            params.push_back(getThreadLocalStateType()->getPointerTo());
+            params.push_back(PointerType::getUnqual(b.getContext()));
             params.push_back(b.getSizeTy());
             FunctionType * const funcType = FunctionType::get(b.getVoidTy(), params, false);
             func = Function::Create(funcType, GlobalValue::ExternalLinkage, funcName, m);
@@ -933,17 +933,17 @@ std::vector<Type *> Kernel::getDoSegmentFields(KernelBuilder & b) const {
     // PipelineCompiler::buildKernelCallArgumentList and PipelineKernel::addOrDeclareMainFunction
 
     IntegerType * const sizeTy = b.getSizeTy();
-    PointerType * const sizePtrTy = sizeTy->getPointerTo();
+    PointerType * const sizePtrTy = PointerType::getUnqual(b.getContext());
     const auto n = mInputStreamSets.size();
     const auto m = mOutputStreamSets.size();
 
     std::vector<Type *> fields;
     fields.reserve(4 + 3 * (n + m));
     if (LLVM_LIKELY(isStateful())) {
-        fields.push_back(getSharedStateType()->getPointerTo());  // handle
+        fields.push_back(PointerType::getUnqual(b.getContext()));  // handle
     }
     if (LLVM_UNLIKELY(hasThreadLocal())) {
-        fields.push_back(getThreadLocalStateType()->getPointerTo());  // handle
+        fields.push_back(PointerType::getUnqual(b.getContext()));  // handle
     }
     const auto internallySynchronized = hasAttribute(AttrId::InternallySynchronized);
     const auto isPipeline = (getTypeId() == TypeId::Pipeline);
@@ -1003,7 +1003,7 @@ std::vector<Type *> Kernel::getDoSegmentFields(KernelBuilder & b) const {
         if (LLVM_UNLIKELY(isLocal.isShared())) {
             fields.push_back(voidPtrTy);
         } else if (LLVM_UNLIKELY(isMainPipeline || isLocal.any())) {
-            fields.push_back(voidPtrTy->getPointerTo());
+            fields.push_back(PointerType::getUnqual(b.getContext()));
         } else {
             fields.push_back(voidPtrTy);
         }
@@ -1200,9 +1200,9 @@ Function * Kernel::addFinalizeThreadLocalDeclaration(KernelBuilder & b) const {
         if (LLVM_LIKELY(func == nullptr)) {
             SmallVector<Type *, 2> params;
             if (LLVM_LIKELY(isStateful())) {
-                params.push_back(getSharedStateType()->getPointerTo());
+                params.push_back(PointerType::getUnqual(b.getContext()));
             }
-            PointerType * const threadLocalPtrTy = getThreadLocalStateType()->getPointerTo();
+            PointerType * const threadLocalPtrTy = PointerType::getUnqual(b.getContext());
             params.push_back(threadLocalPtrTy);
             params.push_back(threadLocalPtrTy);
             FunctionType * const funcType = FunctionType::get(b.getVoidTy(), params, false);
@@ -1270,10 +1270,10 @@ Function * Kernel::addFinalizeDeclaration(KernelBuilder & b) const {
         }
         std::vector<Type *> params;
         if (LLVM_LIKELY(isStateful())) {
-            params.push_back(getSharedStateType()->getPointerTo());
+            params.push_back(PointerType::getUnqual(b.getContext()));
         }
         if (LLVM_LIKELY(hasThreadLocal())) {
-            params.push_back(getThreadLocalStateType()->getPointerTo());
+            params.push_back(PointerType::getUnqual(b.getContext()));
         }
         FunctionType * const terminateType = FunctionType::get(resultType, params, false);
         terminateFunc = Function::Create(terminateType, GlobalValue::ExternalLinkage, funcName, m);

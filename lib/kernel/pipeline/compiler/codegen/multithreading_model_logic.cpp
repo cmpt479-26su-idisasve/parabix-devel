@@ -49,7 +49,7 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
 
     StructType * const threadStructTy = getThreadStuctType(b, storedState);
 
-    PointerType * const threadStructPtrTy = threadStructTy->getPointerTo();
+    PointerType * const threadStructPtrTy = PointerType::getUnqual(b.getContext());
 
     ConstantInt * const i32_ZERO = b.getInt32(0);
     ConstantInt * const sz_ZERO = b.getSize(0);
@@ -196,7 +196,6 @@ void PipelineCompiler::generateMultiThreadKernelMethod(KernelBuilder & b) {
     fieldIndex[1] = b.getInt32(CURRENT_THREAD_ID);
 
     pthreadCreateArgs[0] = b.CreateInBoundsGEP(threadStructTy, threadStateArray, fieldIndex);
-    assert (pthreadCreateArgs[0]->getType() == pThreadTy->getPointerTo());
     pthreadCreateArgs[1] = ConstantPointerNull::get(voidPtrTy);
     pthreadCreateArgs[2] = threadFunc;
     pthreadCreateArgs[3] = cThreadState;
@@ -1095,13 +1094,11 @@ void PipelineCompiler::writeThreadStructObject(KernelBuilder & b,
     indices2[0] = b.getInt32(0);
     if (LLVM_LIKELY(mTarget->isStateful())) {
         indices2[1] = b.getInt32(SHARED_STATE_PARAM);
-        assert (shared->getType() == mTarget->getSharedStateType()->getPointerTo());
         assert (threadStateTy->getStructElementType(SHARED_STATE_PARAM) == shared->getType());
         b.CreateAlignedStore(shared, b.CreateInBoundsGEP(threadStateTy, threadState, indices2), PtrTyABIAlignment);
     }
     if (LLVM_LIKELY(mTarget->hasThreadLocal())) {
         indices2[1] = b.getInt32(THREAD_LOCAL_PARAM);
-        assert (threadLocal->getType() == mTarget->getThreadLocalStateType()->getPointerTo());
         assert (threadStateTy->getStructElementType(THREAD_LOCAL_PARAM) == threadLocal->getType());
         b.CreateAlignedStore(threadLocal, b.CreateInBoundsGEP(threadStateTy, threadState, indices2), PtrTyABIAlignment);
     }
@@ -1148,14 +1145,12 @@ void PipelineCompiler::readThreadStructObject(KernelBuilder & b, StructType * co
     indices2[0] = i32_ZERO;
     if (mTarget->isStateful()) {
         indices2[1] = b.getInt32(SHARED_STATE_PARAM);
-        Type * ty = mTarget->getSharedStateType()->getPointerTo();
-        assert (threadStateTy->getStructElementType(SHARED_STATE_PARAM) == mTarget->getSharedStateType()->getPointerTo());
+        Type * ty = PointerType::getUnqual(b.getContext());
         setHandle(b.CreateAlignedLoad(ty, b.CreateInBoundsGEP(threadStateTy, threadState, indices2), PtrTyABIAlignment));
     }
     if (mTarget->hasThreadLocal()) {
         indices2[1] = b.getInt32(THREAD_LOCAL_PARAM);
-        Type * ty = mTarget->getThreadLocalStateType()->getPointerTo();
-        assert (threadStateTy->getStructElementType(THREAD_LOCAL_PARAM) == mTarget->getThreadLocalStateType()->getPointerTo());
+        Type * ty = PointerType::getUnqual(b.getContext());
         setThreadLocalHandle(b.CreateAlignedLoad(ty, b.CreateInBoundsGEP(threadStateTy, threadState, indices2), PtrTyABIAlignment));
     }
     if (mUseDynamicMultithreading) {
@@ -1201,7 +1196,7 @@ void PipelineCompiler::linkPipelineExternalMethods(KernelBuilder & b) {
 
     BEGIN_SCOPED_REGION
     FixedArray<Type *, 4> params;
-    params[0] = pThreadTy->getPointerTo();
+    params[0] = PointerType::getUnqual(b.getContext());
     params[1] = voidPtrTy;
     params[2] = voidPtrTy;
     params[3] = voidPtrTy;
@@ -1212,7 +1207,7 @@ void PipelineCompiler::linkPipelineExternalMethods(KernelBuilder & b) {
     BEGIN_SCOPED_REGION
     FixedArray<Type *, 2> params;
     params[0] = pThreadTy;
-    params[1] = voidPtrTy->getPointerTo();
+    params[1] = PointerType::getUnqual(b.getContext());
     FunctionType * funTy = FunctionType::get(intTy, params, false);
     b.LinkFunction("pthread_join", funTy, (void*)&pthread_join);
     END_SCOPED_REGION

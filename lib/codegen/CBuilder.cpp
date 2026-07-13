@@ -874,10 +874,11 @@ PointerType * LLVM_READNONE CBuilder::getFILEptrTy() {
 
 Value * CBuilder::CreateFOpenCall(Value * filename, Value * mode) {
     Module * const m = getModule();
-    FunctionType * fty = FunctionType::get(getFILEptrTy(), {getInt8Ty()->getPointerTo(), getInt8Ty()->getPointerTo()}, false);
+    PointerType * int8PtrTy = PointerType::getUnqual(getContext());
+    FunctionType * fty = FunctionType::get(getFILEptrTy(), {int8PtrTy, int8PtrTy}, false);
     Function * fOpenFunc = m->getFunction("fopen");
     if (fOpenFunc == nullptr) {
-        FunctionType * fty = FunctionType::get(getFILEptrTy(), {getInt8Ty()->getPointerTo(), getInt8Ty()->getPointerTo()}, false);
+        FunctionType * fty = FunctionType::get(getFILEptrTy(), {int8PtrTy, int8PtrTy}, false);
         fOpenFunc = Function::Create(fty, Function::ExternalLinkage, "fopen", m);
         fOpenFunc->setCallingConv(CallingConv::C);
     }
@@ -1114,7 +1115,7 @@ void CBuilder::__CreateAssert(Value * const assertion, const Twine format, std::
         StructType * const structTy = StructType::create(C, fields, __BACKTRACE_STRUCT_NAME, true);
         assert (getTypeSize(structTy)->getLimitedValue() == sizeof(__backtrace_data));
 
-        PointerType * const structPtrTy = structTy->getPointerTo();
+        PointerType * const structPtrTy = PointerType::getUnqual(getContext());
 
         FixedArray<Type *, 5> params;
         params[0] = int1Ty;

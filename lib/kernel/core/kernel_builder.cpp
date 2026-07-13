@@ -937,7 +937,6 @@ KernelBuilder::AddressableValue KernelBuilder::makeAddressableValue(Type * type,
     AddressableValue av;
 
     if (LLVM_UNLIKELY(value->getType()->isPointerTy())) {
-        assert (type->getPointerTo() == value->getType());
         av.Address = value;
         av.From = from;
         av.To = to;

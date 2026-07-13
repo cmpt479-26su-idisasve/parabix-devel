@@ -267,7 +267,7 @@ void PipelineCompiler::zeroInputAfterFinalItemCount(KernelBuilder & b,
             params[3] = sizeTy; // end
             params[4] = sizeTy; // overflow
             params[5] = sizeTy; // numOfStreams
-            params[6] = truncTy->getPointerTo(); // masked buffer storage ptr
+            params[6] = PointerType::getUnqual(b.getContext()); // masked buffer storage ptr
 
             LLVMContext & C = m->getContext();
 

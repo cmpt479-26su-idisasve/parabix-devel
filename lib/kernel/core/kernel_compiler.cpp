@@ -1393,9 +1393,6 @@ void KernelCompiler::initializeScalarMap(KernelBuilder & b, const InitializeOpti
         if (handle == nullptr || stateType == nullptr) {
             return false;
         }
-        if (handle->getType() != stateType->getPointerTo()) {
-            return false;
-        }
         assert (!stateType->isOpaque());
         assert (stateType->isSized());
         assert (stateType->isPacked());
@@ -1684,9 +1681,6 @@ void KernelCompiler::initializeScalarMap(KernelBuilder & b, const InitializeOpti
             return true;
         }
         if (handle == nullptr || stateType == nullptr) {
-            return false;
-        }
-        if (handle->getType() != stateType->getPointerTo()) {
             return false;
         }
         assert (!stateType->isOpaque());
