@@ -608,7 +608,7 @@ inline void KernelCompiler::callGenerateInitializeThreadLocalMethod(KernelBuilde
             setHandle(nextArg());
         }
         StructType * const threadLocalTy = mTarget->getThreadLocalStateType();
-        PointerType * const threadLocalPtrTy = threadLocalTy->getPointerTo();
+        PointerType * const ptrTy = PointerType::getUnqual(b.getContext());
         Value * const providedState = nextArg();
         BasicBlock * const allocThreadLocal = BasicBlock::Create(b.getContext(), "allocThreadLocalState", mCurrentMethod);
         BasicBlock * const initThreadLocal = BasicBlock::Create(b.getContext(), "initThreadLocalState", mCurrentMethod);
@@ -624,7 +624,7 @@ inline void KernelCompiler::callGenerateInitializeThreadLocalMethod(KernelBuilde
         b.CreateBr(initThreadLocal);
 
         b.SetInsertPoint(initThreadLocal);
-        PHINode * const threadLocal = b.CreatePHI(threadLocalPtrTy, 2);
+        PHINode * const threadLocal = b.CreatePHI(ptrTy, 2);
         threadLocal->addIncoming(providedState, mEntryPoint);
         threadLocal->addIncoming(allocedState, allocThreadLocal);
 
@@ -2462,10 +2462,9 @@ void KernelCompiler::registerIllustrator(KernelBuilder & b,
     args[10] = b.getInt8(replacement1);
 
     IntegerType * const sizeTy = b.getSizeTy();
-    PointerType * const sizePtrTy = sizeTy->getPointerTo();
     Constant * loopIdConstant = nullptr;
     if (loopIds.empty()) {
-        loopIdConstant = ConstantPointerNull::get(sizePtrTy);
+        loopIdConstant = ConstantPointerNull::get(PointerType::getUnqual(b.getContext()));
     } else {
         const auto n = loopIds.size();
         SmallVector<Constant *, 8> ids(n + 1);
