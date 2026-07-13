@@ -858,7 +858,7 @@ void PipelineCompiler::prefetchAtLeastThreeCacheLinesFrom(KernelBuilder & b, Val
     Module * const m = b.getModule();
     Function * const prefetchFunc = Intrinsic::getOrInsertDeclaration(m, Intrinsic::prefetch);
 
-    DataLayout dl(m);
+    auto & dl = m->getDataLayout();
     Type * const elemTy = addr->getType()->getPointerElementType();
     const auto typeSize = dl.getTypeAllocSize(elemTy).getFixedSize();
     assert (typeSize > 0);

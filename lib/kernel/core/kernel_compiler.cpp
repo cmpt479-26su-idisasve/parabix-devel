@@ -299,7 +299,7 @@ void KernelCompiler::runAllOptimizationPasses(KernelBuilder & b, Kernel::Selecte
     }
 
     FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
-    FPM.addPass(InstCombinePass());
+    //FPM.addPass(InstCombinePass());
     FPM.addPass(DCEPass());
     FPM.addPass(ReassociatePass());
     FPM.addPass(GVNPass());

@@ -572,7 +572,7 @@ void PipelineCompiler::printHistogramReport(KernelBuilder & b, HistogramReportTy
 
     #ifndef NDEBUG
     BEGIN_SCOPED_REGION
-    DataLayout dl(b.getModule());
+    auto & dl = b.getModule()->getDataLayout();
     assert (CBuilder::getTypeSize(dl, hpdTy) == sizeof(HistogramPortData));
     assert (CBuilder::getTypeSize(dl, hkdTy) == sizeof(HistogramKernelData));
     END_SCOPED_REGION
