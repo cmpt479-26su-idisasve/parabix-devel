@@ -9,6 +9,7 @@
 #include <pablo/codegenstate.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DerivedTypes.h>
+#include <llvm/Analysis/ConstantFolding.h>
 #include <llvm/Transforms/Utils/Local.h>
 #include <pablo/branch.h>
 #include <pablo/pablo_intrinsic.h>
@@ -412,7 +413,12 @@ void CarryManager::enterLoopBody(kernel::KernelBuilder & b, BasicBlock * const e
         Constant * const initialCarryStateCapacity = b.getSize(8); // 2^3
         b.CreateStore(initialCarryStateCapacity, capacityPtr);
 
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
         Constant * const initialCapacitySize = ConstantExpr::getMul(initialCarryStateCapacity, carryStateTySize);
+#else
+        Constant * const initialCapacitySize = ConstantFoldBinaryOpOperands(
+            Instruction::Mul, initialCarryStateCapacity, carryStateTySize, b.getModule()->getDataLayout());
+#endif
         Value * initialArray = b.CreatePageAlignedMalloc(initialCapacitySize);
         b.CreateMemZero(initialArray, initialCapacitySize, blockSize);
         b.CreateStore(initialArray, carryStateArrayPtr);

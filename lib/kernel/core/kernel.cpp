@@ -56,6 +56,14 @@ constexpr static auto STATE_TYPE_METADATA_SUFFIX = "_state_types";
 #define BEGIN_SCOPED_REGION {
 #define END_SCOPED_REGION }
 
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
+#define addNoCaptureAttr(arg) \
+            arg->addAttr(llvm::Attribute::get(b.getContext(), llvm::Attribute::NoCapture))
+#else
+#define addNoCaptureAttr(arg) \
+            arg->addAttr(llvm::Attribute::getWithCaptureInfo(b.getContext(), llvm::CaptureInfo::none()))
+#endif
+
 /** ------------------------------------------------------------------------------------------------------------- *
  * @brief isLocalBuffer
  ** ------------------------------------------------------------------------------------------------------------- */
@@ -655,7 +663,7 @@ Function * Kernel::addInitializeDeclaration(KernelBuilder & b) const {
         }
 
         if (LLVM_LIKELY(isStateful())) {
-            arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+            addNoCaptureAttr(arg);
             setNextArgName("shared");
         }
         for (const Binding & binding : mInputScalars) {
@@ -703,7 +711,7 @@ Function * Kernel::addExpectedOutputSizeDeclaration(KernelBuilder & b) const {
             std::advance(arg, 1);
         };
         if (LLVM_LIKELY(isStateful())) {
-            arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+            addNoCaptureAttr(arg);
             setNextArgName("shared");
         }
     }
@@ -765,10 +773,10 @@ Function * Kernel::addInitializeThreadLocalDeclaration(KernelBuilder & b) const 
                 std::advance(arg, 1);
             };
             if (LLVM_LIKELY(isStateful())) {
-                arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+                addNoCaptureAttr(arg);
                 setNextArgName("shared");
             }
-            arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+            addNoCaptureAttr(arg);
             setNextArgName("threadlocal");
             assert (arg == func->arg_end());
         }
@@ -829,7 +837,7 @@ Function * Kernel::addAllocateSharedInternalStreamSetsDeclaration(KernelBuilder 
                 std::advance(arg, 1);
             };
             if (LLVM_LIKELY(isStateful())) {
-                arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+                addNoCaptureAttr(arg);
                 setNextArgName("shared");
             }
             setNextArgName("expectedNumOfStrides");
@@ -904,7 +912,7 @@ Function * Kernel::addAllocateThreadLocalInternalStreamSetsDeclaration(KernelBui
                 std::advance(arg, 1);
             };
             if (LLVM_LIKELY(isStateful())) {
-                arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+                addNoCaptureAttr(arg);
                 setNextArgName("shared");
             }
             setNextArgName("threadLocal");
@@ -1079,11 +1087,11 @@ Function * Kernel::addDoSegmentDeclaration(KernelBuilder & b) const {
             std::advance(arg, 1);
         };
         if (LLVM_LIKELY(isStateful())) {
-            arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+            addNoCaptureAttr(arg);
             setNextArgName("shared");
         }
         if (LLVM_UNLIKELY(hasThreadLocal())) {
-            arg->addAttr(llvm::Attribute::AttrKind::NoCapture);
+            addNoCaptureAttr(arg);
             setNextArgName("threadLocal");
         }
 

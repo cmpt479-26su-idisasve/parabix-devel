@@ -514,8 +514,6 @@ void PipelineCompiler::buildKernelCallArgumentList(KernelBuilder & b, ArgVec & a
         }
     }
 
-    PointerType * const voidPtrPtrTy = PointerType::getUnqual(b.getContext());
-
     bool hasManagedOutput = false;
 
     for (unsigned i = 0; i < numOfOutputs; ++i) {

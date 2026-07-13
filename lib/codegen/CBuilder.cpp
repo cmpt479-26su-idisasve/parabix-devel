@@ -820,8 +820,7 @@ IntegerType * LLVM_READNONE CBuilder::getIntAddrTy() const {
 }
 
 PointerType * LLVM_READNONE CBuilder::getVoidPtrTy(const unsigned AddressSpace) const {
-    //return PointerType::get(Type::getVoidTy(getContext()), AddressSpace);
-    return PointerType::get(Type::getInt8Ty(getContext()), AddressSpace);
+    return PointerType::get(getContext(), AddressSpace);
 }
 
 
@@ -1112,9 +1111,10 @@ void CBuilder::__CreateAssert(Value * const assertion, const Twine format, std::
         fields[0] = int8PtrTy;
         fields[1] = int8PtrTy;
         fields[2] = getSizeTy();
+#ifndef NDEBUG
         StructType * const structTy = StructType::create(C, fields, __BACKTRACE_STRUCT_NAME, true);
         assert (getTypeSize(structTy)->getLimitedValue() == sizeof(__backtrace_data));
-
+#endif
         PointerType * const structPtrTy = PointerType::getUnqual(getContext());
 
         FixedArray<Type *, 5> params;
@@ -1538,10 +1538,21 @@ CallInst * CBuilder::CreateMemMove(Value * Dst, Value * Src, Value *Size, const 
             ConstantInt * align = ConstantInt::get(intPtrTy, Align);
             CreateAssertZero(CreateURem(intSrc, align), "CreateMemMove: Src pointer is misaligned");
             CreateAssertZero(CreateURem(intDst, align), "CreateMemMove: Dst pointer is misaligned");
-
         }
     }
-    return IRBuilder<>::CreateMemMove(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, ScopeTag, NoAliasTag);}
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
+    return IRBuilder<>::CreateMemMove(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+#else
+    llvm::AAMDNodes AAInfo;
+    AAInfo.TBAA = TBAATag;
+    AAInfo.Scope = ScopeTag;
+    AAInfo.NoAlias = NoAliasTag;
+    return IRBuilder<>::CreateMemMove(Dst, AlignType{Align},
+                                      Src, AlignType{Align},
+                                      Size, isVolatile,
+                                      AAInfo);
+#endif
+}
 
 CallInst * CBuilder::CreateMemCpy(Value *Dst, Value *Src, Value *Size, const unsigned Align, bool isVolatile,
                                   MDNode *TBAATag, MDNode *TBAAStructTag, MDNode *ScopeTag, MDNode *NoAliasTag) {
@@ -1565,7 +1576,19 @@ CallInst * CBuilder::CreateMemCpy(Value *Dst, Value *Src, Value *Size, const uns
         Value * const nonOverlapping = CreateOr(srcEndsBeforeDst, dstEndsBeforeSrc);
         CreateAssert(nonOverlapping, "CreateMemCpy: overlapping ranges is undefined");
     }
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
     return IRBuilder<>::CreateMemCpy(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, TBAAStructTag, ScopeTag, NoAliasTag);
+#else
+    llvm::AAMDNodes AAInfo;
+    AAInfo.TBAA = TBAATag;
+    AAInfo.TBAAStruct = TBAAStructTag;
+    AAInfo.Scope = ScopeTag;
+    AAInfo.NoAlias = NoAliasTag;
+    return IRBuilder<>::CreateMemCpy(Dst, AlignType{Align},
+                                     Src, AlignType{Align},
+                                     Size, isVolatile,
+                                     AAInfo);
+#endif
 }
 
 CallInst * CBuilder::CreateMemSet(Value * Ptr, Value * Val, Value * Size, const unsigned Align,
@@ -1580,7 +1603,15 @@ CallInst * CBuilder::CreateMemSet(Value * Ptr, Value * Val, Value * Size, const 
             CreateAssertZero(CreateURem(intPtr, align), "CreateMemSet: Ptr is misaligned");
         }
     }
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
     return IRBuilder<>::CreateMemSet(Ptr, Val, Size, AlignType{Align}, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+#else
+    llvm::AAMDNodes AAInfo;
+    AAInfo.TBAA = TBAATag;
+    AAInfo.Scope = ScopeTag;
+    AAInfo.NoAlias = NoAliasTag;
+    return IRBuilder<>::CreateMemSet(Ptr, Val, Size, AlignType{Align}, isVolatile, AAInfo);
+#endif
 }
 
 CallInst * CBuilder::CreateMemCmp(Value * Ptr1, Value * Ptr2, Value * Num) {
