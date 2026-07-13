@@ -2540,6 +2540,7 @@ PreservedAnalyses RemoveRedundantAllocaAndGEPInstructions::run(Function &F,
 
     BasicBlock & bb = F.getEntryBlock();
 
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
     Instruction * inst = bb.getFirstNonPHIOrDbgOrLifetime();
     while (inst) {
         #ifndef NDEBUG
@@ -2565,6 +2566,25 @@ PreservedAnalyses RemoveRedundantAllocaAndGEPInstructions::run(Function &F,
         }
         inst = nextNode;
     }
+#else
+    BasicBlock::iterator it = bb.getFirstNonPHIOrDbgOrLifetime();
+    while (it != bb.end()) {
+        Instruction &inst = *it++;
+
+        if (isa<AllocaInst>(inst) || isa<GetElementPtrInst>(inst)) {
+            if (LLVM_UNLIKELY(inst.use_empty())) {
+                inst.eraseFromParent();
+                continue;
+            }
+        }
+
+        if (auto *allocaInst = dyn_cast<AllocaInst>(&inst)) {
+            if (isAllocaPromotable(allocaInst)) {
+                allocas.push_back(allocaInst);
+            }
+        }
+    }
+#endif
 
     if (!allocas.empty()) {
         auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
@@ -2675,6 +2695,7 @@ PreservedAnalyses TracePass::run(Function &F, FunctionAnalysisManager & AM) {
         }
 
         for (Instruction * I : toTrace) {
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
             Instruction * N = I;
             if (LLVM_UNLIKELY(isa<PHINode>(I))) {
                 N = B.getFirstNonPHIOrDbgOrLifetime();
@@ -2682,15 +2703,23 @@ PreservedAnalyses TracePass::run(Function &F, FunctionAnalysisManager & AM) {
                 assert (I->getNextNode());
                 N = I->getNextNode();
             }
+#else
+            BasicBlock::iterator N = I->getIterator();
+            if (LLVM_UNLIKELY(isa<PHINode>(I))) {
+                N = B.getFirstNonPHIOrDbgOrLifetime();
+            } else if (LLVM_LIKELY(I != B.getTerminator())) {
+                assert(N != B.end() && "Iterator out of bounds unexpectedly");
+                ++N;
+            }
+#endif
             b.SetInsertPoint(N);
-            const Type * ty = I->getType();
+            const Type *ty = I->getType();
             if (ty->isIntOrPtrTy()) {
                 b.CallPrintInt(I->getName(), I);
             } else if (ty->isVectorTy()) {
                 b.CallPrintRegister(I->getName(), I);
             }
         }
-
         toTrace.clear();
     }
 

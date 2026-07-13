@@ -200,7 +200,7 @@ StructType * CompressedCarryManager::analyse(kernel::KernelBuilder & b, const Pa
     const auto blockWidth = b.getBitBlockWidth();
     const auto maxNumSmallCarriesForImplicitSummary = blockWidth / 8;
 
-    DataLayout dl(b.getModule());
+    auto & DL = b.getModule()->getDataLayout();
 
     std::function<StructType *(const PabloBlock *, unsigned, unsigned, bool)> analyseRec = [&](
             const PabloBlock * const scope,
@@ -295,7 +295,7 @@ StructType * CompressedCarryManager::analyse(kernel::KernelBuilder & b, const Pa
         unsigned packedSizeInBits = 0;
         const auto n = state.size();
         for (unsigned i = 0; i < n; ++i) {
-            packedSizeInBits += CBuilder::getTypeSize(dl, state[i]);
+            packedSizeInBits += CBuilder::getTypeSize(DL, state[i]);
         }
         packedSizeInBits *= 8;
 

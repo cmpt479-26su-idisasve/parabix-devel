@@ -50,7 +50,7 @@ public:
     }
 
     __attribute__((const)) llvm::PointerType * getPointerType()  const {
-        return getType()->getPointerTo(getAddressSpace());
+        return llvm::PointerType::get(getType()->getContext(), getAddressSpace());
     }
 
     bool isLinear() const {

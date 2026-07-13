@@ -1,4 +1,4 @@
-﻿/*
+/*
  *  Copyright (c) 2018 International Characters.
  *  This software is licensed to the public under the Open Software License 3.0.
  *  icgrep is a trademark of International Characters.
@@ -347,7 +347,7 @@ void RepeatingSourceKernel::generateDoSegmentMethod(KernelBuilder & b) {
     Value * const startPtr = outputBuffer->getStreamBlockPtr(b, baseAddress, sz_ZERO, nextIndex);
     Value * const endPtr = outputBuffer->getStreamBlockPtr(b, baseAddress, sz_ZERO, endIndex);
 
-    DataLayout DL(b.getModule());
+    auto & DL = b.getModule()->getDataLayout();
     Type * const intPtrTy = DL.getIntPtrType(startPtr->getType());
     Value * const startPtrInt = b.CreatePtrToInt(startPtr, intPtrTy);
     Value * const endPtrInt = b.CreatePtrToInt(endPtr, intPtrTy);
