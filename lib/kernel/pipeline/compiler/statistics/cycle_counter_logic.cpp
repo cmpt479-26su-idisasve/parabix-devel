@@ -1131,10 +1131,9 @@ void PipelineCompiler::recordItemCountDeltas(KernelBuilder & b,
 void PipelineCompiler::addItemCountDeltaProperties(KernelBuilder & b, const unsigned kernel, const StringRef suffix) const {
     const auto n = out_degree(kernel, mBufferGraph);
     LLVMContext & C = b.getContext();
-    IntegerType * const sizeTy = b.getSizeTy();
-    PointerType * const voidPtrTy = b.getVoidPtrTy();
-    ArrayType * const logTy = ArrayType::get(ArrayType::get(sizeTy, n), ITEM_COUNT_DELTA_CHUNK_LENGTH);
-    PointerType * const traceTy = PointerType::getUnqual(b.getContext());
+    //IntegerType * const sizeTy = b.getSizeTy();
+    //ArrayType * const logTy = ArrayType::get(ArrayType::get(sizeTy, n), ITEM_COUNT_DELTA_CHUNK_LENGTH);
+    PointerType * const traceTy = PointerType::getUnqual(C);
     const auto fieldName = (makeKernelName(kernel) + suffix).str();
     const auto groupId = getCacheLineGroupId(kernel);
     mTarget->addInternalScalar(traceTy, fieldName, groupId);

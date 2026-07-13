@@ -250,8 +250,6 @@ void PipelineCompiler::addInternalKernelProperties(KernelBuilder & b, const unsi
 //        FixedArray<Type *, 2> recordStruct;
 //        recordStruct[0] = sizeTy; // segment num
 //        recordStruct[1] = sizeTy; // # of strides
-        Type * const recordStructTy = ArrayType::get(sizeTy, 2);
-
         FixedArray<Type *, 4> traceStruct;
         traceStruct[0] = sizeTy; // last num of strides (to avoid unnecessary loads of the trace
                                  // log and simplify the logic for first stride)

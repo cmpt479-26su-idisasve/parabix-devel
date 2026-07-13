@@ -193,7 +193,6 @@ void RepeatingSourceKernel::generateDoSegmentMethod(KernelBuilder & b) {
         Constant * const patternVal = ConstantArray::get(streamTy, dataVectorArray);
         GlobalVariable * const gv = new GlobalVariable(mod, streamTy, true, GlobalValue::PrivateLinkage, patternVal);
         gv->setAlignment(MaybeAlign{blockWidth /8});
-        assert (streamTy->getPointerTo() == gv->getType());
 
         streamVal[p] = gv;
     }

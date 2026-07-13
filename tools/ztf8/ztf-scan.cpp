@@ -68,7 +68,6 @@ struct LengthGroupParameters {
     Constant * SUFFIX_MASK;
     unsigned const groupHalfLength;
     Type * halfLengthTy;
-    Type * halfSymPtrTy;
     Constant * HALF_LENGTH;
     Constant * LO;
     Constant * HI;
@@ -91,7 +90,6 @@ struct LengthGroupParameters {
         SUFFIX_MASK(b.getSize(0x7F)),
         groupHalfLength(1UL << boost::intrusive::detail::floor_log2(groupInfo.lo)),
         halfLengthTy(b.getIntNTy(8U * groupHalfLength)),
-        halfSymPtrTy(halfLengthTy->getPointerTo()),
         HALF_LENGTH(b.getSize(groupHalfLength)),
         LO(b.getSize(groupInfo.lo)),
         HI(b.getSize(groupInfo.hi)),

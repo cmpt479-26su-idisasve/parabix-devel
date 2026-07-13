@@ -347,13 +347,8 @@ void CarryManager::enterLoopBody(kernel::KernelBuilder & b, BasicBlock * const e
     }
 
     if (LLVM_UNLIKELY(mCarryInfo->nonCarryCollapsingMode())) {
-
         assert (mCarryInfo->getNestedCarryStateType());
-
-        auto & DL = b.getModule()->getDataLayout();
-
         IntegerType * const sizeTy = b.getSizeTy();
-
         ConstantInt * const ZERO = b.getSize(0);
 
         NonCarryCollapsingFrame & frame = mNonCarryCollapsingModeStack.back();
