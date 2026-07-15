@@ -7,19 +7,18 @@
 
 #include <llvm/Support/Compiler.h>
 #include <llvm/ADT/StringMap.h>
+#include <toolchain/toolchain.h>
 
 namespace llvm { class LLVMContext; }
 namespace kernel { class KernelBuilder; }
 
-extern LLVM_READNONE bool AVX2_available();
-extern LLVM_READNONE bool AVX512BW_available();
-
 namespace IDISA {
-    
-kernel::KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const llvm::StringMap<bool> & features);
+
+kernel::KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet);
 
 #ifdef CUDA_ENABLED
 kernel::KernelBuilder * GetIDISA_GPU_Builder(llvm::LLVMContext & C);
 #endif
+
 }
 

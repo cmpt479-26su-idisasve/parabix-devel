@@ -67,18 +67,10 @@ CPUDriver::CPUDriver(std::string && moduleName)
     builder.setTargetOptions(codegen::target_Options);
     builder.setOptLevel(codegen::BackEndOptLevel);
 
-    // TODO: make a path for a command-line override, or fix the feature detection under QEMU, or something
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
-    StringMap<bool> features;
-    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
-        throw std::runtime_error("CPUDriver failed to get host CPU features");
-    }
-    #else
-    const auto features = sys::getHostCPUFeatures();
-    #endif
+    const auto featureNames = codegen::GetFeatureNames();
 
     std::vector<std::string> attrs;
-    for (auto & flag : features) {
+    for (auto & flag : featureNames) {
         if (flag.second) {
             attrs.push_back("+" + flag.first().str());
         }
@@ -104,7 +96,7 @@ CPUDriver::CPUDriver(std::string && moduleName)
     const DataLayout DL(mTarget->createDataLayout());
     mMainModule->setTargetTriple(triple);
     mMainModule->setDataLayout(DL);
-    mBuilder.reset(IDISA::GetIDISA_Builder(*mContext, features));
+    mBuilder.reset(IDISA::GetIDISA_Builder(*mContext, codegen::MapFeatureNames(featureNames)));
     mBuilder->setDriver(*this);
     mBuilder->setModule(mMainModule);
 }

@@ -49,10 +49,6 @@ static cl::opt<bool> enableAVXdel("enable-AVX-deletion", cl::desc("Enable AVX2 d
 
 static cl::opt<bool> BranchingMode("branch", cl::desc("Use Experimental branching pipeline mode"), cl::cat(u8u16Options));
 
-inline bool useAVX2() {
-    return enableAVXdel && AVX2_available() && codegen::BlockSize == 256;
-}
-
 class U8U16Kernel final: public pablo::PabloKernel {
 public:
     U8U16Kernel(LLVMTypeSystemInterface & ts, StreamSet * BasisBits, StreamSet * u8bits, StreamSet * DelMask);
@@ -284,7 +280,7 @@ u8u16FunctionType generatePipeline(CPUDriver & driver, cc::ByteNumbering byteNum
     StreamSet * selectors = P.CreateStreamSet();
     P.CreateKernelCall<U8U16Kernel>(BasisBits, u8bits, selectors);
     StreamSet * u16bytes = P.CreateStreamSet(1, 16);
-    if (useAVX2()) {
+    if (driver.hasFeature(codegen::Feature::AVX2)) {
         // Allocate space for fully compressed swizzled UTF-16 bit streams
         std::vector<StreamSet *> u16Swizzles(4);
         u16Swizzles[0] = P.CreateStreamSet(4);
@@ -327,7 +323,7 @@ void makeNonAsciiBranch(LLVMTypeSystemInterface & driver,
     P.CreateKernelCall<U8U16Kernel>(BasisBits, u8bits, selectors);
 
     StreamSet * u16bits = P.CreateStreamSet(16);
-    if (useAVX2()) {
+    if (P.getDriver().hasFeature(codegen::Feature::AVX2)) {
         // Allocate space for fully compressed swizzled UTF-16 bit streams
         std::vector<StreamSet *> u16Swizzles(4);
         u16Swizzles[0] = P.CreateStreamSet(4);

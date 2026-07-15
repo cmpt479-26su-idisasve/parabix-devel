@@ -5,6 +5,7 @@
 #include <llvm/ExecutionEngine/GenericValue.h>
 #include <kernel/core/kernel.h>
 #include <kernel/core/relationship.h>
+#include <idisa/idisa_builder.h>
 #include <util/slab_allocator.h>
 #include <llvm/IR/Constants.h>
 #include <kernel/illustrator/illustrator.h>
@@ -60,6 +61,8 @@ public:
     }
 
     unsigned getBitBlockWidth() const final;
+
+    bool hasFeature(const codegen::Feature feature) const;
 
 protected:
 
