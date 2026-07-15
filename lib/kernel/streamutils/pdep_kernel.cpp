@@ -982,13 +982,7 @@ void FieldDepositKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value 
 //#define PREFER_FIELD_STORES_OVER_INSERT_ELEMENT
 
 void PDEPFieldDepositLogic(KernelBuilder & b, llvm::Value * const numOfStrides, unsigned fieldWidth, unsigned streamCount, unsigned stride) {
-#ifdef PREFER_FIELD_LOADS_OVER_EXTRACT_ELEMENT
     Type * fieldTy = b.getIntNTy(fieldWidth);
-    Type * fieldPtrTy = PointerType::get(fieldTy, 0);
-#elif PREFER_FIELD_STORES_OVER_INSERT_ELEMENT
-    Type * fieldTy = b.getIntNTy(fieldWidth);
-    Type * fieldPtrTy = PointerType::get(fieldTy, 0);
-#endif
     BasicBlock * entry = b.GetInsertBlock();
     BasicBlock * processBlock = b.CreateBasicBlock("processBlock");
     BasicBlock * done = b.CreateBasicBlock("done");
