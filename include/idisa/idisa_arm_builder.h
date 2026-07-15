@@ -10,7 +10,7 @@ class IDISA_ARM_Builder : public virtual IDISA_Builder {
 public:
     static constexpr unsigned NativeBitBlockWidth = ARM_width;
 
-    IDISA_ARM_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet, unsigned bitBlockWidth, unsigned laneWidth)
+    IDISA_ARM_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet, unsigned bitBlockWidth, unsigned laneWidth)
     : IDISA_Builder(C, featureSet, ARM_width, bitBlockWidth, laneWidth) {
 
     }

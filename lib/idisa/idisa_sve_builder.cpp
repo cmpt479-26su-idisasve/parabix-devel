@@ -14,7 +14,7 @@ using namespace llvm;
 namespace IDISA {
 
 IDISA_SVE_Builder::IDISA_SVE_Builder(llvm::LLVMContext& C,
-                                     const FeatureSet& featureSet,
+                                     const codegen::FeatureSet& featureSet,
                                      unsigned bitBlockWidth, unsigned laneWidth)
     : IDISA_Builder(C, featureSet, SVE_width,
                     bitBlockWidth, laneWidth),

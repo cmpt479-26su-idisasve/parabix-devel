@@ -10,7 +10,7 @@ class IDISA_SVE_Builder : public IDISA_ARM_Builder {
 public:
     static constexpr unsigned NativeBitBlockWidth = SVE_width;
 
-    IDISA_SVE_Builder(llvm::LLVMContext& C, const FeatureSet& featureSet,
+    IDISA_SVE_Builder(llvm::LLVMContext& C, const codegen::FeatureSet& featureSet,
                       unsigned bitBlockWidth, unsigned laneWidth);
 
     virtual std::string getBuilderUniqueName() override;
