@@ -558,12 +558,16 @@ RE * RE_Parser::parse_permute() {
 RE * RE_Parser::parse_interleavable() {
     std::vector<RE *> factors;
     for (;;) {
-        RE * re = parse_next_item("*?+{|<}");
-        if (re == nullptr) {
-            break;
+        std::vector<RE *> seq;
+        for (;;) {
+            RE * re = parse_next_item("*?+{|<}");
+            if (re == nullptr) {
+                break;
+            }
+            re = extend_item(re);
+            seq.push_back(re);
         }
-        re = extend_item(re);
-        factors.push_back(re);
+        factors.push_back(makeSeq(seq.begin(), seq.end()));
         if (!accept("<")) {
             break;
         }
