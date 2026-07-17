@@ -82,6 +82,7 @@ CPUDriver::CPUDriver(std::string && moduleName)
         throw std::runtime_error("Could not selectTarget");
     }
     mEngine.reset(builder.create());
+    mEngine.reset(builder.create(mTarget.get()));
     if (mEngine == nullptr) {
         throw std::runtime_error("Could not create ExecutionEngine: " + errMessage);
     }
