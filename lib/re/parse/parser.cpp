@@ -572,6 +572,9 @@ RE * RE_Parser::parse_interleavable() {
             break;
         }
     }
+    if (factors.size() == 1) {
+        return factors[0];
+    }
     return makeInterleavable(factors.begin(), factors.end());
 }
 
