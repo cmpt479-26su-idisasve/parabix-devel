@@ -81,8 +81,11 @@ CPUDriver::CPUDriver(std::string && moduleName)
     if (mTarget == nullptr) {
         throw std::runtime_error("Could not selectTarget");
     }
-    mEngine.reset(builder.create());
-    mEngine.reset(builder.create(mTarget.get()));
+    auto const &tt = mTarget->getTargetTriple();
+    const DataLayout DL(mTarget->createDataLayout());
+    llvm::errs() << "CPUDriver target arch: " << tt.getArchName() << ", " << tt.getOSAndEnvironmentName() << "\n";
+    llvm::errs() << "  Features: " << mTarget->getTargetFeatureString() << "\n";
+    mEngine.reset(builder.create(mTarget.release()));
     if (mEngine == nullptr) {
         throw std::runtime_error("Could not create ExecutionEngine: " + errMessage);
     }
@@ -93,9 +96,7 @@ CPUDriver::CPUDriver(std::string && moduleName)
     mEngine->DisableLazyCompilation(true);
     mEngine->DisableGVCompilation(true);
 
-    auto triple = mTarget->getTargetTriple().getTriple();
-    const DataLayout DL(mTarget->createDataLayout());
-    mMainModule->setTargetTriple(triple);
+    mMainModule->setTargetTriple(tt.getTriple());
     mMainModule->setDataLayout(DL);
     mBuilder.reset(IDISA::GetIDISA_Builder(*mContext, codegen::MapFeatureNames(featureNames)));
     mBuilder->setDriver(*this);
