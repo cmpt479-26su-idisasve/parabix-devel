@@ -94,7 +94,7 @@ message(STATUS "LLVM Version Integer: ${LLVM_VERSION_INTEGER}")
 set(Boost_USE_STATIC_LIBS ${USE_STATIC_LIBS})
 set(Boost_USE_MULTITHREADED OFF)
 set(Boost_USE_STATIC_RUNTIME OFF)
-find_package(Boost 1.61 REQUIRED COMPONENTS system filesystem iostreams regex)
+find_package(Boost 1.61 REQUIRED COMPONENTS filesystem iostreams regex)
 message(STATUS "Found Boost_LIBRARY_DIRS: ${Boost_LIBRARY_DIRS}")
 include_directories("${Boost_INCLUDE_DIRS}")
 link_directories(${Boost_LIBRARY_DIRS})
@@ -252,7 +252,7 @@ include(CMakeParseArguments)
 
 # Release & Debug flags
 
-# TODO revert before final merge: this is sacrificing runtime performance to make compilation faster and use less memory (forcing -O1)
+# TODO JL revert before final merge: this is sacrificing runtime performance to make compilation faster and use less memory (forcing -O1)
 #set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE}")
 #set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} -O1 -g -fvisibility=default -fno-omit-frame-pointer -fno-optimize-sibling-calls")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O1")

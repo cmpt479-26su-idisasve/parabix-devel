@@ -47,10 +47,12 @@ llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LL
 } // anonymous namespace
 namespace IDISA {
 
-std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM";}
+std::string IDISA_ARM_Builder::getBuilderUniqueName() {
+    return mBitBlockWidth != NativeBitBlockWidth ? "ARM_NEON_" + std::to_string(mBitBlockWidth) : "ARM_NEON";
+}
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
-    if (getVectorBitWidth(a) != ARM_width || fw < 8 || fw % 8 != 0) {
+    if (getVectorBitWidth(a) != ARM_NEON_width || fw < 8 || fw % 8 != 0) {
         return IDISA_Builder::simd_popcount(fw, a);
     }
 
@@ -114,7 +116,7 @@ Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
 
 Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 
-    if (fw < 8 || getVectorBitWidth(a) != ARM_width) {
+    if (fw < 8 || getVectorBitWidth(a) != ARM_NEON_width) {
         return IDISA_Builder::simd_bitreverse(fw, a);
     }
 
@@ -235,7 +237,7 @@ Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_
 }
 
 Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
         int nElems = getVectorBitWidth(a) / fw;
         int halfFw = fw / 2;
         Function* uzp1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
@@ -248,7 +250,7 @@ Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
         int nElems = getVectorBitWidth(a) / fw;
         int halfFw = fw / 2;
         Function* uzp2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
@@ -261,7 +263,7 @@ Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
-  if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
+  if ((fw == 16) && (getVectorBitWidth(a) == ARM_NEON_width)) {
     Function * vqmovun_s16_func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_uqxtn, FixedVectorType::get(getInt8Ty(), 8));
     Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, a));
     Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, b));
@@ -272,7 +274,7 @@ Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
         int nElms = getVectorBitWidth(a) / fw;
         Function * zip2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
                                                      Intrinsic::aarch64_sve_zip2,
@@ -283,7 +285,7 @@ Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
         int nElms = getVectorBitWidth(a) / fw;
         Function * zip1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
                                                      Intrinsic::aarch64_sve_zip1,
@@ -297,7 +299,7 @@ Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
 // in-range amounts (< fw), so a single byte-lane USHL/USHR plus a fixed field-isolation
 // mask replaces the generic emulated inductive-doubling loop.
 Value * IDISA_ARM_Builder::simd_sllv(unsigned fw, Value * v, Value * shifts) {
-    if (getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
+    if (getVectorBitWidth(v) == ARM_NEON_width && (fw == 2 || fw == 4)) {
         auto splat8 = [&](uint8_t x) { return getSplat(16, getInt8(x)); };
         if (fw == 4) {
             // remask each nibble after the byte shift so bits never carry across the nibble boundary
@@ -319,7 +321,7 @@ Value * IDISA_ARM_Builder::simd_sllv(unsigned fw, Value * v, Value * shifts) {
 }
 
 Value * IDISA_ARM_Builder::simd_srlv(unsigned fw, Value * v, Value * shifts) {
-    if (getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
+    if (getVectorBitWidth(v) == ARM_NEON_width && (fw == 2 || fw == 4)) {
         auto splat8 = [&](uint8_t x) { return getSplat(16, getInt8(x)); };
         if (fw == 4) {
             Value * loData = simd_and(v, splat8(0x0F));
