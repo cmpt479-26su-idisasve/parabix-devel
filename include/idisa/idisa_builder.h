@@ -7,6 +7,7 @@
 #include <codegen/CBuilder.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <bitset>
+#include <toolchain/toolchain.h>
 
 namespace llvm { class Constant; }
 namespace llvm { class LoadInst; }
@@ -27,32 +28,13 @@ unsigned getStreamFieldWidth (const llvm::Type * const t);
 
 unsigned getVectorBitWidth(llvm::Value * vec);
 
-// not an exhaustive list; can be extended but keep __Count as the last entry
-enum class Feature : size_t {
-    AVX_BMI,
-    AVX_BMI2,
-    // ---------------
-    AVX512_CD,
-    AVX512_BW,
-    AVX512_DQ,
-    AVX512_VL,
-    AVX512_VBMI,
-    AVX512_VBMI2,
-    AVX512_VPOPCNTDQ,
-    // ---------------
-    __Count
-};
-
 class IDISA_Builder : public CBuilder {
 
 public:
-
-    using FeatureSet = std::bitset<(size_t)Feature::__Count>;
-
-    IDISA_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet,
+    IDISA_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet,
                   unsigned nativeVectorWidth, unsigned vectorWidth, unsigned laneWidth, unsigned maxShiftFw = 64, unsigned minShiftFw = 16);
 
-    bool hasFeature(const IDISA::Feature feature) const LLVM_READNONE {
+    bool hasFeature(const codegen::Feature feature) const LLVM_READNONE {
         return mFeatureSet.test((size_t)feature);
     }
 
@@ -264,7 +246,7 @@ protected:
     llvm::Constant * const      mZeroInitializer;
     llvm::Constant * const      mOneInitializer;
     llvm::Constant *            mPrintRegisterFunction;
-    const FeatureSet            mFeatureSet;
+    const codegen::FeatureSet   mFeatureSet;
 };
 
 }

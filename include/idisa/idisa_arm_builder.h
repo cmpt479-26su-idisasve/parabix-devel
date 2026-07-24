@@ -4,14 +4,14 @@
 
 namespace IDISA {
 
-constexpr unsigned ARM_width = 128;
+constexpr unsigned ARM_NEON_width = 128;
 
 class IDISA_ARM_Builder : public virtual IDISA_Builder {
 public:
-    static constexpr unsigned NativeBitBlockWidth = ARM_width;
+    static constexpr unsigned NativeBitBlockWidth = ARM_NEON_width;
 
-    IDISA_ARM_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet, unsigned bitBlockWidth, unsigned laneWidth)
-    : IDISA_Builder(C, featureSet, ARM_width, bitBlockWidth, laneWidth) {
+    IDISA_ARM_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet, unsigned bitBlockWidth, unsigned laneWidth)
+    : IDISA_Builder(C, featureSet, ARM_NEON_width, bitBlockWidth, laneWidth) {
 
     }
 

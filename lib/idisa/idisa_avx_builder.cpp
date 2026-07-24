@@ -23,6 +23,8 @@ using boost::intrusive::detail::floor_log2;
 #define ADD_IF_FOUND(Flag, Value) if (features.lookup(Value)) featureSet.set((size_t)Feature::Flag)
 
 using namespace llvm;
+using codegen::Feature;
+using codegen::FeatureSet;
 
 namespace IDISA {
 

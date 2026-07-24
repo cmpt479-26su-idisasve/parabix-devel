@@ -17,7 +17,7 @@ constexpr unsigned AVX512_width = 512;
 class IDISA_AVX_Builder : public IDISA_SSE2_Builder {
 public:
     static const unsigned NativeBitBlockWidth = AVX_width;
-    IDISA_AVX_Builder(llvm::LLVMContext & C, const FeatureSet &featureSet, unsigned vectorWidth, unsigned laneWidth);
+    IDISA_AVX_Builder(llvm::LLVMContext & C, const codegen::FeatureSet &featureSet, unsigned vectorWidth, unsigned laneWidth);
 
     virtual std::string getBuilderUniqueName() override;
 
@@ -33,7 +33,7 @@ public:
 class IDISA_AVX2_Builder : public IDISA_AVX_Builder {
 public:
     static const unsigned NativeBitBlockWidth = AVX_width;
-    IDISA_AVX2_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet, unsigned vectorWidth, unsigned laneWidth);
+    IDISA_AVX2_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet, unsigned vectorWidth, unsigned laneWidth);
 
     virtual std::string getBuilderUniqueName() override;
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
@@ -63,7 +63,7 @@ public:
 class IDISA_AVX512F_Builder : public IDISA_AVX2_Builder {
 public:
     static const unsigned NativeBitBlockWidth = AVX512_width;
-    IDISA_AVX512F_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet, unsigned vectorWidth, unsigned laneWidth);
+    IDISA_AVX512F_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet, unsigned vectorWidth, unsigned laneWidth);
 
     virtual std::string getBuilderUniqueName() override;
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;

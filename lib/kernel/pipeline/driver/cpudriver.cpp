@@ -66,12 +66,10 @@ CPUDriver::CPUDriver(std::string && moduleName)
     builder.setTargetOptions(codegen::target_Options);
     builder.setOptLevel(codegen::BackEndOptLevel);
 
-    // TODO: make a path for a command-line override, or fix the feature detection under QEMU, or something
-    StringMap<bool> features;
-    sys::getHostCPUFeatures(features);
+    const auto featureNames = codegen::GetFeatureNames();
 
     std::vector<std::string> attrs;
-    for (auto & flag : features) {
+    for (auto & flag : featureNames) {
         if (flag.second) {
             attrs.push_back("+" + flag.first().str());
         }
@@ -82,7 +80,15 @@ CPUDriver::CPUDriver(std::string && moduleName)
     if (mTarget == nullptr) {
         throw std::runtime_error("Could not selectTarget");
     }
-    mEngine.reset(builder.create());
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
+    auto triple = mTarget->getTargetTriple().getTriple();
+#else
+    auto triple = mTarget->getTargetTriple();
+#endif
+    const DataLayout DL(mTarget->createDataLayout());
+    llvm::errs() << "CPUDriver target arch: " << triple.getArchName() << ", " << triple.getOSAndEnvironmentName() << "\n";
+    llvm::errs() << "  Features: " << mTarget->getTargetFeatureString() << "\n";
+    mEngine.reset(builder.create(mTarget.release()));
     if (mEngine == nullptr) {
         throw std::runtime_error("Could not create ExecutionEngine: " + errMessage);
     }
@@ -93,15 +99,9 @@ CPUDriver::CPUDriver(std::string && moduleName)
     mEngine->DisableLazyCompilation(true);
     mEngine->DisableGVCompilation(true);
 
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
-    auto triple = mTarget->getTargetTriple().getTriple();
-#else
-    auto triple = mTarget->getTargetTriple();
-#endif
-    const DataLayout DL(mTarget->createDataLayout());
     mMainModule->setTargetTriple(triple);
     mMainModule->setDataLayout(DL);
-    mBuilder.reset(IDISA::GetIDISA_Builder(*mContext, features));
+    mBuilder.reset(IDISA::GetIDISA_Builder(*mContext, codegen::MapFeatureNames(featureNames)));
     mBuilder->setDriver(*this);
     mBuilder->setModule(mMainModule);
 }

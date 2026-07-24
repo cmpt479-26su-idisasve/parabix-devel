@@ -14,6 +14,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <boost/interprocess/mapped_region.hpp>
 #include <thread>
+#include <mutex>
 
 using namespace llvm;
 
@@ -31,6 +32,73 @@ namespace codegen {
 
 inline unsigned getPageSize() {
     return boost::interprocess::mapped_region::get_page_size();
+}
+
+llvm::StringMap<bool> GetFeatureNames() {
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
+    StringMap<bool> features;
+    if (!sys::getHostCPUFeatures(features)) {
+        llvm::report_fatal_error("SVE2_available() failed to get host CPU features");
+    }
+    return features;
+#else
+    return sys::getHostCPUFeatures();
+#endif
+}
+
+FeatureSet MapFeatureNames(llvm::StringMap<bool> const &namedFeatures) {
+    FeatureSet featureSet;
+
+    StringMap<Feature> namesToFeatures = {
+#ifdef PARABIX_X86_TARGET
+        {"ssse3", Feature::SSSE3},
+        {"avx", Feature::AVX},
+        {"avx2", Feature::AVX2},
+        // if (HasAVX || HasAVX2)...
+        {"bmi", Feature::AVX_BMI},
+        {"bmi2", Feature::AVX_BMI2},
+        // if (HasAVX512F)...
+        {"avx512f", Feature::AVX512F},
+        {"avx512cd", Feature::AVX512_CD},
+        {"avx512bw", Feature::AVX512_BW},
+        {"avx512dq", Feature::AVX512_DQ},
+        {"avx512vl", Feature::AVX512_VL},
+        // AVX512_VBMI, AVX512_VBMI2 and AVX512_VPOPCNTDQ  have not been tested as we
+        //did not have hardware support. It should work in theory (tm)
+        {"avx512vbmi", Feature::AVX512_VBMI},
+        {"avx512vbmi2", Feature::AVX512_VBMI2},
+        {"avx512vpopcntdq", Feature::AVX512_VPOPCNTDQ},
+#elif defined(PARABIX_ARM_TARGET)
+        {"sve", Feature::SVE},
+        {"sve2", Feature::SVE2},
+#endif
+    };
+
+    // Translate feature list to bit flags
+    for (auto const & f : namedFeatures) {
+        auto found = namesToFeatures.find(f.first());
+        if (f.second && found != namesToFeatures.end()) {
+            featureSet.set((size_t)found->second);
+        }
+    }
+
+    return featureSet;
+}
+
+unsigned DefaultBlockSizeForFeatures(const codegen::FeatureSet & featureSet) {
+#if defined(PARABIX_X86_TARGET)
+    if (featureSet.test((size_t)Feature::AVX512F)) {
+        return 512;
+    } else if (featureSet.test((size_t)Feature::AVX2)) {
+        return 256;
+    } else {
+        return 128;
+    }
+#elif defined(PARABIX_ARM_TARGET)
+    return 128;
+#else
+    return 64;
+#endif
 }
 
 cl::OptionCategory JIT_InfoOptions("J.  JIT Information Options", 
@@ -249,7 +317,6 @@ CodeGenOptLevel BackEndOptLevel;
 const char * ObjectCacheDir;
 
 unsigned BlockSize;
-
 unsigned SegmentSize;
 
 unsigned BufferSegments;
@@ -344,6 +411,7 @@ void ParseCommandLineOptions(int argc, const char * const *argv, std::initialize
         cl::HideUnrelatedOptions(ArrayRef<const cl::OptionCategory *>(hiding));
     }
     cl::ParseCommandLineOptions(argc, argv);
+
 //    if (LLVM_UNLIKELY(!PabloIllustrateBitstreamRegEx.empty() || IllustratorDisplay != 0)) {
 //        EnableIllustrator = true;
 //    }
@@ -355,6 +423,10 @@ void ParseCommandLineOptions(int argc, const char * const *argv, std::initialize
     ObjectCacheDir = ObjectCacheDirOption.empty() ? nullptr : ObjectCacheDirOption.data();
     target_Options.MCOptions.AsmVerbose = true;
 
+    if(BlockSize == 0) {
+        auto featureSet = MapFeatureNames(GetFeatureNames());
+        BlockSize = DefaultBlockSizeForFeatures(featureSet);
+    }
 }
 
 void printParabixVersion (raw_ostream & outs) {

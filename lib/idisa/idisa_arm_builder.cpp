@@ -17,10 +17,12 @@ using namespace llvm;
 
 namespace IDISA {
 
-std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM";}
+std::string IDISA_ARM_Builder::getBuilderUniqueName() {
+    return mBitBlockWidth != NativeBitBlockWidth ? "ARM_NEON_" + std::to_string(mBitBlockWidth) : "ARM_NEON";
+}
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
-    if (getVectorBitWidth(a) != ARM_width || fw < 8 || fw % 8 != 0) {
+    if (getVectorBitWidth(a) != ARM_NEON_width || fw < 8 || fw % 8 != 0) {
         return IDISA_Builder::simd_popcount(fw, a);
     }
 
@@ -84,7 +86,7 @@ Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
 
 Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 
-    if (fw < 8 || getVectorBitWidth(a) != ARM_width) {
+    if (fw < 8 || getVectorBitWidth(a) != ARM_NEON_width) {
         return IDISA_Builder::simd_bitreverse(fw, a);
     }
 
@@ -147,7 +149,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * ta
 }
 
 Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
         int nElems = getVectorBitWidth(a) / fw;
         int halfFw = fw / 2;
         Function* uzp1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
@@ -160,7 +162,7 @@ Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
         int nElems = getVectorBitWidth(a) / fw;
         int halfFw = fw / 2;
         Function* uzp2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
@@ -173,7 +175,7 @@ Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
-  if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
+  if ((fw == 16) && (getVectorBitWidth(a) == ARM_NEON_width)) {
     Function * vqmovun_s16_func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_uqxtn, FixedVectorType::get(getInt8Ty(), 8));
     Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, a));
     Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, b));
@@ -185,7 +187,7 @@ Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
 
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 
-  if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+  if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
     int nElms = getVectorBitWidth(a) / fw;
     int halfFw = fw / 2;
     Function * zip2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
@@ -197,7 +199,7 @@ Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-  if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+  if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_NEON_width)) {
     int nElms = getVectorBitWidth(a) / fw;
     int halfFw = fw / 2;
     Function * zip1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
