@@ -15,6 +15,36 @@
 
 using namespace llvm;
 
+namespace {
+
+llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LLVMContext & C) {
+    const char * const name = "__idisa_arm_byte_compress_table";
+    if (llvm::GlobalVariable * existing = mod->getGlobalVariable(name)) {
+        return existing;
+    }
+    llvm::IntegerType * i8Ty = llvm::IntegerType::getInt8Ty(C);
+    llvm::FixedVectorType * entryTy = llvm::FixedVectorType::get(i8Ty, 16);
+    llvm::SmallVector<llvm::Constant *, 256> entries(256);
+    for (unsigned m = 0; m < 256; m++) {
+        llvm::Constant * lanes[16];
+        unsigned pos = 0;
+        for (unsigned bit = 0; bit < 8; bit++) {
+            if (m & (1u << bit)) {
+                lanes[pos++] = llvm::ConstantInt::get(i8Ty, bit);
+            }
+        }
+        for (unsigned i = pos; i < 16; i++) {
+            lanes[i] = llvm::ConstantInt::get(i8Ty, 16); // out-of-range => TBL yields 0
+        }
+        entries[m] = llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant *>(lanes, 16));
+    }
+    llvm::ArrayType * tableTy = llvm::ArrayType::get(entryTy, 256);
+    llvm::Constant * tableInit = llvm::ConstantArray::get(tableTy, entries);
+    return new llvm::GlobalVariable(*mod, tableTy, /*isConstant=*/true,
+                                     llvm::GlobalValue::PrivateLinkage, tableInit, name);
+}
+
+} // anonymous namespace
 namespace IDISA {
 
 std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM";}
