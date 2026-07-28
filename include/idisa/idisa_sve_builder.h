@@ -1,17 +1,15 @@
 #pragma once
 
+#include "idisa_builder.h"
 #include <idisa/idisa_arm_builder.h>
 
 namespace IDISA {
 
-constexpr unsigned ARM_SVE_width = 128;
+constexpr unsigned ARM_SVE_min_width = 128;
 
-class IDISA_SVE_Builder : public virtual IDISA_Builder, public IDISA_ARM_Builder {
+class IDISA_SVE_Builder : public IDISA_ARM_Builder {
 public:
-    static constexpr unsigned NativeBitBlockWidth = ARM_SVE_width;
-
-    IDISA_SVE_Builder(llvm::LLVMContext& C, const codegen::FeatureSet& featureSet,
-                      unsigned bitBlockWidth, unsigned laneWidth);
+    unsigned NativeBitBlockWidth();
 
     virtual std::string getBuilderUniqueName() override;
 
@@ -25,7 +23,8 @@ public:
     llvm::Value * mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) override;
     llvm::Value * mvmd_shuffle2(unsigned fw, llvm::Value * table0, llvm::Value * table1, llvm::Value * index_vector) override;
 
-    ~IDISA_SVE_Builder() {}
+    IDISA_SVE_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
+    ~IDISA_SVE_Builder() = default;
 
 private:
     unsigned mVecLen;

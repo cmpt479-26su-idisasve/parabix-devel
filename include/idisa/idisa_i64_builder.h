@@ -12,18 +12,14 @@ constexpr unsigned I64_width = 64;
 
 class IDISA_I64_Builder : public virtual IDISA_Builder {
 public:
-    static const unsigned NativeBitBlockWidth = I64_width;
-  
-    IDISA_I64_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet, unsigned bitBlockWidth, unsigned laneWidth)
-    : IDISA_Builder(C, featureSet, I64_width, bitBlockWidth, laneWidth) {
+    static constexpr unsigned NativeBitBlockWidth() {return I64_width;}
 
-    } 
+    IDISA_I64_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {} 
 
     virtual std::string getBuilderUniqueName() override;
 
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;
-    ~IDISA_I64_Builder() {}
 
 };
 

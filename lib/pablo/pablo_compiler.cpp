@@ -991,7 +991,7 @@ Value * PabloCompiler::compileExpression(KernelBuilder & b, const PabloAST * con
                 const unsigned intWidth = std::min(getIntegerBitWidth(lh->getType()), getIntegerBitWidth(rh->getType()));
                 const unsigned maskWidth = b.getBitBlockWidth() / intWidth;
                 IntegerType * const maskTy = b.getIntNTy(maskWidth);
-                FixedVectorType * const vTy = b.fwVectorType(intWidth);
+                VectorType * const vTy = b.fwVectorType(intWidth);
 
                 Value * baseLhv = nullptr;
                 Value * lhvStreamIndex = nullptr;

@@ -75,7 +75,7 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const codegen::FeatureSe
     if (featureSet.test((size_t)codegen::Feature::SVE)) {
         return new KernelBuilderImpl<IDISA_SVE_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
     }
-    // As of July 2026, aarch64 is supposed to always include NEON
+    // As of July 2026, aarch64 is supposed to always include Neon
     return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
 #endif
 }

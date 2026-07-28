@@ -96,7 +96,7 @@ void ZeroExtend::generateMultiBlockLogic(KernelBuilder & b, Value * const numOfS
     // expand by doubling repeatidly until we've reached the desired output size
     for (;;) {
 
-        FixedVectorType * const inputTy = cast<FixedVectorType>(inputBuffer[0]->getType());
+        VectorType * const inputTy = cast<VectorType>(inputBuffer[0]->getType());
 
         const auto n = inputTy->getElementType()->getIntegerBitWidth();
         const auto count = blockWidth / n;
@@ -115,7 +115,7 @@ void ZeroExtend::generateMultiBlockLogic(KernelBuilder & b, Value * const numOfS
         }
         Constant * const UPPER_MASK = ConstantVector::get(upperHalf);
 
-        FixedVectorType * const outputTy = b.fwVectorType(n * 2);
+        VectorType * const outputTy = b.fwVectorType(n * 2);
 
         Constant * const ZEROES = ConstantVector::getNullValue(inputTy);
         for (unsigned i = 0; i < inputBuffer.size(); ++i) {

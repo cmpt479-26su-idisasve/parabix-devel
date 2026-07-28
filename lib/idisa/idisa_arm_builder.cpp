@@ -18,7 +18,7 @@ using namespace llvm;
 namespace IDISA {
 
 std::string IDISA_ARM_Builder::getBuilderUniqueName() {
-    return mBitBlockWidth != NativeBitBlockWidth ? "ARM_ASIMD_" + std::to_string(mBitBlockWidth) : "ARM_ASIMD";
+    return mBitBlockWidth != NativeBitBlockWidth() ? "ARM_ASIMD_" + std::to_string(mBitBlockWidth) : "ARM_ASIMD";
 }
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {

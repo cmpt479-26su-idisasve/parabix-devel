@@ -8,12 +8,10 @@ constexpr unsigned ARM_ASIMD_width = 128;
 
 class IDISA_ARM_Builder : public virtual IDISA_Builder {
 public:
-    static constexpr unsigned NativeBitBlockWidth = ARM_ASIMD_width;
+    static constexpr unsigned NativeBitBlockWidth() {return ARM_ASIMD_width;}
 
-    IDISA_ARM_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet, unsigned bitBlockWidth, unsigned laneWidth)
-    : IDISA_Builder(C, featureSet, ARM_ASIMD_width, bitBlockWidth, laneWidth) {
-
-    }
+    IDISA_ARM_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
+    ~IDISA_ARM_Builder() = default;
 
     virtual std::string getBuilderUniqueName() override;
     llvm::Value* simd_popcount(unsigned fw, llvm::Value* a) override;
@@ -25,8 +23,6 @@ public:
     llvm::Value * hsimd_packus(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector) override;
     llvm::Value * mvmd_shuffle2(unsigned fw, llvm::Value * table0, llvm::Value * table1, llvm::Value * index_vector) override;
-
-    ~IDISA_ARM_Builder() {}
 };
 
 }
