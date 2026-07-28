@@ -28,7 +28,7 @@ static cl::opt<TranspositionMode>
 S2P_Mode("S2P_Mode", cl::ValueOptional,
          cl::values(clEnumValN(BytePack, "BytePack", "Bytepack transposition algorithm (default)."),
                     clEnumValN(Ideal, "Ideal", "Idealized transposition algorithm."),
-                    clEnumValN(Ideal, "Split", "Split 3-stage transposition algorithm."),
+                    clEnumValN(Split, "Split", "Split 3-stage transposition algorithm."),
                     clEnumValN(Pablo, "Pablo", "Pablo transposition algorithm.")),
          cl::cat(codegen::CodeGenOptions), cl::init(BytePack));
 
