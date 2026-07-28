@@ -48,7 +48,7 @@ llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LL
 namespace IDISA {
 
 std::string IDISA_ARM_Builder::getBuilderUniqueName() {
-    return mBitBlockWidth != NativeBitBlockWidth ? "ARM_NEON_" + std::to_string(mBitBlockWidth) : "ARM_NEON";
+    return mBitBlockWidth != NativeBitBlockWidth() ? "ARM_NEON_" + std::to_string(mBitBlockWidth) : "ARM_NEON";
 }
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
@@ -180,8 +180,8 @@ Value * IDISA_ARM_Builder::expandFieldMaskToBytes(Value * select_mask, unsigned 
 
 // raw TBL1: indexes >= 16 yield zero lanes, unlike mvmd_shuffle which reduces them mod 16
 Value * IDISA_ARM_Builder::tbl1(Value * table, Value * index_vector) {
-    Function * fn = Intrinsic::getDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1,
-                                              FixedVectorType::get(getInt8Ty(), 16));
+    Function * fn = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1,
+                                                      FixedVectorType::get(getInt8Ty(), 16));
     return CreateCall(fn->getFunctionType(), fn, {fwCast(8, table), fwCast(8, index_vector)});
 }
 

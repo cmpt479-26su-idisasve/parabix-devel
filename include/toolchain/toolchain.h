@@ -106,6 +106,10 @@ enum class Feature : size_t {
 
 using FeatureSet = std::bitset<(size_t)Feature::__Count>;
 
+#if defined(PARABIX_ARM_TARGET)
+unsigned HostSVEBitWidth();
+#endif
+
 llvm::StringMap<bool> GetFeatureNames();
 FeatureSet MapFeatureNames(llvm::StringMap<bool> const &namedFeatures);
 

@@ -1622,7 +1622,7 @@ void ByteFilterByMaskKernel::generateMultiBlockLogic(KernelBuilder & b, Value * 
 
     ConstantInt * const LOG_2_FIELDS_PER_BLOCK = b.getSize(floor_log2(fieldsPerBlock));
 
-    FixedVectorType * dataVecTy = b.fwVectorType(fieldWidth);
+    VectorType * dataVecTy = b.fwVectorType(fieldWidth);
 
     Value * initToWritePos = b.getProducedItemCount("output");
 

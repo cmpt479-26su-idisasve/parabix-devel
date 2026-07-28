@@ -1460,8 +1460,8 @@ void ByteReplaceByMask::generateMultiBlockLogic(KernelBuilder & b, Value * const
     Constant * const sz_ZERO = b.getSize(0);
     Value * initPos = b.getProcessedItemCount("Filler");
     const auto fieldWidth = getInputStreamSet(1)->getFieldWidth();
-    FixedVectorType * dataVecTy = b.fwVectorType(fieldWidth);
-    FixedVectorType * popVecTy = FixedVectorType::get(b.getIntNTy(b.getBitBlockWidth() / fieldWidth), fieldWidth);
+    VectorType * dataVecTy = b.fwVectorType(fieldWidth);
+    VectorType * popVecTy = b.fwVectorType(b.getBitBlockWidth() / fieldWidth);
 
     b.CreateBr(packLoop);
 
@@ -1566,8 +1566,8 @@ void ByteSpreadByMaskKernel::generateMultiBlockLogic(KernelBuilder & b, Value * 
 
     ConstantInt * const LOG_2_FIELDS_PER_BLOCK = b.getSize(floor_log2(fieldsPerBlock));
 
-    FixedVectorType * dataVecTy = b.fwVectorType(fieldWidth); // FixedVectorType::get(b.getIntNTy(fieldWidth), b.getBitBlockWidth() / fieldWidth);
-    FixedVectorType * popVecTy = FixedVectorType::get(b.getIntNTy(b.getBitBlockWidth() / fieldWidth), fieldWidth);
+    VectorType * dataVecTy = b.fwVectorType(fieldWidth);
+    VectorType * popVecTy = b.fwVectorType(b.getBitBlockWidth() / fieldWidth);
 
     if (numElements == 1 && numInputElements == 1) {
 
@@ -1678,7 +1678,7 @@ void ByteSpreadByMaskKernel::generateMultiBlockLogic(KernelBuilder & b, Value * 
 
         // Load spread vector
         Value * spreadVec = b.loadInputStreamBlock("spread", sz_ZERO, blockOffsetPhi);
-        FixedVectorType * popVecTy = FixedVectorType::get(b.getIntNTy(b.getBitBlockWidth() / fieldWidth), fieldWidth);
+        VectorType * popVecTy = b.fwVectorType(b.getBitBlockWidth() / fieldWidth);
         spreadVec = b.CreateBitCast(spreadVec, popVecTy);
 
         // Output tracking

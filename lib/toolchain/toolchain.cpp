@@ -16,6 +16,10 @@
 #include <thread>
 #include <mutex>
 
+#if defined(PARABIX_ARM_TARGET)
+#include <arm_sve.h>
+#endif
+
 using namespace llvm;
 
 #ifndef NDEBUG
@@ -95,11 +99,22 @@ unsigned DefaultBlockSizeForFeatures(const codegen::FeatureSet & featureSet) {
         return 128;
     }
 #elif defined(PARABIX_ARM_TARGET)
+    if(featureSet.test((size_t)Feature::SVE)) {
+        return HostSVEBitWidth();
+    }
     return 128;
 #else
     return 64;
 #endif
 }
+
+#if defined(PARABIX_ARM_TARGET)
+__attribute__((target ("+sve")))
+unsigned HostSVEBitWidth() {
+    return svcntb() * 8;
+}
+#endif
+
 
 cl::OptionCategory JIT_InfoOptions("J.  JIT Information Options", 
     "These options control production of information reports during JIT compilation.");

@@ -46,12 +46,10 @@ unsigned getStreamFieldWidth (const Type * const t) {
 }
 
 unsigned getVectorBitWidth(Value * a) {
-    Type * aTy = a->getType();
-    if (isa<IntegerType>(aTy)) return aTy->getPrimitiveSizeInBits();
-    return cast<FixedVectorType>(aTy)->getPrimitiveSizeInBits();
+    return a->getType()->getPrimitiveSizeInBits();
 }
 
-FixedVectorType * IDISA_Builder::fwVectorType(const unsigned fw) {
+VectorType * IDISA_Builder::fwVectorType(const unsigned fw) {
     return FixedVectorType::get(getIntNTy(fw), mBitBlockWidth / fw);
 }
 
@@ -366,14 +364,15 @@ Value * IDISA_Builder::simd_umin(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_Builder::mvmd_sll(unsigned fw, Value * value, Value * shift, const bool safe) {
-    FixedVectorType * const vecTy = fwVectorType(fw);
+    VectorType * const vecTy = fwVectorType(fw);
+    unsigned nElems = mBitBlockWidth / fw;
     IntegerType * const intTy = getIntNTy(mBitBlockWidth);
     Type * shiftTy = shift->getType();
     if (LLVM_UNLIKELY(!shiftTy->isIntegerTy())) {
         report_fatal_error("shift value type must be an integer");
     }
     // make sure the maximum bitwidth of the value can hold the multiplied value
-    if (shiftTy->getIntegerBitWidth() < vecTy->getNumElements()) {
+    if (shiftTy->getIntegerBitWidth() < nElems) {
         shiftTy = vecTy->getElementType();
         shift = CreateZExt(shift, shiftTy);
     }
@@ -415,14 +414,15 @@ Value * IDISA_Builder::mvmd_dsll(unsigned fw, Value * a, Value * b, Value * shif
 }
 
 Value * IDISA_Builder::mvmd_srl(unsigned fw, Value * value, Value * shift, const bool safe) {
-    FixedVectorType * const vecTy = fwVectorType(fw);
+    VectorType * const vecTy = fwVectorType(fw);
+    unsigned nElems = mBitBlockWidth / fw;
     IntegerType * const intTy = getIntNTy(mBitBlockWidth);
     Type * shiftTy = shift->getType();
     if (LLVM_UNLIKELY(!shiftTy->isIntegerTy())) {
         report_fatal_error("shift value type must be an integer");
     }
     // make sure the maximum bitwidth of the value can hold the multiplied value
-    if (shiftTy->getIntegerBitWidth() < vecTy->getNumElements()) {
+    if (shiftTy->getIntegerBitWidth() < nElems) {
         shiftTy = vecTy->getElementType();
         shift = CreateZExt(shift, shiftTy);
     }
@@ -1461,6 +1461,42 @@ Constant * IDISA_Builder::bit_interleave_byteshuffle_table(unsigned fw) {
     return ConstantVector::get(bit_interleave);
 }
 
+IDISA_Builder::IDISA_Builder(DONTUSE_CONSTRUCTOR)
+    : CBuilder(*static_cast<LLVMContext *>(nullptr)),
+      mNativeBitBlockWidth(), mBitBlockWidth(), mLaneWidth(),
+      MAX_NATIVE_SIMD_SHIFT(), MIN_NATIVE_SIMD_SHIFT(), mBitBlockType(),
+      mZeroInitializer(), mOneInitializer(), mPrintRegisterFunction(),
+      mFeatureSet() {
+    // Maybe you instantiated an IDISA_*_Builder directly: the inheritance
+    // hierarchy is too screwed up for that. You should call
+    // GetIDISA_Builder and let it do its dark magic with the
+    // KernelBuilderImpl. Alternatively, rearchitect the whole thing: this
+    // is the kind of code that gives inheritance a bad reputation. Prefer
+    // ownership (has-a vs. is-a), or redesign the systems to use mix-ins
+    // sanely (i.e., make the CBuilder, IDISA_Builder, and KernelBuilder
+    // peer interfaces ALL virtually inherited, and then importantly, the
+    // IDISA_Builder has to be a proxy interface to the IDISA_*_Builder,
+    // so ownership is inverted and the relationship is has-a -- the
+    // language design is what it is, not what you wish it was)!
+
+    llvm::report_fatal_error(
+        "Implementer, heed my words: this constructor must not be called. "
+        "See notes in IDISA_Builder.h.");
+
+    // A couple more notes about motivation: I got bit pretty bad (lost a
+    // couple hours, that is) trying to figure out why the IDISA_builder
+    // wasn't initialized with the vector width I was expecting. It turns
+    // out this is because the virtual inheritance of IDISA_Builder implies
+    // that the only meaningful constructor call is in KernelBuilderImpl,
+    // and it pulls the value I needed to modify from a compile-time static
+    // value in the derived class. This is obviously an awkward workaround
+    // to how virtual inheritance works, and this situation illustrates why
+    // the language feature is rarely used. Short of fixing the entire
+    // system, the best thing is to fail fast and make it obvious something
+    // wonky is going on, hence the introduction of this do-nothing
+    // constructor for all those do-nothing constructor calls.
+}
+
 IDISA_Builder::IDISA_Builder(LLVMContext & C, const codegen::FeatureSet &featureSet, unsigned nativeVectorWidth,
                              unsigned vectorWidth, unsigned laneWidth, unsigned maxShiftFw, unsigned minShiftFw)
 : CBuilder(C)
@@ -1474,7 +1510,9 @@ IDISA_Builder::IDISA_Builder(LLVMContext & C, const codegen::FeatureSet &feature
 , mOneInitializer(Constant::getAllOnesValue(mBitBlockType))
 , mPrintRegisterFunction(nullptr)
 , mFeatureSet(featureSet) {
-
+    llvm::errs() << "IDISA_Builder @ " << (void *)this << ": " << mBitBlockWidth
+                 << " (" << vectorWidth << ")" << ", " << mNativeBitBlockWidth
+                 << " (" << nativeVectorWidth << ")" << " native\n";
 }
 
 IDISA_Builder::~IDISA_Builder() {

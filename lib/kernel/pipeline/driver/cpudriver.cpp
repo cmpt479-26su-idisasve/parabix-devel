@@ -86,8 +86,6 @@ CPUDriver::CPUDriver(std::string && moduleName)
     auto triple = mTarget->getTargetTriple();
 #endif
     const DataLayout DL(mTarget->createDataLayout());
-    llvm::errs() << "CPUDriver target arch: " << triple.getArchName() << ", " << triple.getOSAndEnvironmentName() << "\n";
-    llvm::errs() << "  Features: " << mTarget->getTargetFeatureString() << "\n";
     mEngine.reset(builder.create(mTarget.release()));
     if (mEngine == nullptr) {
         throw std::runtime_error("Could not create ExecutionEngine: " + errMessage);

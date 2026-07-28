@@ -16,6 +16,7 @@ namespace llvm { class Value; }
 namespace llvm { class StringRef; }
 
 namespace IDISA {
+using VectorType = llvm::VectorType;
 using FixedVectorType = llvm::FixedVectorType;
 
 bool isStreamTy(const llvm::Type * const t);
@@ -31,6 +32,12 @@ unsigned getVectorBitWidth(llvm::Value * vec);
 class IDISA_Builder : public CBuilder {
 
 public:
+    // Special type to indicate when we're calling the superclass constructor
+    // for a virtual parent because the language requires it, but we actually
+    // expect that someone else will do the real initialization:
+    struct DONTUSE_CONSTRUCTOR {};
+    explicit IDISA_Builder(DONTUSE_CONSTRUCTOR);
+
     IDISA_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet,
                   unsigned nativeVectorWidth, unsigned vectorWidth, unsigned laneWidth, unsigned maxShiftFw = 64, unsigned minShiftFw = 16);
 
@@ -82,7 +89,7 @@ public:
         return CreateAlignedMalloc(size, mBitBlockWidth / 8);
     }
     
-    FixedVectorType * fwVectorType(const unsigned fw);
+    VectorType * fwVectorType(const unsigned fw);
 
     llvm::Constant * simd_himask(unsigned fw);
     llvm::Constant * simd_lomask(unsigned fw);
