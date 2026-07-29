@@ -126,17 +126,17 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
         Value * packed_ix = hsimd_packl(fw, ix0, ix1);
         Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix);
         Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix);
-        Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
-        Value * merge1 = esimd_mergeh(fw/2, shuf_lo, shuf_hi);
+        Value * merge0 = esimd_mergel(fw, shuf_lo, shuf_hi);
+        Value * merge1 = esimd_mergeh(fw, shuf_lo, shuf_hi);
         return fwCast(fw, CreateDoubleVector(merge0, merge1));
     }
     if (vec_width == mNativeBitBlockWidth && fw > 8) {
         // Create a table for shuffling with smaller field widths.
-        const unsigned fieldCount = mBitBlockWidth/fw;
+        const unsigned fieldCount = vec_width/fw;
         Constant * idxMask = getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), fieldCount-1));
         Value * idx = simd_and(index_vector, idxMask);
         unsigned half_fw = fw/2;
-        unsigned field_count = mBitBlockWidth/half_fw;
+        unsigned field_count = vec_width/half_fw;
         // Build a ConstantVector of alternating 0 and 1 values.
         SmallVector<Constant *, 16> Idxs(field_count);
         for (unsigned int i = 0; i < field_count; i++) {
