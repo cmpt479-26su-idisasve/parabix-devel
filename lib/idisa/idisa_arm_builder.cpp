@@ -130,7 +130,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
         Value * merge1 = esimd_mergeh(fw/2, shuf_hi, shuf_lo);
         return fwCast(fw, CreateDoubleVector(merge0, merge1));
     }
-    if (mBitBlockWidth == mNativeBitBlockWidth && fw > 8) {
+    if (vec_width == mNativeBitBlockWidth && fw > 8) {
         // Create a table for shuffling with smaller field widths.
         const unsigned fieldCount = mBitBlockWidth/fw;
         Constant * idxMask = getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), fieldCount-1));
@@ -149,7 +149,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
         Value * rslt = mvmd_shuffle(half_fw, data_table, half_fw_indexes);
       return rslt;
     }
-    if (mBitBlockWidth == 128 && fw == 8) {
+    if (vec_width == mNativeBitBlockWidth && fw == 8) {
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1, FixedVectorType::get(getInt8Ty(), 16));
         return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_select_lo(fw, index_vector))}));
     }
