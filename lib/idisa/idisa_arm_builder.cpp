@@ -126,8 +126,8 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
         Value * packed_ix = hsimd_packl(fw, ix0, ix1);
         Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix);
         Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix);
-        Value * merge0 = esimd_mergel(fw/2, shuf_hi, shuf_lo);
-        Value * merge1 = esimd_mergeh(fw/2, shuf_hi, shuf_lo);
+        Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
+        Value * merge1 = esimd_mergeh(fw/2, shuf_lo, shuf_hi);
         return fwCast(fw, CreateDoubleVector(merge0, merge1));
     }
     if (vec_width == mNativeBitBlockWidth && fw > 8) {
