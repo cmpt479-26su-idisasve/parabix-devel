@@ -113,22 +113,32 @@ Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector) {
     auto vec_width = getVectorBitWidth(data_table);
     unsigned numFields = vec_width/fw;
-    if ((fw < 8) || (numFields > mNativeBitBlockWidth/8)) {
+    if ((fw < 8) || (numFields > mNativeBitBlockWidth/4)) {
         llvm::report_fatal_error("mvmd_shuffle: unsupported vec_width/fw");
     }
     if (vec_width > mNativeBitBlockWidth) {
-        Value * t0 = CreateHalfVectorLow(data_table);
-        Value * t1 = CreateHalfVectorHigh(data_table);
-        Value * hi_fields = hsimd_packh(fw, t0, t1);
-        Value * lo_fields = hsimd_packl(fw, t0, t1);
-        Value * ix0 = CreateHalfVectorLow(index_vector);
-        Value * ix1 = CreateHalfVectorHigh(index_vector);
-        Value * packed_ix = hsimd_packl(fw, ix0, ix1);
-        Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix);
-        Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix);
-        Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
-        Value * merge1 = esimd_mergeh(fw/2, shuf_lo, shuf_hi);
-        return fwCast(fw, CreateDoubleVector(merge0, merge1));
+        if (fw >= 16) {
+            Value * t0 = CreateHalfVectorLow(data_table);
+            Value * t1 = CreateHalfVectorHigh(data_table);
+            Value * hi_fields = hsimd_packh(fw, t0, t1);
+            Value * lo_fields = hsimd_packl(fw, t0, t1);
+            Value * ix0 = CreateHalfVectorLow(index_vector);
+            Value * ix1 = CreateHalfVectorHigh(index_vector);
+            Value * packed_ix = hsimd_packl(fw, ix0, ix1);
+            Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix);
+            Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix);
+            Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
+            Value * merge1 = esimd_mergeh(fw/2, shuf_lo, shuf_hi);
+            return fwCast(fw, CreateDoubleVector(merge0, merge1));
+        } else if (fw == 8) {
+            Value * t0 = CreateHalfVectorLow(data_table);
+            Value * t1 = CreateHalfVectorHigh(data_table);
+            Value * ix0 = CreateHalfVectorLow(index_vector);
+            Value * ix1 = CreateHalfVectorHigh(index_vector);
+            Value * shuf0 = mvmd_shuffle2(fw, t0, t1, ix0);
+            Value * shuf1 = mvmd_shuffle2(fw, t0, t1, ix1);
+            return fwCast(fw, CreateDoubleVector(shuf0, shuf1));
+        }
     }
     if (vec_width == mNativeBitBlockWidth && fw > 8) {
         // Create a table for shuffling with smaller field widths.
@@ -157,7 +167,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
 }
 
 Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector) {
-    if (mBitBlockWidth == 128 && fw == 8) {
+    if (getVectorBitWidth(table0) == 128 && fw == 8) {
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl2, FixedVectorType::get(getInt8Ty(), 16));
         Value * rslt = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, table0), fwCast(8, table1), fwCast(8, index_vector)});
             return rslt;
