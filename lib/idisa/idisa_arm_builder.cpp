@@ -126,8 +126,8 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
         Value * packed_ix = hsimd_packl(fw, ix0, ix1);
         Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix);
         Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix);
-        Value * merge0 = esimd_mergel(fw, shuf_lo, shuf_hi);
-        Value * merge1 = esimd_mergeh(fw, shuf_lo, shuf_hi);
+        Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
+        Value * merge1 = esimd_mergeh(fw/2, shuf_lo, shuf_hi);
         return fwCast(fw, CreateDoubleVector(merge0, merge1));
     }
     if (vec_width == mNativeBitBlockWidth && fw > 8) {
@@ -203,28 +203,25 @@ Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
-
-  if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
-    int nElms = getVectorBitWidth(a) / fw;
-    int halfFw = fw / 2;
-    Function * zip2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
-                                                 Intrinsic::aarch64_sve_zip2,
-                                                 FixedVectorType::get(getIntNTy(halfFw), nElms * 2));
-    return CreateCall(zip2_fn->getFunctionType(), zip2_fn, {fwCast(halfFw, a), fwCast(halfFw, b)});
-  }
-  return IDISA_Builder::esimd_mergeh(fw, a, b);
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+        int nElms = getVectorBitWidth(a) / fw;
+        Function * zip2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
+                                                     Intrinsic::aarch64_sve_zip2,
+                                                     FixedVectorType::get(getIntNTy(fw), nElms));
+        return CreateCall(zip2_fn->getFunctionType(), zip2_fn, {fwCast(fw, a), fwCast(fw, b)});
+    }
+    return IDISA_Builder::esimd_mergeh(fw, a, b);
 }
 
 Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-  if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
-    int nElms = getVectorBitWidth(a) / fw;
-    int halfFw = fw / 2;
-    Function * zip1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
-                                                 Intrinsic::aarch64_sve_zip1,
-                                                 FixedVectorType::get(getIntNTy(halfFw), nElms * 2));
-    return CreateCall(zip1_fn->getFunctionType(), zip1_fn, {fwCast(halfFw, a), fwCast(halfFw, b)});
-  }
-  return IDISA_Builder::esimd_mergel(fw, a, b);
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+        int nElms = getVectorBitWidth(a) / fw;
+        Function * zip1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
+                                                     Intrinsic::aarch64_sve_zip1,
+                                                     FixedVectorType::get(getIntNTy(fw), nElms));
+        return CreateCall(zip1_fn->getFunctionType(), zip1_fn, {fwCast(fw, a), fwCast(fw, b)});
+    }
+    return IDISA_Builder::esimd_mergel(fw, a, b);
 }
 
 }
