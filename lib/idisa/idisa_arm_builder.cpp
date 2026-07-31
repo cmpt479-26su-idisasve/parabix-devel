@@ -141,32 +141,6 @@ Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 }
 
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector) {
-<<<<<<< Updated upstream
-  if (mBitBlockWidth == 128 && fw > 8) {
-    // Create a table for shuffling with smaller field widths.
-    const unsigned fieldCount = mBitBlockWidth/fw;
-    Constant * idxMask = getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), fieldCount-1));
-    Value * idx = simd_and(index_vector, idxMask);
-    unsigned half_fw = fw/2;
-    unsigned field_count = mBitBlockWidth/half_fw;
-    // Build a ConstantVector of alternating 0 and 1 values.
-    SmallVector<Constant *, 16> Idxs(field_count);
-    for (unsigned int i = 0; i < field_count; i++) {
-      Idxs[i] = ConstantInt::get(getIntNTy(fw/2), i & 1);
-    }
-    Constant * splat01 = ConstantVector::get(Idxs);
-    
-    Value * half_fw_indexes = simd_or(idx, mvmd_slli(half_fw, idx, 1));
-    half_fw_indexes = simd_add(fw, simd_add(fw, half_fw_indexes, half_fw_indexes), splat01);
-    Value * rslt = mvmd_shuffle(half_fw, data_table, half_fw_indexes);
-    return rslt;
-  }
-  if (mBitBlockWidth == 128 && fw == 8) {
-    Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1, FixedVectorType::get(getInt8Ty(), 16));
-    return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_select_lo(fw, index_vector))}));
-  }
-  return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
-=======
     auto vec_width = getVectorBitWidth(data_table);
     unsigned numFields = vec_width/fw;
     if ((fw < 8) || (numFields > mNativeBitBlockWidth/4)) {
@@ -220,7 +194,6 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
         return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_select_lo(fw, index_vector))}));
     }
     return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
->>>>>>> Stashed changes
 }
 
 Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector) {
