@@ -199,31 +199,11 @@ Value * IDISA_SSSE3_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_SSSE3_Builder::mvmd_shuffle(unsigned fw, Value * a, Value * index_vector) {
-    if (getVectorBitWidth(a) == SSE_width) {
-        if (fw > 8) {
-            // Create a table for shuffling with smaller field widths.
-            const unsigned fieldCount = SSE_width/fw;
-            ConstantInt * multiplier = 0;
-            ConstantInt * addition = 0;
-            if (fw == 64) {
-                multiplier = getInt64(0x0808080808080808ULL);
-                addition =   getInt64(0x0706050403020100ULL);
-            } else if (fw == 32) {
-                multiplier = getInt32(0x04040404);
-                addition =   getInt32(0x03020100);
-            } else if (fw == 16) {
-                multiplier = getInt16(0x0202);
-                addition =   getInt16(0x0100);
-            }
-            Value * A = CreateMul(fwCast(fw, index_vector), getSplat(fieldCount, multiplier));
-            index_vector = CreateOr(A, getSplat(fieldCount, addition));
-            return fwCast(fw, mvmd_shuffle(8, a, index_vector));
-        } else if (fw == 8) {
-            Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_ssse3_pshuf_b_128);
-            return CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, a), fwCast(8, simd_and(index_vector, simd_lomask(8)))});
-        }
+    if ((getVectorBitWidth(a) == SSE_width) && (fw == 8)) {
+        Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_ssse3_pshuf_b_128);
+        return CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, a), fwCast(8, simd_and(index_vector, simd_lomask(8)))});
     }
-    return IDISA_SSE2_Builder::mvmd_shuffle(fw, a, index_vector);
+    return IDISA_Builder::mvmd_shuffle(fw, a, index_vector);
 }
 
 Value * IDISA_SSSE3_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {

@@ -141,55 +141,8 @@ Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 }
 
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector) {
-    auto vec_width = getVectorBitWidth(data_table);
-    unsigned numFields = vec_width/fw;
-    if ((fw < 8) || (numFields > mNativeBitBlockWidth/4)) {
-        llvm::report_fatal_error("mvmd_shuffle: unsupported vec_width/fw");
-    }
-    if (vec_width > mNativeBitBlockWidth) {
-        if (fw >= 16) {
-            Value * t0 = CreateHalfVectorLow(data_table);
-            Value * t1 = CreateHalfVectorHigh(data_table);
-            Value * hi_fields = hsimd_packh(fw, t0, t1);
-            Value * lo_fields = hsimd_packl(fw, t0, t1);
-            Value * ix0 = CreateHalfVectorLow(index_vector);
-            Value * ix1 = CreateHalfVectorHigh(index_vector);
-            Value * packed_ix = hsimd_packl(fw, ix0, ix1);
-            Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix);
-            Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix);
-            Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
-            Value * merge1 = esimd_mergeh(fw/2, shuf_lo, shuf_hi);
-            return fwCast(fw, CreateDoubleVector(merge0, merge1));
-        } else if (fw == 8) {
-            Value * t0 = CreateHalfVectorLow(data_table);
-            Value * t1 = CreateHalfVectorHigh(data_table);
-            Value * ix0 = CreateHalfVectorLow(index_vector);
-            Value * ix1 = CreateHalfVectorHigh(index_vector);
-            Value * shuf0 = mvmd_shuffle2(fw, t0, t1, ix0);
-            Value * shuf1 = mvmd_shuffle2(fw, t0, t1, ix1);
-            return fwCast(fw, CreateDoubleVector(shuf0, shuf1));
-        }
-    }
-    if (vec_width == mNativeBitBlockWidth && fw > 8) {
-        // Create a table for shuffling with smaller field widths.
-        const unsigned fieldCount = vec_width/fw;
-        Constant * idxMask = getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), fieldCount-1));
-        Value * idx = simd_and(index_vector, idxMask);
-        unsigned half_fw = fw/2;
-        unsigned field_count = vec_width/half_fw;
-        // Build a ConstantVector of alternating 0 and 1 values.
-        SmallVector<Constant *, 16> Idxs(field_count);
-        for (unsigned int i = 0; i < field_count; i++) {
-          Idxs[i] = ConstantInt::get(getIntNTy(fw/2), i & 1);
-        }
-        Constant * splat01 = ConstantVector::get(Idxs);
-        
-        Value * half_fw_indexes = simd_or(idx, mvmd_slli(half_fw, idx, 1));
-        half_fw_indexes = simd_add(fw, simd_add(fw, half_fw_indexes, half_fw_indexes), splat01);
-        Value * rslt = mvmd_shuffle(half_fw, data_table, half_fw_indexes);
-      return rslt;
-    }
     if (vec_width == mNativeBitBlockWidth && fw == 8) {
+        llvm::errs() << "neon mvmd_shuffle\n";
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1, FixedVectorType::get(getInt8Ty(), 16));
         return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_select_lo(fw, index_vector))}));
     }
