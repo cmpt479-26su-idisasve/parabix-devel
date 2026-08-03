@@ -671,6 +671,8 @@ Value * IDISA_AVX2_Builder::mvmd_compress(unsigned fw, Value * a, Value * select
 }
 
 Value * IDISA_AVX2_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_mask) {
+// Generic mvmd_expand is faster
+#if 0
     if (hasFeature(Feature::AVX_BMI2) && (getVectorBitWidth(a) == AVX_width)) {
          if (fw >= 8) {
 
@@ -724,6 +726,7 @@ Value * IDISA_AVX2_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_m
              return CreateAnd(shuffled, mask);
          }
     }
+#endif
     return IDISA_AVX_Builder::mvmd_expand(fw, a, select_mask);
 }
 
