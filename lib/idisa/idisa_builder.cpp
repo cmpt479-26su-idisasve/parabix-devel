@@ -1148,57 +1148,18 @@ Value * IDISA_Builder::mvmd_compress(unsigned fw, Value * v, Value * select_mask
 }
 
 Value * IDISA_Builder::mvmd_expand(unsigned fw, Value * v, Value * select_mask) {
-    if (LLVM_UNLIKELY(fw < 8)) {
-        UnsupportedFieldWidthError(fw, "mvmd_expand");
+    unsigned vec_width = getVectorBitWidth(v);
+    unsigned field_count = vec_width/fw;
+    Type * maskTy = select_mask->getType();
+    if (maskTy->isIntegerTy()) {
+        select_mask = esimd_bitspread(fw, CreateZExtOrTrunc(select_mask, getIntNTy(field_count)));
     } else {
-
-        IntegerType *  const fieldTy = getIntNTy(fw);
-        const auto fieldCount = mBitBlockWidth / fw;
-        Type * maskTy = select_mask->getType();
-        if (maskTy->isIntegerTy()) {
-            select_mask = esimd_bitspread(fw, select_mask);
-        }
-
-        Constant * oneSplat = getSplat(fieldCount, ConstantInt::get(fieldTy, 1));
-        Value * movements_remaining = hsimd_partial_sum(fw, CreateXor(select_mask, oneSplat));
-        assert (movements_remaining->getType() == oneSplat->getType());
-        Value * result = nullptr;
-
-        Value * pending = v;
-        assert (v->getType() == oneSplat->getType());
-
-        unsigned shiftAmount = fieldCount;
-        while (shiftAmount > 0) {
-
-            shiftAmount /= 2;
-
-            Value * shift_splat = getSplat(fieldCount, ConstantInt::get(fieldTy, shiftAmount));
-            assert (shift_splat->getType() == oneSplat->getType());
-            Value * shift_select = CreateAnd(movements_remaining, shift_splat);
-            assert (shift_select->getType() == oneSplat->getType());
-            Value * shift_mask = simd_eq(fw, shift_select, shift_splat);
-            assert (shift_mask->getType() == oneSplat->getType());
-            Value * shifted = CreateAnd(mvmd_slli(fw, pending, shiftAmount), shift_mask);
-            assert (shifted->getType() == oneSplat->getType());
-            movements_remaining = CreateXor(movements_remaining, shift_select);
-            assert (movements_remaining->getType() == oneSplat->getType());
-            Value * keep_mask = simd_eq(fw, movements_remaining, shift_select);
-            assert (keep_mask->getType() == oneSplat->getType());
-            Value * newVals = CreateAnd(pending, keep_mask);
-            assert (newVals->getType() == oneSplat->getType());
-            if (result) {
-                assert (result->getType() == newVals->getType());
-                result = CreateOr(result, newVals);
-            } else {
-                result = newVals;
-            }
-            Value * A = CreateAnd(pending, CreateNot(shift_mask));
-            assert (A->getType() == oneSplat->getType());
-            pending = CreateOr(A, shifted);
-            assert (pending->getType() == oneSplat->getType());
-        }
-        return CreateAnd(result, simd_any(fw, select_mask));
+        Constant * oneSplat = getSplat(getVectorBitWidth(v)/fw, ConstantInt::get(getIntNTy(fw), 1));
+        select_mask = simd_and(select_mask, oneSplat);
     }
+    Value * prior_counts = mvmd_slli(fw, hsimd_partial_sum(fw, select_mask), 1);
+    Value * spread_data = mvmd_shuffle(fw, v, prior_counts);
+    return CreateAnd(spread_data, simd_any(fw, select_mask));
 }
 
 Value * IDISA_Builder::bitblock_any(Value * a) {
