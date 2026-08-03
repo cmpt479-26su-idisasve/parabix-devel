@@ -868,11 +868,11 @@ Value * IDISA_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
     return CreateShuffleVector(fwCast(fw, a), fwCast(fw, b), ConstantVector::get(Idxs));
 }
 
-Value * IDISA_Builder::esimd_bitspread(unsigned fw, Value * bitmask) {
-    const size_t fieldCount = bitmask->getType()->getPrimitiveSizeInBits();
+Value * IDISA_Builder::esimd_bitspread(unsigned vec_width, unsigned fw, Value * bitmask) {
+    const size_t fieldCount = vec_width/fw;
     Type * maskVecTy = FixedVectorType::get(getInt1Ty(), fieldCount);
     Type * spreadVecTy = FixedVectorType::get(getIntNTy(fw), fieldCount);
-    return CreateZExt(CreateBitCast(bitmask, maskVecTy), spreadVecTy);
+    return CreateZExt(CreateBitCast(CreateZExtOrTrunc(bitmask, getIntNTy(fieldCount)), maskVecTy), spreadVecTy);
 }
 
 Value * IDISA_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
@@ -1109,11 +1109,12 @@ Value * IDISA_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1
 
 
 Value * IDISA_Builder::mvmd_compress(unsigned fw, Value * v, Value * select_mask) {
+    unsigned vec_width = getVectorBitWidth(v);
     if (LLVM_UNLIKELY(fw < 8)) {
         UnsupportedFieldWidthError(fw, "mvmd_compress");
     } else {
         IntegerType *  const fieldTy = getIntNTy(fw);
-        const auto fieldCount = mBitBlockWidth / fw;
+        const auto fieldCount = vec_width / fw;
         Type * maskTy = select_mask->getType();
         if (maskTy->isIntegerTy()) {
             if (fieldCount <= fw) {
@@ -1124,7 +1125,7 @@ Value * IDISA_Builder::mvmd_compress(unsigned fw, Value * v, Value * select_mask
                 Constant * seq = ConstantVector::get(elements);
                 select_mask = simd_eq(fw, simd_and(simd_fill(fw, select_mask), seq), seq);
             } else {
-                Value * const spread_mask = esimd_bitspread(fw, select_mask);
+                Value * const spread_mask = esimd_bitspread(vec_width, fw, select_mask);
                 select_mask = simd_any(fw, spread_mask);
             }
         }
@@ -1152,7 +1153,7 @@ Value * IDISA_Builder::mvmd_expand(unsigned fw, Value * v, Value * select_mask) 
     unsigned field_count = vec_width/fw;
     Type * maskTy = select_mask->getType();
     if (maskTy->isIntegerTy()) {
-        select_mask = esimd_bitspread(fw, CreateZExtOrTrunc(select_mask, getIntNTy(field_count)));
+        select_mask = esimd_bitspread(vec_width, fw, select_mask);
     } else {
         Constant * oneSplat = getSplat(getVectorBitWidth(v)/fw, ConstantInt::get(getIntNTy(fw), 1));
         select_mask = simd_and(select_mask, oneSplat);

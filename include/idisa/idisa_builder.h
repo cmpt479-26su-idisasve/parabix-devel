@@ -183,7 +183,7 @@ public:
 
     virtual llvm::Value * esimd_mergeh(unsigned fw, llvm::Value * a, llvm::Value * b);
     virtual llvm::Value * esimd_mergel(unsigned fw, llvm::Value * a, llvm::Value * b);
-    virtual llvm::Value * esimd_bitspread(unsigned fw, llvm::Value * bitmask);
+    virtual llvm::Value * esimd_bitspread(unsigned vec_width, unsigned fw, llvm::Value * bitmask);
 
     virtual llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b);
     virtual llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b);

@@ -289,7 +289,7 @@ std::pair<Value *, Value *> IDISA_AVX2_Builder::bitblock_add_with_carry(Value * 
         Value * bubble = simd_eq(64, digitsum, allOnes());
         Value * bubbleMask = hsimd_signmask(64, bubble);
         Value * incrementMask = CreateXor(CreateAdd(bubbleMask, carryMask2), bubbleMask);
-        Value * increments = esimd_bitspread(64,incrementMask);
+        Value * increments = esimd_bitspread(AVX_width, 64, CreateTrunc(incrementMask, getIntNTy(4)));
         Value * sum = simd_add(64, digitsum, increments);
         Value * carry_out = CreateLShr(incrementMask, AVX_width / 64);
         assert (carry_out->getType()->getIntegerBitWidth() == 32);
@@ -648,7 +648,7 @@ Value * IDISA_AVX2_Builder::mvmd_compress(unsigned fw, Value * a, Value * select
             for (unsigned i = 0; i < m; ++i) {
                 args[0] = ConstantInt::get(intTy, indices[i]);
                 Value * const expanded = CreateCall(pextFunc->getFunctionType(), pextFunc, args);
-                Value * byteExpanded = esimd_bitspread(fw, expanded);
+                Value * byteExpanded = esimd_bitspread(AVX_width, fw, expanded);
                 if (i == 0) {
                     permute_vec = byteExpanded;
                 } else {
@@ -708,7 +708,7 @@ Value * IDISA_AVX2_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_m
              for (unsigned i = 0; i < m; ++i) {
                  args[0] = ConstantInt::get(intTy, indices[i]);
                  Value * const expanded = CreateCall(pdepFunc->getFunctionType(), pdepFunc, args);
-                 Value * byteExpanded = esimd_bitspread(fw, expanded);
+                 Value * byteExpanded = esimd_bitspread(AVX_width, fw, expanded);
                  if (i == 0) {
                      permute_vec = byteExpanded;
                  } else {
@@ -719,7 +719,7 @@ Value * IDISA_AVX2_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_m
 
              // // Step 4: Use mvmd_shuffle to shuffle using permute_vec
              Value * const shuffled = mvmd_shuffle(fw, a, permute_vec);
-             Value * const mask = simd_any(fw, esimd_bitspread(fw, select_mask));
+             Value * const mask = simd_any(fw, esimd_bitspread(AVX_width, fw, select_mask));
              assert (shuffled->getType() == mask->getType());
              return CreateAnd(shuffled, mask);
          }
@@ -790,14 +790,6 @@ Value * IDISA_AVX512F_Builder::hsimd_packss(unsigned fw, Value * a, Value * b) {
     }
     // Otherwise use default logic.
     return IDISA_Builder::hsimd_packus(fw, a, b);
-}
-
-
-Value * IDISA_AVX512F_Builder::esimd_bitspread(unsigned fw, Value * bitmask) {
-    const auto field_count = mBitBlockWidth / fw;
-    Type * maskTy = FixedVectorType::get(getInt1Ty(), field_count);
-    Type * resultTy = fwVectorType(fw);
-    return CreateZExt(CreateBitCast(CreateZExtOrTrunc(bitmask, getIntNTy(field_count)), maskTy), resultTy);
 }
 
 Value * IDISA_AVX512F_Builder::mvmd_srl(unsigned fw, Value * a, Value * shift, const bool safe) {
@@ -963,7 +955,7 @@ Value * IDISA_AVX512F_Builder::mvmd_compress(unsigned fw, Value * a, Value * sel
                 for (unsigned i = 0; i < m; ++i) {
                     args[0] = ConstantInt::get(intTy, indices[i]);
                     Value * const expanded = CreateCall(pextFunc->getFunctionType(), pextFunc, args);
-                    Value * byteExpanded = esimd_bitspread(fw, expanded);
+                    Value * byteExpanded = esimd_bitspread(AVX512_width, fw, expanded);
                     if (i == 0) {
                         permute_vec = byteExpanded;
                     } else {
@@ -1043,7 +1035,7 @@ Value * IDISA_AVX512F_Builder::mvmd_expand(unsigned fw, Value * a, Value * selec
                 args[0] = getIntN(popFW, indices[i]);
                 Value * const expanded = CreateCall(pdepFunc->getFunctionType(), pdepFunc, args);
                 assert (expanded->getType()->getIntegerBitWidth() == popFW);
-                Value * byteExpanded = esimd_bitspread(fw, expanded);
+                Value * byteExpanded = esimd_bitspread(AVX512_width, fw, expanded);
                 if (i == 0) {
                     permute_vec = byteExpanded;
                 } else {
@@ -1058,7 +1050,7 @@ Value * IDISA_AVX512F_Builder::mvmd_expand(unsigned fw, Value * a, Value * selec
             // // Step 4: Use mvmd_shuffle2 to shuffle using permute_vec
             Constant * zero_vec = ConstantVector::getNullValue(a->getType());
             Value * const shuffled = mvmd_shuffle2(fw, a, zero_vec, permute_vec);
-            return CreateAnd(shuffled, simd_any(fw, esimd_bitspread(fw, mask)));
+            return CreateAnd(shuffled, simd_any(fw, esimd_bitspread(AVX512_width, fw, mask)));
     #endif
         }
     }
