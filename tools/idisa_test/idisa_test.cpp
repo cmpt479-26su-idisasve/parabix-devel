@@ -150,7 +150,13 @@ void IdisaBinaryOpTestKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::V
     } else if (mIdisaOperation == "hsimd_packl") {
         result = b.hsimd_packl(mTestFw, operand1, operand2);
     } else if (mIdisaOperation == "hsimd_packus") {
+        operand1 = b.simd_srai(mTestFw, operand1, mTestFw/2 - 1);
+        operand2 = b.simd_srai(mTestFw, operand2, mTestFw/2 - 1);
         result = b.hsimd_packus(mTestFw, operand1, operand2);
+    } else if (mIdisaOperation == "hsimd_packss") {
+        operand1 = b.simd_srai(mTestFw, operand1, mTestFw/2 - 1);
+        operand2 = b.simd_srai(mTestFw, operand2, mTestFw/2 - 1);
+        result = b.hsimd_packss(mTestFw, operand1, operand2);
     } else if (mIdisaOperation == "hsimd_packss") {
         result = b.hsimd_packss(mTestFw, operand1, operand2);
     } else if (mIdisaOperation == "esimd_mergeh") {
@@ -213,6 +219,10 @@ void IdisaBinaryOpCheckKernel::generateDoBlockMethod(KernelBuilder & b) {
     Value * resultBlock = b.loadInputStreamBlock("test_result", ZeroConst);
     unsigned fieldCount = b.getBitBlockWidth()/mTestFw;
     Value * expectedBlock = b.allZeroes();
+    if ((mIdisaOperation == "hsimd_packus") || (mIdisaOperation == "hsimd_packss")) {
+        operand1Block = b.simd_srai(mTestFw, operand1Block, mTestFw/2 - 1);
+        operand2Block = b.simd_srai(mTestFw, operand2Block, mTestFw/2 - 1);
+    }
     if (mIdisaOperation == "mvmd_shuffle") {
         for (unsigned i = 0; i < fieldCount; i++) {
             Value * idx = b.CreateURem(b.mvmd_extract(mTestFw, operand2Block, i), ConstantInt::get(fwTy, fieldCount));
@@ -379,6 +389,19 @@ void IdisaBinaryOpCheckKernel::generateDoBlockMethod(KernelBuilder & b) {
                 Value * testVal = ConstantInt::get(b.getContext(), APInt::getLowBitsSet(mTestFw, mTestFw/2));
                 operand1 = b.CreateSelect(b.CreateICmpSGT(operand1, testVal), testVal, operand1);
                 operand2 = b.CreateSelect(b.CreateICmpSGT(operand2, testVal), testVal, operand2);
+                operand1 = b.CreateTrunc(operand1, b.getIntNTy(mTestFw/2));
+                operand2 = b.CreateTrunc(operand2, b.getIntNTy(mTestFw/2));
+                expectedBlock = b.mvmd_insert(mTestFw/2, expectedBlock, operand1, i);
+                expectedBlock = b.bitCast(b.mvmd_insert(mTestFw/2, expectedBlock, operand2, fieldCount + i));
+            } else if (mIdisaOperation == "hsimd_packss") {
+                Value * maxVal = ConstantInt::get(b.getContext(), APInt::getLowBitsSet(mTestFw, mTestFw/2 - 1));
+                operand1 = b.CreateSelect(b.CreateICmpSGT(operand1, maxVal), maxVal, operand1);
+                operand2 = b.CreateSelect(b.CreateICmpSGT(operand2, maxVal), maxVal, operand2);
+                Value * minVal = ConstantInt::get(b.getContext(), APInt::getHighBitsSet(mTestFw, mTestFw/2 + 1));
+                operand1 = b.CreateSelect(b.CreateICmpSLT(operand1, minVal), minVal, operand1);
+                operand2 = b.CreateSelect(b.CreateICmpSLT(operand2, minVal), minVal, operand2);
+                operand1 = b.CreateTrunc(operand1, b.getIntNTy(mTestFw/2));
+                operand2 = b.CreateTrunc(operand2, b.getIntNTy(mTestFw/2));
                 expectedBlock = b.mvmd_insert(mTestFw/2, expectedBlock, operand1, i);
                 expectedBlock = b.bitCast(b.mvmd_insert(mTestFw/2, expectedBlock, operand2, fieldCount + i));
             } else if (mIdisaOperation == "hsimd_packss") {

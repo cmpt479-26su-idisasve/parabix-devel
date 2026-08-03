@@ -117,7 +117,7 @@ CallInst * IDISA_Builder::CallPrintRegister(StringRef name, Value * const value,
 }
 
 Constant *IDISA_Builder::getSplat(const unsigned fieldCount, Constant *Elt) {
-return ConstantVector::getSplat(ElementCount::get(fieldCount, false), Elt);
+    return ConstantVector::getSplat(ElementCount::get(fieldCount, false), Elt);
 }
 
 Constant * IDISA_Builder::simd_himask(unsigned fw) {
@@ -912,8 +912,9 @@ Value * IDISA_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_Builder::hsimd_packss(unsigned fw, Value * a, Value * b) {
-    Constant * top_bit = Constant::getIntegerValue(getIntNTy(mBitBlockWidth),
-                                                  APInt::getSplat(mBitBlockWidth, APInt::getHighBitsSet(fw/2, 1)));
+    const unsigned vectorWidth = getVectorBitWidth(a);
+    Constant * top_bit = Constant::getIntegerValue(getIntNTy(vectorWidth),
+                                                  APInt::getSplat(vectorWidth, APInt::getHighBitsSet(fw/2, 1)));
     Value * hi = hsimd_packh(fw, a, b);
     Value * lo = hsimd_packl(fw, a, b);
     Value * bits_that_must_match_sign = simd_if(1, top_bit, lo, hi);
@@ -1155,7 +1156,7 @@ Value * IDISA_Builder::mvmd_expand(unsigned fw, Value * v, Value * select_mask) 
     if (maskTy->isIntegerTy()) {
         select_mask = esimd_bitspread(vec_width, fw, select_mask);
     } else {
-        Constant * oneSplat = getSplat(getVectorBitWidth(v)/fw, ConstantInt::get(getIntNTy(fw), 1));
+        Constant * oneSplat = getSplat(field_count, ConstantInt::get(getIntNTy(fw), 1));
         select_mask = simd_and(select_mask, oneSplat);
     }
     Value * prior_counts = mvmd_slli(fw, hsimd_partial_sum(fw, select_mask), 1);
