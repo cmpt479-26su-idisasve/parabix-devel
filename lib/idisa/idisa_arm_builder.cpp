@@ -234,44 +234,6 @@ Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_
     return IDISA_Builder::mvmd_compress(fw, a, select_mask);
 }
 
-Value * IDISA_ARM_Builder::expandBytes(Value * a, Value * byteMask) {
-    const unsigned fieldCount = 16;
-    FixedVectorType * v16xi8Ty = FixedVectorType::get(getInt8Ty(), fieldCount);
-
-    Value * maskBits = byteMask;
-
-    Value * selectedBytesBuf = CreateAlloca(v16xi8Ty);
-    for (unsigned i = 0; i < fieldCount; i++) {
-        Value * bit = CreateAnd(CreateLShr(maskBits, ConstantInt::get(getInt16Ty(), i)),
-                                 ConstantInt::get(getInt16Ty(), 1));
-        Value * isSelBit = CreateICmpNE(bit, ConstantInt::get(getInt16Ty(), 0));
-        Value * asByte = CreateSExt(isSelBit, getInt8Ty()); // 0xFF or 0x00
-        Value * bytePtr = CreateGEP(getInt8Ty(), CreateBitCast(selectedBytesBuf, getInt8Ty()->getPointerTo()),
-                                     ConstantInt::get(getInt32Ty(), i));
-        CreateStore(asByte, bytePtr);
-    }
-    Value * selectedBytes = CreateLoad(v16xi8Ty, selectedBytesBuf);
-    Value * isSelected = CreateICmpNE(selectedBytes, fwCast(8, allZeroes()));
-
-    Value * ones = CreateLShr(selectedBytes, getSplat(fieldCount, getInt8(7)));
-    Value * inclusiveRank = hsimd_partial_sum(8, ones);
-    Value * rank = simd_sub(8, inclusiveRank, ones);
-
-    Value * outOfRange = getSplat(fieldCount, getInt8(fieldCount));
-    Value * gatherIdx = CreateSelect(isSelected, rank, outOfRange);
-
-    return tbl1(a, gatherIdx);
-}
-
-Value * IDISA_ARM_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_mask) {
-    if (mBitBlockWidth == 128 && (fw == 8 || fw == 16 || fw == 32 || fw == 64)) {
-        Value * byteMask = (fw == 8) ? CreateZExtOrTrunc(select_mask, getInt16Ty())
-                                      : expandFieldMaskToBytes(select_mask, fw);
-        return expandBytes(a, byteMask);
-    }
-    return IDISA_Builder::mvmd_expand(fw, a, select_mask);
-}
-
 Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
     if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
         int nElems = getVectorBitWidth(a) / fw;
