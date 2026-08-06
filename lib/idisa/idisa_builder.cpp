@@ -1047,13 +1047,16 @@ Value * IDISA_Builder::mvmd_dslli(unsigned fw, Value * a, Value * b, unsigned sh
 
 //
 //  Generic mvmd_shuffle reduces to byte shuffling at the native SIMD width.
-Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector) {
+Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector, ShuffleMode mode) {
     auto vec_width = getVectorBitWidth(data_table);
     //llvm::errs() << "IDISA_Builder::mvmd_shuffle , vec_width = " << vec_width << ", fw = " << fw << "\n";
     if (vec_width == fw) {
         // Special case for a vector with a single field.
+        if (mode == ShuffleMode::TruncateIndex) {
+            return data_table;
+        }
         Value * isIndex0 = CreateIsNull(index_vector);
-        return CreateSelect(isIndex0, data_table, ConstantInt::getNullValue(mBitBlockType));
+        return CreateSelect(isIndex0, data_table, ConstantInt::getNullValue(data_table->getType()));
     }
     if (vec_width > mNativeBitBlockWidth) {
         if (fw >= 16) {
@@ -1063,9 +1066,14 @@ Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * ind
             Value * lo_fields = hsimd_packl(fw, t0, t1);
             Value * ix0 = CreateHalfVectorLow(index_vector);
             Value * ix1 = CreateHalfVectorHigh(index_vector);
-            Value * packed_ix = hsimd_packl(fw, ix0, ix1);
-            Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix);
-            Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix);
+            Value * packed_ix = nullptr;
+            if (mode == ShuffleMode::TruncateIndex) {
+                packed_ix = hsimd_packl(fw, ix0, ix1);
+            } else {
+                packed_ix = hsimd_packss(fw, ix0, ix1);
+            }
+            Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix, mode);
+            Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix, mode);
             Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
             Value * merge1 = esimd_mergeh(fw/2, shuf_lo, shuf_hi);
             return fwCast(fw, CreateDoubleVector(merge0, merge1));
@@ -1098,19 +1106,25 @@ Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * ind
         }
         Value * A = CreateMul(fwCast(fw, index_vector), getSplat(fieldCount, multiplier));
         index_vector = CreateOr(A, getSplat(fieldCount, addition));
+        if (mode == ShuffleMode::ZeroOnHighIndexBit) {
+            index_vector = simd_or(index_vector, simd_lt(fw, index_vector, allZeroes()));
+        } else if (mode == ShuffleMode::ZeroOnIndexOver) {
+            index_vector = simd_or(index_vector, simd_ugt(fw, index_vector, fieldMask));
+        }
         return fwCast(fw, mvmd_shuffle(8, data_table, index_vector));
     }
     UnsupportedFieldWidthError(fw, "mvmd_shuffle");
 }
 
-Value * IDISA_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector) {
+Value * IDISA_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector, ShuffleMode mode) {
     auto vec_width = getVectorBitWidth(table0);
     //  Use two shuffles, with selection by the bit value within the shuffle_table.
     const auto field_count = vec_width/fw;
     Constant * selectorSplat = getSplat(field_count, ConstantInt::get(getIntNTy(fw), field_count));
     Value * selectMask = simd_eq(fw, simd_and(index_vector, selectorSplat), selectorSplat);
     Value * idx = simd_and(index_vector, simd_not(selectorSplat));
-    return simd_or(simd_and(mvmd_shuffle(fw, table0, idx), simd_not(selectMask)), simd_and(mvmd_shuffle(fw, table1, idx), selectMask));
+    return simd_or(simd_and(mvmd_shuffle(fw, table0, idx, mode), simd_not(selectMask)), 
+                   simd_and(mvmd_shuffle(fw, table1, idx, mode), selectMask));
 }
 
 

@@ -503,8 +503,8 @@ Value * IDISA_AVX2_Builder::mvmd_sll(unsigned fw, Value * a, Value * shift, cons
 }
 
 
-Value * IDISA_AVX2_Builder::mvmd_shuffle(unsigned fw, Value * a, Value * index_vector) {
-    if (getVectorBitWidth(a) == AVX_width) {
+Value * IDISA_AVX2_Builder::mvmd_shuffle(unsigned fw, Value * a, Value * index_vector, ShuffleMode mode) {
+    if (getVectorBitWidth(a) == AVX_width && (mode == ShuffleMode::TruncateIndex)) {
         const unsigned fieldCount = AVX_width/fw;
         Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fieldCount - 1);
         index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
@@ -566,11 +566,11 @@ Value * IDISA_AVX2_Builder::mvmd_shuffle(unsigned fw, Value * a, Value * index_v
             return CreateOr(a1, b1);
         }
     }
-    return IDISA_Builder::mvmd_shuffle(fw, a, index_vector);
+    return IDISA_Builder::mvmd_shuffle(fw, a, index_vector, mode);
 }
 
-llvm::Value * IDISA_AVX2_Builder::mvmd_shuffle2(unsigned fw, llvm::Value * table0, llvm::Value * table1, llvm::Value * index_vector) {
-    return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector);
+llvm::Value * IDISA_AVX2_Builder::mvmd_shuffle2(unsigned fw, llvm::Value * table0, llvm::Value * table1, llvm::Value * index_vector, ShuffleMode mode) {
+    return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector, mode);
 }
 
 Value * IDISA_AVX2_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {
@@ -830,14 +830,14 @@ Value * IDISA_AVX512F_Builder::mvmd_sll(unsigned fw, Value * a, Value * shift, c
     return IDISA_Builder::mvmd_sll(fw, a, shift);
 }
 
-Value * IDISA_AVX512F_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector) {
-    return mvmd_shuffle2(fw, data_table, data_table, index_vector);
+Value * IDISA_AVX512F_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector, ShuffleMode mode) {
+    return mvmd_shuffle2(fw, data_table, data_table, index_vector, mode);
 }
 
 #define AVX512_MASK_PERMUTE_INTRINSIC(i) Intrinsic::x86_avx512_vpermi2##i
 
-Value * IDISA_AVX512F_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector) {
-    if (getVectorBitWidth(table0) == AVX512_width) {
+Value * IDISA_AVX512F_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector, ShuffleMode mode) {
+    if ((getVectorBitWidth(table0) == AVX512_width) && (mode == ShuffleMode::TruncateIndex)) {
         Function * permuteFunc = nullptr;
         if (fw == 32) {
             permuteFunc = Intrinsic::getOrInsertDeclaration(getModule(), AVX512_MASK_PERMUTE_INTRINSIC(var_d_512));
@@ -900,7 +900,7 @@ Value * IDISA_AVX512F_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value 
             return CreateCall(permuteFunc->getFunctionType(), permuteFunc, {fwCast(fw, table0), fwCast(fw, index_vector), fwCast(fw, table1)});
         }
     }
-    return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector);
+    return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector, mode);
 }
 
 Value * IDISA_AVX512F_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {
