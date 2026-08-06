@@ -1049,6 +1049,7 @@ Value * IDISA_Builder::mvmd_dslli(unsigned fw, Value * a, Value * b, unsigned sh
 //  Generic mvmd_shuffle reduces to byte shuffling at the native SIMD width.
 Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector) {
     auto vec_width = getVectorBitWidth(data_table);
+    //llvm::errs() << "IDISA_Builder::mvmd_shuffle , vec_width = " << vec_width << ", fw = " << fw << "\n";
     if (vec_width == fw) {
         // Special case for a vector with a single field.
         Value * isIndex0 = CreateIsNull(index_vector);
@@ -1081,6 +1082,8 @@ Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * ind
     if ((vec_width == mNativeBitBlockWidth) && ((fw == 16) || (fw == 32) || (fw == 64))) {
         // Create a table for shuffling with smaller field widths.
         const unsigned fieldCount = vec_width/fw;
+        Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fieldCount - 1);
+        index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         ConstantInt * multiplier = 0;
         ConstantInt * addition = 0;
         if (fw == 64) {

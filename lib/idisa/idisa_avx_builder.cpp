@@ -505,6 +505,9 @@ Value * IDISA_AVX2_Builder::mvmd_sll(unsigned fw, Value * a, Value * shift, cons
 
 Value * IDISA_AVX2_Builder::mvmd_shuffle(unsigned fw, Value * a, Value * index_vector) {
     if (getVectorBitWidth(a) == AVX_width) {
+        const unsigned fieldCount = AVX_width/fw;
+        Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fieldCount - 1);
+        index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         if (fw == 64) {
             constexpr auto fieldCount = AVX_width / 64;
             Value * A = CreateMul(fwCast(64, index_vector), getSplat(fieldCount, getInt64(0x0000000200000002ULL)));
