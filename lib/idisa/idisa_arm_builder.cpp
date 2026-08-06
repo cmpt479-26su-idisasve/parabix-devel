@@ -148,7 +148,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
         if (mode == ShuffleMode::TruncateIndex) {
             Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
-        } else if (mode == ShuffleMode::ZeroOnHighBit) {
+        } else if (mode == ShuffleMode::ZeroOnHighIndexBit) {
             // Preserve high bit for zeroing, but clear others.
             Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fw/2 + fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
@@ -168,7 +168,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * ta
         if (mode == ShuffleMode::TruncateIndex) {
             Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
-        } else if (mode == ShuffleMode::ZeroOnHighBit) {
+        } else if (mode == ShuffleMode::ZeroOnHighIndexBit) {
             // Preserve high bit for zeroing, but clear others.
             Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fw/2 + fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
@@ -199,7 +199,7 @@ Value * IDISA_ARM_Builder::expandFieldMaskToBytes(Value * select_mask, unsigned 
 
 // raw TBL1: indexes >= 16 yield zero lanes, unlike mvmd_shuffle which reduces them mod 16
 Value * IDISA_ARM_Builder::tbl1(Value * table, Value * index_vector) {
-    Function * fn = Intrinsic::getDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1,
+    Function * fn = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1,
                                               FixedVectorType::get(getInt8Ty(), 16));
     return CreateCall(fn->getFunctionType(), fn, {fwCast(8, table), fwCast(8, index_vector)});
 }
