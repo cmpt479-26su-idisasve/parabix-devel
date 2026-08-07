@@ -1059,19 +1059,26 @@ Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * ind
         return CreateSelect(isIndex0, data_table, ConstantInt::getNullValue(data_table->getType()));
     }
     if (vec_width > mNativeBitBlockWidth) {
+        auto fieldCount = vec_width/fw;
         if (fw >= 16) {
             Value * t0 = CreateHalfVectorLow(data_table);
             Value * t1 = CreateHalfVectorHigh(data_table);
             Value * hi_fields = hsimd_packh(fw, t0, t1);
             Value * lo_fields = hsimd_packl(fw, t0, t1);
+            if (mode == ShuffleMode::ZeroOnHighIndexBit) {
+                // Modify the index fields so that the low half of
+                // each field is the proper index with high bit set
+                // for the narrower shuffle.
+                Value * shifted_idx = simd_srli(fw, index_vector, fw/2);
+                Value * high_bit_of_low_half = getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), 1 << (fw/2-1)));
+                index_vector = simd_if(1, high_bit_of_low_half, shifted_idx, index_vector);
+            } else if (mode == ShuffleMode::ZeroOnIndexOver) {
+                Value * over = simd_uge(fw, index_vector, getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), fieldCount)));
+                index_vector = simd_or(over, index_vector);
+            }
             Value * ix0 = CreateHalfVectorLow(index_vector);
             Value * ix1 = CreateHalfVectorHigh(index_vector);
-            Value * packed_ix = nullptr;
-            if (mode == ShuffleMode::TruncateIndex) {
-                packed_ix = hsimd_packl(fw, ix0, ix1);
-            } else {
-                packed_ix = hsimd_packss(fw, ix0, ix1);
-            }
+            Value * packed_ix = hsimd_packl(fw, ix0, ix1);
             Value * shuf_lo = mvmd_shuffle(fw/2, lo_fields, packed_ix, mode);
             Value * shuf_hi = mvmd_shuffle(fw/2, hi_fields, packed_ix, mode);
             Value * merge0 = esimd_mergel(fw/2, shuf_lo, shuf_hi);
@@ -1082,16 +1089,16 @@ Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * ind
             Value * t1 = CreateHalfVectorHigh(data_table);
             Value * ix0 = CreateHalfVectorLow(index_vector);
             Value * ix1 = CreateHalfVectorHigh(index_vector);
-            Value * shuf0 = mvmd_shuffle2(fw, t0, t1, ix0);
-            Value * shuf1 = mvmd_shuffle2(fw, t0, t1, ix1);
+            Value * shuf0 = mvmd_shuffle2(fw, t0, t1, ix0, mode);
+            Value * shuf1 = mvmd_shuffle2(fw, t0, t1, ix1, mode);
             return fwCast(fw, CreateDoubleVector(shuf0, shuf1));
         }
     }
     if ((vec_width == mNativeBitBlockWidth) && ((fw == 16) || (fw == 32) || (fw == 64))) {
         // Create a table for shuffling with smaller field widths.
         const unsigned fieldCount = vec_width/fw;
-        Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fieldCount - 1);
-        index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
+        Constant * fieldMask = getSplat(fieldCount, ConstantInt::get(getIntNTy(fw), fieldCount - 1));
+        Value * inbounds_idx = simd_and(index_vector, fieldMask);
         ConstantInt * multiplier = 0;
         ConstantInt * addition = 0;
         if (fw == 64) {
@@ -1104,14 +1111,15 @@ Value * IDISA_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * ind
             multiplier = getInt16(0x0202);
             addition =   getInt16(0x0100);
         }
-        Value * A = CreateMul(fwCast(fw, index_vector), getSplat(fieldCount, multiplier));
-        index_vector = CreateOr(A, getSplat(fieldCount, addition));
+        Value * narrowed_idx = CreateMul(fwCast(fw, inbounds_idx), getSplat(fieldCount, multiplier));
+        narrowed_idx = CreateOr(narrowed_idx, getSplat(fieldCount, addition));
         if (mode == ShuffleMode::ZeroOnHighIndexBit) {
-            index_vector = simd_or(index_vector, simd_lt(fw, index_vector, allZeroes()));
+            narrowed_idx = simd_or(narrowed_idx, simd_lt(fw, index_vector, allZeroes()));
         } else if (mode == ShuffleMode::ZeroOnIndexOver) {
-            index_vector = simd_or(index_vector, simd_ugt(fw, index_vector, fieldMask));
+            Value * out_of_bounds = simd_ugt(fw, index_vector, fieldMask);
+            narrowed_idx = simd_or(out_of_bounds, narrowed_idx);
         }
-        return fwCast(fw, mvmd_shuffle(8, data_table, index_vector));
+        return fwCast(fw, mvmd_shuffle(8, data_table, narrowed_idx, mode));
     }
     UnsupportedFieldWidthError(fw, "mvmd_shuffle");
 }

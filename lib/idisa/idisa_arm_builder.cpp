@@ -150,13 +150,13 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         } else if (mode == ShuffleMode::ZeroOnHighIndexBit) {
             // Preserve high bit for zeroing, but clear others.
-            Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fw/2 + fieldCount - 1);
+            Constant * fieldMask = ConstantInt::get(getIntNTy(fw), (1<<(fw-1)) + fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         }
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1, FixedVectorType::get(getInt8Ty(), 16));
-        return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_select_lo(fw, index_vector))}));
+        return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, index_vector)}));
     }
-    return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector);
+    return IDISA_Builder::mvmd_shuffle(fw, data_table, index_vector, mode);
 }
 
 Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector, ShuffleMode mode) {
@@ -170,7 +170,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * ta
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         } else if (mode == ShuffleMode::ZeroOnHighIndexBit) {
             // Preserve high bit for zeroing, but clear others.
-            Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fw/2 + fieldCount - 1);
+            Constant * fieldMask = ConstantInt::get(getIntNTy(fw), (1<<(fw-1)) + fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         }        
         Value * rslt = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, table0), fwCast(8, table1), fwCast(8, index_vector)});
