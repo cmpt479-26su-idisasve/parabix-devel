@@ -176,7 +176,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * ta
         Value * rslt = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, table0), fwCast(8, table1), fwCast(8, index_vector)});
             return rslt;
     }
-    return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector);
+    return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector, mode);
 }
 
 Value * IDISA_ARM_Builder::expandFieldMaskToBytes(Value * select_mask, unsigned fw) {
