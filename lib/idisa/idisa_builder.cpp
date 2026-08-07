@@ -66,10 +66,12 @@ Value * IDISA_Builder::fwCast(const unsigned fw, Value * const a) {
 
 CallInst * IDISA_Builder::CallPrintRegister(StringRef name, Value * const value, const STD_FD fd) {
     Module * const m = getModule();
-    Function * printRegister = m->getFunction("print_register");
+    unsigned vec_width = getVectorBitWidth(value);
+    std::string fn_name = "print_register_" + std::to_string(vec_width);
+    Function * printRegister = m->getFunction(fn_name);
     if (LLVM_UNLIKELY(printRegister == nullptr)) {
-        FunctionType *FT = FunctionType::get(getVoidTy(), { getInt32Ty(), getInt8PtrTy(0), getBitBlockType() }, false);
-        Function * function = Function::Create(FT, Function::InternalLinkage, "print_register", m);
+        FunctionType *FT = FunctionType::get(getVoidTy(), { getInt32Ty(), getInt8PtrTy(0), bitCast(value)->getType() }, false);
+        Function * function = Function::Create(FT, Function::InternalLinkage, fn_name, m);
         auto arg = function->arg_begin();
         std::string tmp;
         raw_string_ostream out(tmp);
@@ -77,7 +79,7 @@ CallInst * IDISA_Builder::CallPrintRegister(StringRef name, Value * const value,
         out << "%016" PRIx64 "  ";
         #endif
         out << "%-40s =";
-        for(unsigned i = 0; i < (getBitBlockWidth() / 8); ++i) {
+        for(unsigned i = 0; i < (vec_width / 8); ++i) {
             out << " %02" PRIx32;
         }
         out << '\n';
@@ -88,7 +90,7 @@ CallInst * IDISA_Builder::CallPrintRegister(StringRef name, Value * const value,
         name->setName("name");
         Value * value = &*arg;
         value->setName("value");
-        Type * const byteFixedVectorType = FixedVectorType::get(getInt8Ty(), (mBitBlockWidth / 8));
+        Type * const byteFixedVectorType = FixedVectorType::get(getInt8Ty(), (vec_width / 8));
         value = builder.CreateBitCast(value, byteFixedVectorType);
         std::vector<Value *> args;
         args.push_back(fdInt);
@@ -103,7 +105,7 @@ CallInst * IDISA_Builder::CallPrintRegister(StringRef name, Value * const value,
         args.push_back(builder.CreateCall(pthreadSelfFn));
         #endif
         args.push_back(name);
-        for(unsigned i = (getBitBlockWidth() / 8); i != 0; --i) {
+        for(unsigned i = (vec_width / 8); i != 0; --i) {
             args.push_back(builder.CreateZExt(builder.CreateExtractElement(value, builder.getInt32(i - 1)), builder.getInt32Ty()));
         }
         Function * Dprintf = GetDprintf();
@@ -111,7 +113,7 @@ CallInst * IDISA_Builder::CallPrintRegister(StringRef name, Value * const value,
         builder.CreateRetVoid();
         printRegister = function;
     }
-    return CreateCall(printRegister->getFunctionType(), printRegister, {getInt32(static_cast<uint32_t>(fd)), GetString(name), CreateBitCast(value, getBitBlockType())});
+    return CreateCall(printRegister->getFunctionType(), printRegister, {getInt32(static_cast<uint32_t>(fd)), GetString(name), bitCast(value)});
 }
 
 Constant *IDISA_Builder::getSplat(const unsigned fieldCount, Constant *Elt) {
