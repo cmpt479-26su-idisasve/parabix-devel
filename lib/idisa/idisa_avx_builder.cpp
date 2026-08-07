@@ -168,7 +168,7 @@ Value * IDISA_AVX2_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_AVX2_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
-    if (getVectorBitWidth(a) == mNativeBitBlockWidth) {
+    if (getVectorBitWidth(a) == AVX_width) {
         if ((fw == 1) || (fw == 2)) {
             // Bit interleave using shuffle.
             Function * shufFn = Intrinsic::getOrInsertDeclaration(getModule(),  Intrinsic::x86_avx2_pshuf_b);
@@ -192,7 +192,7 @@ Value * IDISA_AVX2_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_AVX2_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-    if (getVectorBitWidth(a) == mNativeBitBlockWidth) {
+    if (getVectorBitWidth(a) == AVX_width) {
         if ((fw == 1) || (fw == 2)) {
             // Bit interleave using shuffle.
             Function * shufFn = Intrinsic::getOrInsertDeclaration(getModule(),  Intrinsic::x86_avx2_pshuf_b);

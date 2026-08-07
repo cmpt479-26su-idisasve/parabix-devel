@@ -5,6 +5,10 @@
 
 #pragma once
 
+#if defined(PARABIX_ARM_TARGET)
+#include <arm_sve.h>
+#endif
+
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/CodeGen.h>
@@ -107,7 +111,10 @@ enum class Feature : size_t {
 using FeatureSet = std::bitset<(size_t)Feature::__Count>;
 
 #if defined(PARABIX_ARM_TARGET)
-unsigned HostSVEBitWidth();
+__attribute__((target ("+sve")))
+static inline unsigned HostSVEBitWidth() {
+    return svcntb() * 8;
+}
 #endif
 
 llvm::StringMap<bool> GetFeatureNames();

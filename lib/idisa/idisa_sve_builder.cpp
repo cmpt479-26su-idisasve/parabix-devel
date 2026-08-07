@@ -29,17 +29,17 @@ llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
     // TODO JL make a fallback for fw<8 and fw>64
     // TODO JL make a fallback for when we don't match the SVE bit width
     // ScalableVectorType::get(getInt8Ty(), fw, )
-    if ((getVectorBitWidth(a) == mNativeBitBlockWidth) && (fw >= 8) &&
-        (fw <= 64)) {
-        unsigned minN = ARM_SVE_min_width / fw;
-        Function *cntIntrinsic = Intrinsic::getOrInsertDeclaration(
-            getModule(), Intrinsic::aarch64_sve_cnt);
-        // {ScalableVectorType::get(getInt1Ty(), minN),
-        //  ScalableVectorType::get(getIntNTy(fw), minN)});
-        return CreateCall(cntIntrinsic->getFunctionType(), cntIntrinsic, a);
-    } else {
+    // if ((getVectorBitWidth(a) == NativeBitBlockWidth()) && (fw >= 8) &&
+    //     (fw <= 64)) {
+    //     unsigned minN = ARM_SVE_min_width / fw;
+    //     Function *cntIntrinsic = Intrinsic::getOrInsertDeclaration(
+    //         getModule(), Intrinsic::aarch64_sve_cnt);
+    //     // {ScalableVectorType::get(getInt1Ty(), minN),
+    //     //  ScalableVectorType::get(getIntNTy(fw), minN)});
+    //     return CreateCall(cntIntrinsic->getFunctionType(), cntIntrinsic, a);
+    // } else {
         return IDISA_ARM_Builder::simd_popcount(fw, a);
-    }
+    // }
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_bitreverse(unsigned fw, llvm::Value *a) {

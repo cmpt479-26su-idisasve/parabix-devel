@@ -48,7 +48,7 @@ llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LL
 namespace IDISA {
 
 std::string IDISA_ARM_Builder::getBuilderUniqueName() {
-    return mBitBlockWidth != NativeBitBlockWidth() ? "ARM_NEON_" + std::to_string(mBitBlockWidth) : "ARM_NEON";
+    return mBitBlockWidth != ARM_NEON_width ? "ARM_NEON_" + std::to_string(ARM_NEON_width) : "ARM_NEON";
 }
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
@@ -144,7 +144,7 @@ Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector) {
     auto vec_width = getVectorBitWidth(data_table);
-    if (vec_width == mNativeBitBlockWidth && fw == 8) {
+    if (vec_width == ARM_NEON_width && fw == 8) {
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1, FixedVectorType::get(getInt8Ty(), 16));
         return fwCast(8, CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, data_table), fwCast(8, simd_select_lo(fw, index_vector))}));
     }
@@ -152,7 +152,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
 }
 
 Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector) {
-    if (getVectorBitWidth(table0) == mNativeBitBlockWidth && fw == 8) {
+    if (getVectorBitWidth(table0) == ARM_NEON_width && fw == 8) {
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl2, FixedVectorType::get(getInt8Ty(), 16));
         Value * rslt = CreateCall(shuf8Func->getFunctionType(), shuf8Func, {fwCast(8, table0), fwCast(8, table1), fwCast(8, index_vector)});
             return rslt;

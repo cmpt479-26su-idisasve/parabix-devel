@@ -108,14 +108,6 @@ unsigned DefaultBlockSizeForFeatures(const codegen::FeatureSet & featureSet) {
 #endif
 }
 
-#if defined(PARABIX_ARM_TARGET)
-__attribute__((target ("+sve")))
-unsigned HostSVEBitWidth() {
-    return svcntb() * 8;
-}
-#endif
-
-
 cl::OptionCategory JIT_InfoOptions("J.  JIT Information Options", 
     "These options control production of information reports during JIT compilation.");
 
