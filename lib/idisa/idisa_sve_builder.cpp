@@ -4,6 +4,7 @@
  */
 
 #include <idisa/idisa_sve_builder.h>
+#include <kernel/core/kernel_builder.h>
 #include <toolchain/toolchain.h>
 
 #include <llvm/IR/Intrinsics.h>
@@ -38,57 +39,100 @@ llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
     //     //  ScalableVectorType::get(getIntNTy(fw), minN)});
     //     return CreateCall(cntIntrinsic->getFunctionType(), cntIntrinsic, a);
     // } else {
+    return with_native_width(ARM_NEON_width, [=]() {
         return IDISA_ARM_Builder::simd_popcount(fw, a);
+    });
     // }
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_bitreverse(unsigned fw, llvm::Value *a) {
     // TODO JL implement
-    return IDISA_ARM_Builder::simd_bitreverse(fw, a);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::simd_bitreverse(fw, a);
+    });
 }
 
 llvm::Value *IDISA_SVE_Builder::esimd_mergeh(unsigned fw, llvm::Value *a,
                                              llvm::Value *b) {
     // TODO JL implement
-    return IDISA_ARM_Builder::esimd_mergeh(fw, a, b);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::esimd_mergeh(fw, a, b);
+    });
 }
 
 llvm::Value *IDISA_SVE_Builder::esimd_mergel(unsigned fw, llvm::Value *a,
                                              llvm::Value *b) {
     // TODO JL implement
-    return IDISA_ARM_Builder::esimd_mergel(fw, a, b);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::esimd_mergel(fw, a, b);
+    });
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packh(unsigned fw, llvm::Value *a,
                                             llvm::Value *b) {
     // TODO JL implement
-    return IDISA_ARM_Builder::hsimd_packh(fw, a, b);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::hsimd_packh(fw, a, b);
+    });
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packl(unsigned fw, llvm::Value *a,
                                             llvm::Value *b) {
     // TODO JL implement
-    return IDISA_ARM_Builder::hsimd_packl(fw, a, b);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::hsimd_packl(fw, a, b);
+    });
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packus(unsigned fw, llvm::Value *a,
                                              llvm::Value *b) {
     // TODO JL implement
-    return IDISA_ARM_Builder::hsimd_packus(fw, a, b);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::hsimd_packus(fw, a, b);
+    });
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_shuffle(unsigned fw,
                                              llvm::Value *data_table,
                                              llvm::Value *index_vector) {
     // TODO JL implement
-    return IDISA_ARM_Builder::mvmd_shuffle(fw, data_table, index_vector);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::mvmd_shuffle(fw, data_table, index_vector);
+    });
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_shuffle2(unsigned fw, llvm::Value *table0,
                                               llvm::Value *table1,
                                               llvm::Value *index_vector) {
     // TODO JL implement
-    return IDISA_ARM_Builder::mvmd_shuffle2(fw, table0, table1, index_vector);
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::mvmd_shuffle2(fw, table0, table1,
+                                                index_vector);
+    });
+}
+
+llvm::Value *IDISA_SVE_Builder::mvmd_compress(unsigned fw, llvm::Value *a,
+                                              llvm::Value *select_mask) {
+    // TODO JL implement
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::mvmd_compress(fw, a, select_mask);
+    });
+}
+
+llvm::Value *IDISA_SVE_Builder::simd_sllv(unsigned fw, llvm::Value *a,
+                                          llvm::Value *shifts) {
+    // TODO JL implement
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::simd_sllv(fw, a, shifts);
+    });
+}
+
+llvm::Value *IDISA_SVE_Builder::simd_srlv(unsigned fw, llvm::Value *a,
+                                          llvm::Value *shifts) {
+    // TODO JL implement
+    return with_native_width(ARM_NEON_width, [=]() {
+        return IDISA_ARM_Builder::simd_srlv(fw, a, shifts);
+    });
 }
 
 } // namespace IDISA
