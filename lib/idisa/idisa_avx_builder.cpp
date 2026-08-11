@@ -32,9 +32,9 @@ std::string IDISA_AVX_Builder::getBuilderUniqueName() {
     uname << "AVX";
     if (mBitBlockWidth != AVX_width) {
         uname << "_" << mBitBlockWidth;
-        if (IDISA::IDISA_Experiment != "") {
-            uname << IDISA::IDISA_Experiment;
-        }
+    }
+    if (IDISA::IDISA_Experiment != "") {
+        uname << IDISA::IDISA_Experiment;
     }
     return uname.str();
 }
@@ -745,9 +745,9 @@ std::string IDISA_AVX512F_Builder::getBuilderUniqueName() {
     uname << "AVX512F";
     if (mBitBlockWidth != AVX512_width) {
         uname << "_" << mBitBlockWidth;
-        if (IDISA::IDISA_Experiment != "") {
-            uname << IDISA::IDISA_Experiment;
-        }
+    }
+    if (IDISA::IDISA_Experiment != "") {
+        uname << IDISA::IDISA_Experiment;
     }
     return uname.str();
 }

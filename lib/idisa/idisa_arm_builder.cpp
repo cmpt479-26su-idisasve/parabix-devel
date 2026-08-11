@@ -3,6 +3,7 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/IntrinsicsAArch64.h>
 #include <llvm/IR/Module.h>
+#include <sstream>
 #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
 #include <llvm/TargetParser/Host.h>
 #else
@@ -50,7 +51,7 @@ llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LL
 // Compress maps field f to rank(f); expand inverts it. Index 16 yields zero.
 llvm::GlobalVariable * getOrCreateFieldPermuteTable(llvm::Module * mod, llvm::LLVMContext & C,
                                                     unsigned fw, bool isExpand) {
-    const unsigned fieldCount = 128 / fw;
+    const unsigned fieldCount = IDISA::ARM_width / fw;
     const unsigned bytesPerField = fw / 8;
     const unsigned entryCount = 1u << fieldCount;
     const std::string name = std::string("__idisa_arm_field_")
@@ -96,9 +97,9 @@ std::string IDISA_ARM_Builder::getBuilderUniqueName() {
     uname << "ARM";
     if (mBitBlockWidth != ARM_width) {
         uname << "_" << mBitBlockWidth;
-        if (IDISA::IDISA_Experiment != "") {
-            uname << IDISA::IDISA_Experiment;
-        }
+    }
+    if (IDISA::IDISA_Experiment != "") {
+        uname << IDISA::IDISA_Experiment;
     }
     return uname.str();
 }
@@ -323,14 +324,14 @@ Value * IDISA_ARM_Builder::compressBytes(Value * a, Value * byteMask) {
 // tables at fw 32 and 64 have only 16 and 4 entries, so an unmasked mask would
 // index past the end.
 Value * IDISA_ARM_Builder::fieldPermute(unsigned fw, Value * a, Value * select_mask, bool isExpand) {
-    const unsigned fieldCount = 128 / fw;
+    const unsigned fieldCount = ARM_width / fw;
     GlobalVariable * table = getOrCreateFieldPermuteTable(getModule(), getContext(), fw, isExpand);
     Type * i32Ty = getInt32Ty();
     Value * idx = CreateAnd(CreateZExtOrTrunc(select_mask, i32Ty),
                             ConstantInt::get(i32Ty, (1u << fieldCount) - 1));
     Value * gep = CreateInBoundsGEP(table->getValueType(), table,
                                      {ConstantInt::get(i32Ty, 0), idx});
-    Value * perm = CreateLoad(FixedVectorType::get(getInt8Ty(), 16), gep);
+    Value * perm = CreateLoad(FixedVectorType::get(getInt8Ty(), ARM_width/8), gep);
     return tbl1(a, perm);
 }
 
