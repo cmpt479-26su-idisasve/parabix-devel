@@ -12,6 +12,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/CommandLine.h>
 #include <toolchain/toolchain.h>
 #include <unistd.h>
 #include <boost/intrusive/detail/math.hpp>
@@ -24,6 +25,10 @@ using boost::intrusive::detail::floor_log2;
 using namespace llvm;
 
 namespace IDISA {
+
+std::string IDISA_Experiment;
+static cl::opt<std::string, true> IDISA_Experiment_Option("idisa_experiment", cl::location(IDISA::IDISA_Experiment), cl::init(""), cl::cat(codegen::CodeGenOptions));
+
 
 bool isStreamTy(const Type * const t) {
     return isa<FixedVectorType>(t) && (cast<FixedVectorType>(t)->getNumElements() == 0);
@@ -533,43 +538,47 @@ Value * IDISA_Builder::simd_srai(unsigned fw, Value * a, unsigned shift) {
 }
 
 Value * IDISA_Builder::simd_sllv(unsigned fw, Value * v, Value * shifts) {
-    if (fw >= 8) return CreateShl(fwCast(fw, v), fwCast(fw, shifts));
     auto vec_width = getVectorBitWidth(v);
-    Value * vecZeroes = ConstantVector::getNullValue(v->getType());
-    Value * w = v;
-    IntegerType * const intTy = getIntNTy(vec_width);
-    for (unsigned shft_amt = 1; shft_amt < fw; shft_amt *= 2) {
-        APInt bit_in_field(fw, shft_amt);
-        // To simulate shift within a fw, we need to mask off the high shft_amt bits of each element.
-        Constant * value_mask = Constant::getIntegerValue(intTy,
-                                                          APInt::getSplat(vec_width, APInt::getLowBitsSet(fw, fw-shft_amt)));
-        Constant * bit_select = Constant::getIntegerValue(intTy,
-                                                          APInt::getSplat(vec_width, bit_in_field));
-        Value * unshifted_field_mask = simd_eq(fw, simd_and(bit_select, shifts), vecZeroes);
-        Value * fieldsToShift = simd_and(w, simd_and(value_mask, simd_not(unshifted_field_mask)));
-        w = simd_or(simd_and(w, unshifted_field_mask), simd_slli(32, fieldsToShift, shft_amt));
+    if ((fw == 2 || fw == 4)) {
+        auto splat8 = [&](uint8_t x) { return getSplat(vec_width/8, getInt8(x)); };
+        if (fw == 4) {
+            // remask each nibble after the byte shift so bits never carry across the nibble boundary
+            Value * loData = simd_and(v, splat8(0x0F));
+            Value * hiData = simd_and(v, splat8(0xF0));
+            Value * loAmt = simd_and(shifts, splat8(0x0F));
+            Value * hiAmt = simd_srli(8, shifts, 4);
+            Value * loSh = simd_and(CreateShl(fwCast(8, loData), fwCast(8, loAmt)), splat8(0x0F));
+            Value * hiSh = simd_and(CreateShl(fwCast(8, hiData), fwCast(8, hiAmt)), splat8(0xF0));
+            return simd_or(loSh, hiSh);
+        }
+        // fw == 2: amount is one bit per field; expand it to a full 0b11 field mask and BSL-select
+        Value * shifted = simd_and(CreateShl(fwCast(8, v), splat8(1)), splat8(0xAA));
+        Value * a = simd_and(shifts, splat8(0x55));
+        Value * sel = simd_or(a, CreateShl(fwCast(8, a), splat8(1)));
+        return simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel)));
     }
-    return w;
+    return CreateShl(fwCast(fw, v), fwCast(fw, shifts));
 }
 
 Value * IDISA_Builder::simd_srlv(unsigned fw, Value * v, Value * shifts) {
-    if (fw >= 8) return CreateLShr(fwCast(fw, v), fwCast(fw, shifts));
-    Value * vecZeroes = ConstantVector::getNullValue(v->getType());
     auto vec_width = getVectorBitWidth(v);
-    Value * w = v;
-    IntegerType * const intTy = getIntNTy(vec_width);
-    for (unsigned shft_amt = 1; shft_amt < fw; shft_amt *= 2) {
-        APInt bit_in_field(fw, shft_amt);
-        // To simulate shift within a fw, we need to mask off the low shft_amt bits of each element.
-        Constant * value_mask = Constant::getIntegerValue(intTy,
-                                                          APInt::getSplat(vec_width, APInt::getHighBitsSet(fw, fw-shft_amt)));
-        Constant * bit_select = Constant::getIntegerValue(intTy,
-                                                          APInt::getSplat(vec_width, bit_in_field));
-        Value * unshifted_field_mask = simd_eq(fw, simd_and(bit_select, shifts), vecZeroes);
-        Value * fieldsToShift = simd_and(w, simd_and(value_mask, simd_not(unshifted_field_mask)));
-        w = simd_or(simd_and(w, unshifted_field_mask), simd_srli(32, fieldsToShift, shft_amt));
+    if ((fw == 2 || fw == 4)) {
+        auto splat8 = [&](uint8_t x) { return getSplat(vec_width/8, getInt8(x)); };
+        if (fw == 4) {
+            Value * loData = simd_and(v, splat8(0x0F));
+            Value * hiData = simd_and(v, splat8(0xF0));
+            Value * loAmt = simd_and(shifts, splat8(0x0F));
+            Value * hiAmt = simd_srli(8, shifts, 4);
+            Value * loSh = simd_and(CreateLShr(fwCast(8, loData), fwCast(8, loAmt)), splat8(0x0F));
+            Value * hiSh = simd_and(CreateLShr(fwCast(8, hiData), fwCast(8, hiAmt)), splat8(0xF0));
+            return simd_or(loSh, hiSh);
+        }
+        Value * shifted = simd_and(CreateLShr(fwCast(8, v), splat8(1)), splat8(0x55));
+        Value * a = simd_and(shifts, splat8(0x55));
+        Value * sel = simd_or(a, CreateShl(fwCast(8, a), splat8(1)));
+        return simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel)));
     }
-    return w;
+    return CreateLShr(fwCast(fw, v), fwCast(fw, shifts));
 }
 
 Value * IDISA_Builder::simd_rotl(unsigned fw, Value * v, Value * rotates) {

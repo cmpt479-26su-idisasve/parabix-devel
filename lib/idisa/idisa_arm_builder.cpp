@@ -12,11 +12,8 @@
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
 #define getOrInsertDeclaration getDeclaration
 #endif
-#include <llvm/Support/CommandLine.h>
 
 using namespace llvm;
-
-static cl::opt<std::string> ExperimentalImplementation("experimental_implementation", cl::init(""));
 
 namespace {
 
@@ -94,15 +91,18 @@ llvm::GlobalVariable * getOrCreateFieldPermuteTable(llvm::Module * mod, llvm::LL
 
 namespace IDISA {
 
-std::string opSuffix() {
-    if (ExperimentalImplementation != "") {
-        return "_x" + ExperimentalImplementation;
+std::string IDISA_ARM_Builder::getBuilderUniqueName() { 
+    std::stringstream uname;
+    uname << "ARM";
+    if (mBitBlockWidth != ARM_width) {
+        uname << "_" << mBitBlockWidth;
+        if (IDISA::IDISA_Experiment != "") {
+            uname << IDISA::IDISA_Experiment;
+        }
     }
-    return "";
+    return uname.str();
 }
 
-std::string IDISA_ARM_Builder::getBuilderUniqueName() { 
-    return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM" + opSuffix();}
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
     if (getVectorBitWidth(a) != ARM_width || fw < 8 || fw % 8 != 0) {
@@ -335,7 +335,7 @@ Value * IDISA_ARM_Builder::fieldPermute(unsigned fw, Value * a, Value * select_m
 }
 
 Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {
-    if ((ExperimentalImplementation == "mvmd_compress") && (getVectorBitWidth(a) == ARM_width)) {
+    if ((IDISA::IDISA_Experiment == "mvmd_compress") && (getVectorBitWidth(a) == ARM_width)) {
         if (fw == 16 || fw == 32 || fw == 64) {
             return fieldPermute(fw, a, select_mask, false);
         }
@@ -362,7 +362,7 @@ Value * IDISA_ARM_Builder::expandBytes(Value * a, Value * byteMask) {
 }
 
 Value * IDISA_ARM_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_mask) {
-    if ((ExperimentalImplementation == "mvmd_expand") && (getVectorBitWidth(a) == ARM_width)) {
+    if ((IDISA::IDISA_Experiment == "mvmd_expand") && (getVectorBitWidth(a) == ARM_width)) {
         if (fw == 16 || fw == 32 || fw == 64) {
             return fieldPermute(fw, a, select_mask, true);
         }
@@ -430,51 +430,6 @@ Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
         return CreateCall(zip1_fn->getFunctionType(), zip1_fn, {fwCast(fw, a), fwCast(fw, b)});
     }
     return IDISA_Builder::esimd_mergel(fw, a, b);
-}
-
-// Native variable shift for sub-byte fields. Callers (pext/pdep/rotl/rotr) only feed
-// in-range amounts (< fw), so a single byte-lane USHL/USHR plus a fixed field-isolation
-// mask replaces the generic emulated inductive-doubling loop.
-Value * IDISA_ARM_Builder::simd_sllv(unsigned fw, Value * v, Value * shifts) {
-    if ((ExperimentalImplementation == "simd_sllv") && getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
-        auto splat8 = [&](uint8_t x) { return getSplat(16, getInt8(x)); };
-        if (fw == 4) {
-            // remask each nibble after the byte shift so bits never carry across the nibble boundary
-            Value * loData = simd_and(v, splat8(0x0F));
-            Value * hiData = simd_and(v, splat8(0xF0));
-            Value * loAmt = simd_and(shifts, splat8(0x0F));
-            Value * hiAmt = simd_srli(8, shifts, 4);
-            Value * loSh = simd_and(CreateShl(fwCast(8, loData), fwCast(8, loAmt)), splat8(0x0F));
-            Value * hiSh = simd_and(CreateShl(fwCast(8, hiData), fwCast(8, hiAmt)), splat8(0xF0));
-            return simd_or(loSh, hiSh);
-        }
-        // fw == 2: amount is one bit per field; expand it to a full 0b11 field mask and BSL-select
-        Value * shifted = simd_and(CreateShl(fwCast(8, v), splat8(1)), splat8(0xAA));
-        Value * a = simd_and(shifts, splat8(0x55));
-        Value * sel = simd_or(a, CreateShl(fwCast(8, a), splat8(1)));
-        return simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel)));
-    }
-    return IDISA_Builder::simd_sllv(fw, v, shifts);
-}
-
-Value * IDISA_ARM_Builder::simd_srlv(unsigned fw, Value * v, Value * shifts) {
-    if ((ExperimentalImplementation == "simd_srlv") && getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
-        auto splat8 = [&](uint8_t x) { return getSplat(16, getInt8(x)); };
-        if (fw == 4) {
-            Value * loData = simd_and(v, splat8(0x0F));
-            Value * hiData = simd_and(v, splat8(0xF0));
-            Value * loAmt = simd_and(shifts, splat8(0x0F));
-            Value * hiAmt = simd_srli(8, shifts, 4);
-            Value * loSh = simd_and(CreateLShr(fwCast(8, loData), fwCast(8, loAmt)), splat8(0x0F));
-            Value * hiSh = simd_and(CreateLShr(fwCast(8, hiData), fwCast(8, hiAmt)), splat8(0xF0));
-            return simd_or(loSh, hiSh);
-        }
-        Value * shifted = simd_and(CreateLShr(fwCast(8, v), splat8(1)), splat8(0x55));
-        Value * a = simd_and(shifts, splat8(0x55));
-        Value * sel = simd_or(a, CreateShl(fwCast(8, a), splat8(1)));
-        return simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel)));
-    }
-    return IDISA_Builder::simd_srlv(fw, v, shifts);
 }
 
 }
