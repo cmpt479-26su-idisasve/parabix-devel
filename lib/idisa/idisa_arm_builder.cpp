@@ -12,14 +12,19 @@
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
 #define getOrInsertDeclaration getDeclaration
 #endif
+#include <llvm/Support/CommandLine.h>
 
 using namespace llvm;
+
+static cl::opt<std::string> ExperimentalImplementation("experimental_implementation", cl::init(""));
 
 namespace {
 
 llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LLVMContext & C) {
     const char * const name = "__idisa_arm_byte_compress_table";
-    if (llvm::GlobalVariable * existing = mod->getGlobalVariable(name)) {
+    // AllowInternal, or the lookup never matches a private global and every
+    // call site gets its own 4KB copy of the table.
+    if (llvm::GlobalVariable * existing = mod->getGlobalVariable(name, true)) {
         return existing;
     }
     llvm::IntegerType * i8Ty = llvm::IntegerType::getInt8Ty(C);
@@ -44,10 +49,60 @@ llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LL
                                      llvm::GlobalValue::PrivateLinkage, tableInit, name);
 }
 
+// Direct lookup is practical above fw=8: 4 KiB at fw=16 and smaller thereafter.
+// Compress maps field f to rank(f); expand inverts it. Index 16 yields zero.
+llvm::GlobalVariable * getOrCreateFieldPermuteTable(llvm::Module * mod, llvm::LLVMContext & C,
+                                                    unsigned fw, bool isExpand) {
+    const unsigned fieldCount = 128 / fw;
+    const unsigned bytesPerField = fw / 8;
+    const unsigned entryCount = 1u << fieldCount;
+    const std::string name = std::string("__idisa_arm_field_")
+                           + (isExpand ? "expand" : "compress")
+                           + "_table_" + std::to_string(fw);
+    if (llvm::GlobalVariable * existing = mod->getGlobalVariable(name, true)) {
+        return existing;
+    }
+    llvm::IntegerType * i8Ty = llvm::IntegerType::getInt8Ty(C);
+    llvm::FixedVectorType * entryTy = llvm::FixedVectorType::get(i8Ty, 16);
+    llvm::SmallVector<llvm::Constant *, 256> entries(entryCount);
+    for (unsigned m = 0; m < entryCount; m++) {
+        llvm::Constant * lanes[16];
+        for (unsigned i = 0; i < 16; i++) {
+            lanes[i] = llvm::ConstantInt::get(i8Ty, 16);
+        }
+        unsigned rank = 0;
+        for (unsigned f = 0; f < fieldCount; f++) {
+            if (m & (1u << f)) {
+                const unsigned src = isExpand ? rank : f;
+                const unsigned dst = isExpand ? f : rank;
+                for (unsigned b = 0; b < bytesPerField; b++) {
+                    lanes[dst * bytesPerField + b] =
+                        llvm::ConstantInt::get(i8Ty, src * bytesPerField + b);
+                }
+                rank++;
+            }
+        }
+        entries[m] = llvm::ConstantVector::get(llvm::ArrayRef<llvm::Constant *>(lanes, 16));
+    }
+    llvm::ArrayType * tableTy = llvm::ArrayType::get(entryTy, entryCount);
+    llvm::Constant * tableInit = llvm::ConstantArray::get(tableTy, entries);
+    return new llvm::GlobalVariable(*mod, tableTy, /*isConstant=*/true,
+                                     llvm::GlobalValue::PrivateLinkage, tableInit, name);
+}
+
 } // anonymous namespace
+
 namespace IDISA {
 
-std::string IDISA_ARM_Builder::getBuilderUniqueName() { return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM";}
+std::string opSuffix() {
+    if (ExperimentalImplementation != "") {
+        return "_x" + ExperimentalImplementation;
+    }
+    return "";
+}
+
+std::string IDISA_ARM_Builder::getBuilderUniqueName() { 
+    return mBitBlockWidth != 128 ? "ARM_" + std::to_string(mBitBlockWidth) : "ARM" + opSuffix();}
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
     if (getVectorBitWidth(a) != ARM_width || fw < 8 || fw % 8 != 0) {
@@ -179,28 +234,46 @@ Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * ta
     return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector, mode);
 }
 
+// Expand one field bit to each byte it covers without a scalar dependency chain.
 Value * IDISA_ARM_Builder::expandFieldMaskToBytes(Value * select_mask, unsigned fw) {
-    const unsigned fieldCount = 128 / fw;      // 8, 4, or 2 for fw=16/32/64
-    const unsigned bytesPerField = fw / 8;     // 2, 4, or 8
-    Value * mask = CreateZExtOrTrunc(select_mask, getIntNTy(fieldCount));
-    Value * byteMask = ConstantInt::get(getInt16Ty(), 0);
-    for (unsigned j = 0; j < fieldCount; j++) {
-        Value * bit = CreateAnd(CreateLShr(mask, ConstantInt::get(getIntNTy(fieldCount), j)),
-                                 ConstantInt::get(getIntNTy(fieldCount), 1));
-        Value * bit16 = CreateZExt(bit, getInt16Ty());
-        for (unsigned k = 0; k < bytesPerField; k++) {
-            unsigned destBit = j * bytesPerField + k;
-            Value * shifted = CreateShl(bit16, ConstantInt::get(getInt16Ty(), destBit));
-            byteMask = CreateOr(byteMask, shifted);
-        }
+    const unsigned bytesPerField = fw / 8;     // 2, 4, or 8 for fw=16/32/64
+    FixedVectorType * v16xi8Ty = FixedVectorType::get(getInt8Ty(), 16);
+
+    // fw >= 16, so every field selector fits in one byte.
+    Value * splat = fwCast(8, simd_fill(8, CreateZExtOrTrunc(select_mask, getInt8Ty())));
+    Constant * sel[16];
+    for (unsigned i = 0; i < 16; i++) {
+        sel[i] = getInt8(1u << (i / bytesPerField));
     }
-    return byteMask;
+    Value * selVec = ConstantVector::get(ArrayRef<Constant *>(sel, 16));
+    Value * isSet = CreateICmpNE(fwCast(8, simd_and(splat, selVec)),
+                                 ConstantAggregateZero::get(v16xi8Ty));
+
+    return CreateZExtOrTrunc(hsimd_signmask(8, CreateSExt(isSet, v16xi8Ty)), getInt16Ty());
 }
+
+// Expand a 16-bit mask to one boolean byte lane per bit.
+Value * IDISA_ARM_Builder::byteMaskToLaneMask(Value * byteMask) {
+    FixedVectorType * v16xi8Ty = FixedVectorType::get(getInt8Ty(), 16);
+    Value * maskPair = CreateBitCast(CreateZExtOrTrunc(byteMask, getInt16Ty()),
+                                     FixedVectorType::get(getInt8Ty(), 2));
+    SmallVector<int, 16> halfIdx(16);
+    Constant * sel[16];
+    for (unsigned i = 0; i < 16; i++) {
+        halfIdx[i] = i / 8;
+        sel[i] = getInt8(1u << (i % 8));
+    }
+    Value * spread = CreateShuffleVector(maskPair, maskPair, halfIdx);
+    Value * selVec = ConstantVector::get(ArrayRef<Constant *>(sel, 16));
+    return CreateICmpNE(fwCast(8, simd_and(spread, selVec)),
+                        ConstantAggregateZero::get(v16xi8Ty));
+}
+
 
 // raw TBL1: indexes >= 16 yield zero lanes, unlike mvmd_shuffle which reduces them mod 16
 Value * IDISA_ARM_Builder::tbl1(Value * table, Value * index_vector) {
-    Function * fn = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl1,
-                                              FixedVectorType::get(getInt8Ty(), 16));
+    Function * fn = Intrinsic::getOrInsertDeclaration
+                        (getModule(), Intrinsic::aarch64_neon_tbl1, FixedVectorType::get(getInt8Ty(), 16));
     return CreateCall(fn->getFunctionType(), fn, {fwCast(8, table), fwCast(8, index_vector)});
 }
 
@@ -246,13 +319,58 @@ Value * IDISA_ARM_Builder::compressBytes(Value * a, Value * byteMask) {
     return simd_and(result, zeroMask);
 }
 
+// Masking the index to fieldCount bits is required, not an optimization. The
+// tables at fw 32 and 64 have only 16 and 4 entries, so an unmasked mask would
+// index past the end.
+Value * IDISA_ARM_Builder::fieldPermute(unsigned fw, Value * a, Value * select_mask, bool isExpand) {
+    const unsigned fieldCount = 128 / fw;
+    GlobalVariable * table = getOrCreateFieldPermuteTable(getModule(), getContext(), fw, isExpand);
+    Type * i32Ty = getInt32Ty();
+    Value * idx = CreateAnd(CreateZExtOrTrunc(select_mask, i32Ty),
+                            ConstantInt::get(i32Ty, (1u << fieldCount) - 1));
+    Value * gep = CreateInBoundsGEP(table->getValueType(), table,
+                                     {ConstantInt::get(i32Ty, 0), idx});
+    Value * perm = CreateLoad(FixedVectorType::get(getInt8Ty(), 16), gep);
+    return tbl1(a, perm);
+}
+
 Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {
-    if (mBitBlockWidth == 128 && (fw == 8 || fw == 16 || fw == 32 || fw == 64)) {
-        Value * byteMask = (fw == 8) ? CreateZExtOrTrunc(select_mask, getInt16Ty())
-                                      : expandFieldMaskToBytes(select_mask, fw);
-        return compressBytes(a, byteMask);
+    if ((ExperimentalImplementation == "mvmd_compress") && (getVectorBitWidth(a) == ARM_width)) {
+        if (fw == 16 || fw == 32 || fw == 64) {
+            return fieldPermute(fw, a, select_mask, false);
+        }
+        if (fw == 8) {
+            return compressBytes(a, CreateZExtOrTrunc(select_mask, getInt16Ty()));
+        }
     }
     return IDISA_Builder::mvmd_compress(fw, a, select_mask);
+}
+
+Value * IDISA_ARM_Builder::expandBytes(Value * a, Value * byteMask) {
+    const unsigned fieldCount = 16;
+    FixedVectorType * v16xi8Ty = FixedVectorType::get(getInt8Ty(), fieldCount);
+
+    Value * isSelected = byteMaskToLaneMask(byteMask);
+    Value * ones = CreateZExt(isSelected, v16xi8Ty);
+    Value * inclusiveRank = hsimd_partial_sum(8, ones);
+    Value * rank = simd_sub(8, inclusiveRank, ones);
+
+    Value * outOfRange = getSplat(fieldCount, getInt8(fieldCount));
+    Value * gatherIdx = CreateSelect(isSelected, rank, outOfRange);
+
+    return tbl1(a, gatherIdx);
+}
+
+Value * IDISA_ARM_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_mask) {
+    if ((ExperimentalImplementation == "mvmd_expand") && (getVectorBitWidth(a) == ARM_width)) {
+        if (fw == 16 || fw == 32 || fw == 64) {
+            return fieldPermute(fw, a, select_mask, true);
+        }
+        if (fw == 8) {
+            return expandBytes(a, CreateZExtOrTrunc(select_mask, getInt16Ty()));
+        }
+    }
+    return IDISA_Builder::mvmd_expand(fw, a, select_mask);
 }
 
 Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
@@ -318,7 +436,7 @@ Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
 // in-range amounts (< fw), so a single byte-lane USHL/USHR plus a fixed field-isolation
 // mask replaces the generic emulated inductive-doubling loop.
 Value * IDISA_ARM_Builder::simd_sllv(unsigned fw, Value * v, Value * shifts) {
-    if (getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
+    if ((ExperimentalImplementation == "simd_sllv") && getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
         auto splat8 = [&](uint8_t x) { return getSplat(16, getInt8(x)); };
         if (fw == 4) {
             // remask each nibble after the byte shift so bits never carry across the nibble boundary
@@ -340,7 +458,7 @@ Value * IDISA_ARM_Builder::simd_sllv(unsigned fw, Value * v, Value * shifts) {
 }
 
 Value * IDISA_ARM_Builder::simd_srlv(unsigned fw, Value * v, Value * shifts) {
-    if (getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
+    if ((ExperimentalImplementation == "simd_srlv") && getVectorBitWidth(v) == ARM_width && (fw == 2 || fw == 4)) {
         auto splat8 = [&](uint8_t x) { return getSplat(16, getInt8(x)); };
         if (fw == 4) {
             Value * loData = simd_and(v, splat8(0x0F));
