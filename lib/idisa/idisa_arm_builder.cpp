@@ -218,11 +218,11 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
 Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector, ShuffleMode mode) {
     auto vec_width = getVectorBitWidth(table0);
     if (vec_width == mNativeBitBlockWidth && fw == 8) {
-        auto fieldCount = 2*vec_width/fw;
+        auto fieldCount = vec_width/fw;
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl2, FixedVectorType::get(getInt8Ty(), 16));
         // Default for ARM is ShuffleMode::ZeroOnIndexOver
         if (mode == ShuffleMode::TruncateIndex) {
-            Constant * fieldMask = ConstantInt::get(getIntNTy(fw), fieldCount - 1);
+            Constant * fieldMask = ConstantInt::get(getIntNTy(fw), 2*fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         } else if (mode == ShuffleMode::ZeroOnHighIndexBit) {
             // Preserve high bit for zeroing, but clear others.
@@ -233,24 +233,6 @@ Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * ta
             return rslt;
     }
     return IDISA_Builder::mvmd_shuffle2(fw, table0, table1, index_vector, mode);
-}
-
-// Expand one field bit to each byte it covers without a scalar dependency chain.
-Value * IDISA_ARM_Builder::expandFieldMaskToBytes(Value * select_mask, unsigned fw) {
-    const unsigned bytesPerField = fw / 8;     // 2, 4, or 8 for fw=16/32/64
-    FixedVectorType * v16xi8Ty = FixedVectorType::get(getInt8Ty(), 16);
-
-    // fw >= 16, so every field selector fits in one byte.
-    Value * splat = fwCast(8, simd_fill(8, CreateZExtOrTrunc(select_mask, getInt8Ty())));
-    Constant * sel[16];
-    for (unsigned i = 0; i < 16; i++) {
-        sel[i] = getInt8(1u << (i / bytesPerField));
-    }
-    Value * selVec = ConstantVector::get(ArrayRef<Constant *>(sel, 16));
-    Value * isSet = CreateICmpNE(fwCast(8, simd_and(splat, selVec)),
-                                 ConstantAggregateZero::get(v16xi8Ty));
-
-    return CreateZExtOrTrunc(hsimd_signmask(8, CreateSExt(isSet, v16xi8Ty)), getInt16Ty());
 }
 
 // Expand a 16-bit mask to one boolean byte lane per bit.
@@ -270,13 +252,6 @@ Value * IDISA_ARM_Builder::byteMaskToLaneMask(Value * byteMask) {
                         ConstantAggregateZero::get(v16xi8Ty));
 }
 
-
-// raw TBL1: indexes >= 16 yield zero lanes, unlike mvmd_shuffle which reduces them mod 16
-Value * IDISA_ARM_Builder::tbl1(Value * table, Value * index_vector) {
-    Function * fn = Intrinsic::getOrInsertDeclaration
-                        (getModule(), Intrinsic::aarch64_neon_tbl1, FixedVectorType::get(getInt8Ty(), 16));
-    return CreateCall(fn->getFunctionType(), fn, {fwCast(8, table), fwCast(8, index_vector)});
-}
 
 Value * IDISA_ARM_Builder::compressBytes(Value * a, Value * byteMask) {
     GlobalVariable * table = getOrCreateByteCompressTable(getModule(), getContext());
@@ -299,25 +274,14 @@ Value * IDISA_ARM_Builder::compressBytes(Value * a, Value * byteMask) {
     Value * highIdxBase = loadTableEntry(highMaskByte);
     Value * highIdx = simd_add(8, highIdxBase, getSplat(16, getInt8(8)));
 
-    Value * lowCompressed = tbl1(a, lowIdx);
-    Value * highCompressed = tbl1(a, highIdx);
+    Value * lowCompressed = mvmd_shuffle(8, a, lowIdx, ShuffleMode::ZeroOnIndexOver);
+    Value * highCompressed = mvmd_shuffle(8, a, highIdx, ShuffleMode::ZeroOnIndexOver);
 
-    Value * countLow = CreateZExtOrTrunc(CreatePopcount(lowMaskByte), getInt8Ty());
-    Constant * identity[16];
-    for (unsigned i = 0; i < 16; i++) {
-        identity[i] = getInt8(i);
-    }
-    Value * identityVec = ConstantVector::get(ArrayRef<Constant *>(identity, 16));
-    Value * shiftIdx = simd_sub(8, identityVec, simd_fill(8, countLow));
-    Value * shiftedHigh = tbl1(highCompressed, shiftIdx);
+    Value * countLow = CreatePopcount(lowMaskByte);
+    Value * shiftedHigh = mvmd_sll(8, highCompressed, countLow);
 
     Value * result = simd_or(lowCompressed, shiftedHigh);
-
-    Value * totalCount = CreateZExtOrTrunc(CreatePopcount(maskBits), getInt8Ty());
-    Value * validLane = CreateICmpULT(identityVec, simd_fill(8, totalCount));
-    Value * zeroMask = CreateSExt(validLane, v16xi8Ty);
-
-    return simd_and(result, zeroMask);
+    return result;
 }
 
 // Masking the index to fieldCount bits is required, not an optimization. The
@@ -332,11 +296,11 @@ Value * IDISA_ARM_Builder::fieldPermute(unsigned fw, Value * a, Value * select_m
     Value * gep = CreateInBoundsGEP(table->getValueType(), table,
                                      {ConstantInt::get(i32Ty, 0), idx});
     Value * perm = CreateLoad(FixedVectorType::get(getInt8Ty(), ARM_width/8), gep);
-    return tbl1(a, perm);
+    return mvmd_shuffle(8, a, perm, ShuffleMode::ZeroOnIndexOver);
 }
 
 Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {
-    if ((IDISA::IDISA_Experiment == "mvmd_compress") && (getVectorBitWidth(a) == ARM_width)) {
+    if (getVectorBitWidth(a) == ARM_width) {
         if (fw == 16 || fw == 32 || fw == 64) {
             return fieldPermute(fw, a, select_mask, false);
         }
@@ -347,28 +311,10 @@ Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_
     return IDISA_Builder::mvmd_compress(fw, a, select_mask);
 }
 
-Value * IDISA_ARM_Builder::expandBytes(Value * a, Value * byteMask) {
-    const unsigned fieldCount = 16;
-    FixedVectorType * v16xi8Ty = FixedVectorType::get(getInt8Ty(), fieldCount);
-
-    Value * isSelected = byteMaskToLaneMask(byteMask);
-    Value * ones = CreateZExt(isSelected, v16xi8Ty);
-    Value * inclusiveRank = hsimd_partial_sum(8, ones);
-    Value * rank = simd_sub(8, inclusiveRank, ones);
-
-    Value * outOfRange = getSplat(fieldCount, getInt8(fieldCount));
-    Value * gatherIdx = CreateSelect(isSelected, rank, outOfRange);
-
-    return tbl1(a, gatherIdx);
-}
-
 Value * IDISA_ARM_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_mask) {
-    if ((IDISA::IDISA_Experiment == "mvmd_expand") && (getVectorBitWidth(a) == ARM_width)) {
+    if (getVectorBitWidth(a) == ARM_width) {
         if (fw == 16 || fw == 32 || fw == 64) {
             return fieldPermute(fw, a, select_mask, true);
-        }
-        if (fw == 8) {
-            return expandBytes(a, CreateZExtOrTrunc(select_mask, getInt16Ty()));
         }
     }
     return IDISA_Builder::mvmd_expand(fw, a, select_mask);

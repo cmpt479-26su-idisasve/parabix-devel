@@ -34,10 +34,7 @@ public:
     
 protected:
     llvm::Value * byteMaskToLaneMask(llvm::Value * byteMask);
-    llvm::Value * tbl1(llvm::Value * table, llvm::Value * index_vector);
     llvm::Value * compressBytes(llvm::Value * a, llvm::Value * byteMask);
-    llvm::Value * expandBytes(llvm::Value * a, llvm::Value * byteMask);
-    llvm::Value * expandFieldMaskToBytes(llvm::Value * select_mask, unsigned fw);
     llvm::Value * fieldPermute(unsigned fw, llvm::Value * a, llvm::Value * select_mask, bool isExpand);
 };
 
