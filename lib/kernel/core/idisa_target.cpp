@@ -10,6 +10,7 @@
 #ifdef PARABIX_ARM_TARGET
 #include <llvm/TargetParser/AArch64TargetParser.h>
 #include <idisa/idisa_arm_builder.h>
+#include <idisa/idisa_sve_builder.h>
 #endif
 #ifdef PARABIX_X86_TARGET
 #include <idisa/idisa_sse_builder.h>
@@ -41,7 +42,8 @@ struct Features {
     bool hasAVX;
     bool hasAVX2;
     bool hasAVX512F;
-    Features() : hasAVX(0), hasAVX2(0), hasAVX512F(0) { }
+
+    Features() : hasAVX(0), hasAVX2(0), hasAVX512F(0) {}
 };
 
 Features getHostCPUFeatures(const StringMap<bool> & features) {
@@ -52,26 +54,36 @@ Features getHostCPUFeatures(const StringMap<bool> & features) {
     return hostCPUFeatures;
 }
 
-bool ARM_available() {
+bool NEON_available() {
 #ifdef PARABIX_ARM_TARGET
-#if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
-    auto info = llvm::AArch64::parseCpu(sys::getHostCPUName());
-    std::vector<StringRef> extNames;
-    if (info) {
-        llvm::AArch64::getExtensionFeatures(info->Arch.DefaultExts | info->DefaultExtensions, extNames);
-    }
+    return true;
 #else
-    const llvm::AArch64::CpuInfo & info = llvm::AArch64::parseCpu(sys::getHostCPUName());
-    std::vector<StringRef> extNames;
-    llvm::AArch64::getExtensionFeatures(info.Arch.DefaultExts | info.DefaultExtensions, extNames);
+    return false;
 #endif
-    for (const auto eName : extNames) {
-        //llvm::errs() << "Extension: " << eName << "\n";
-        if (eName == "+neon") return true;
+}
+
+bool SVE_available() {
+#ifdef PARABIX_ARM_TARGET
+    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
+    StringMap<bool> features;
+    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
+        return false;
     }
+    #else
+    const auto features = sys::getHostCPUFeatures();
+    #endif
+
+    llvm::errs() << "SVE_available discovered features:";
+    std::vector<std::string> attrs;
+    for (auto & flag : features) {
+        llvm::errs() << " " << (flag.second ? '+' : '-') << flag.first();
+    }
+    llvm::errs() << "\n";
+
+    return features.lookup("sve");
+#else
     return false;
 #endif
-    return false;
 }
 
 bool AVX2_available() {
@@ -109,9 +121,16 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
     if (LLVM_LIKELY(codegen::BlockSize == 0)) {  // No BlockSize override: use processor SIMD width
         codegen::BlockSize = 128;
     }
-    if (ARM_available()) {
+    // TODO maybe don't check for NEON, it should always be available on aarch64
+    // Try for SVE/SVE2
+    if (SVE_available()) {
+        return new KernelBuilderImpl<IDISA_SVE_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
+    }
+    // If not available, use NEON
+    if (NEON_available()) {
         return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
     }
+    // aarch64 is supposed to always include NEON so shouldn't get here, but if we do, we'll fall back to scalar
 #endif
 #ifdef PARABIX_X86_TARGET
 
@@ -165,6 +184,7 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
             return new KernelBuilderImpl<IDISA_SSE2_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
         }
     }
+    // Otherwise, fall through...
 #endif
     llvm::errs() << "BlockSize 64 default!\n";
     codegen::BlockSize = 64;
