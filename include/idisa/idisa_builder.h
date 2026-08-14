@@ -19,6 +19,7 @@ namespace IDISA {
 
 extern std::string IDISA_Experiment;
 
+using VectorType = llvm::VectorType;
 using FixedVectorType = llvm::FixedVectorType;
 
 bool isStreamTy(const llvm::Type * const t);
@@ -50,10 +51,13 @@ enum class Feature : size_t {
 class IDISA_Builder : public CBuilder {
 
 public:
+    // Special type to indicate when we're calling the superclass constructor
+    // for a virtual parent because the language requires it, but we actually
+    // expect that someone else will do the real initialization:
+    struct DONTUSE_CONSTRUCTOR {};
+    explicit IDISA_Builder(DONTUSE_CONSTRUCTOR);
 
-    using FeatureSet = std::bitset<(size_t)Feature::__Count>;
-
-    IDISA_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet,
+    IDISA_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet,
                   unsigned nativeVectorWidth, unsigned vectorWidth, unsigned laneWidth, unsigned maxShiftFw = 64, unsigned minShiftFw = 16);
 
     bool hasFeature(const IDISA::Feature feature) const LLVM_READNONE {
@@ -104,7 +108,7 @@ public:
         return CreateAlignedMalloc(size, mBitBlockWidth / 8);
     }
     
-    FixedVectorType * fwVectorType(const unsigned fw);
+    VectorType * fwVectorType(const unsigned fw);
 
     llvm::Constant * simd_himask(unsigned fw);
     llvm::Constant * simd_lomask(unsigned fw);
@@ -279,7 +283,7 @@ protected:
     llvm::Constant * const      mZeroInitializer;
     llvm::Constant * const      mOneInitializer;
     llvm::Constant *            mPrintRegisterFunction;
-    const FeatureSet            mFeatureSet;
+    const codegen::FeatureSet   mFeatureSet;
 };
 
 }

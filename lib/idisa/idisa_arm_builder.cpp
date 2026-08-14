@@ -51,7 +51,7 @@ llvm::GlobalVariable * getOrCreateByteCompressTable(llvm::Module * mod, llvm::LL
 // Compress maps field f to rank(f); expand inverts it. Index 16 yields zero.
 llvm::GlobalVariable * getOrCreateFieldPermuteTable(llvm::Module * mod, llvm::LLVMContext & C,
                                                     unsigned fw, bool isExpand) {
-    const unsigned fieldCount = IDISA::ARM_width / fw;
+    const unsigned fieldCount = IDISA::ARM_Neon_width / fw;
     const unsigned bytesPerField = fw / 8;
     const unsigned entryCount = 1u << fieldCount;
     const std::string name = std::string("__idisa_arm_field_")
@@ -94,8 +94,8 @@ namespace IDISA {
 
 std::string IDISA_ARM_Builder::getBuilderUniqueName() { 
     std::stringstream uname;
-    uname << "ARM";
-    if (mBitBlockWidth != ARM_width) {
+    uname << "ARM_Neon";
+    if (mBitBlockWidth != ARM_Neon_width) {
         uname << "_" << mBitBlockWidth;
     }
     if (IDISA::IDISA_Experiment != "") {
@@ -106,7 +106,7 @@ std::string IDISA_ARM_Builder::getBuilderUniqueName() {
 
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
-    if (getVectorBitWidth(a) != ARM_width || fw < 8 || fw % 8 != 0) {
+    if (getVectorBitWidth(a) != ARM_Neon_width || fw < 8 || fw % 8 != 0) {
         return IDISA_Builder::simd_popcount(fw, a);
     }
 
@@ -170,7 +170,7 @@ Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
 
 Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 
-    if (fw < 8 || getVectorBitWidth(a) != ARM_width) {
+    if (fw < 8 || getVectorBitWidth(a) != ARM_Neon_width) {
         return IDISA_Builder::simd_bitreverse(fw, a);
     }
 
@@ -288,19 +288,19 @@ Value * IDISA_ARM_Builder::compressBytes(Value * a, Value * byteMask) {
 // tables at fw 32 and 64 have only 16 and 4 entries, so an unmasked mask would
 // index past the end.
 Value * IDISA_ARM_Builder::fieldPermute(unsigned fw, Value * a, Value * select_mask, bool isExpand) {
-    const unsigned fieldCount = ARM_width / fw;
+    const unsigned fieldCount = ARM_Neon_width / fw;
     GlobalVariable * table = getOrCreateFieldPermuteTable(getModule(), getContext(), fw, isExpand);
     Type * i32Ty = getInt32Ty();
     Value * idx = CreateAnd(CreateZExtOrTrunc(select_mask, i32Ty),
                             ConstantInt::get(i32Ty, (1u << fieldCount) - 1));
     Value * gep = CreateInBoundsGEP(table->getValueType(), table,
                                      {ConstantInt::get(i32Ty, 0), idx});
-    Value * perm = CreateLoad(FixedVectorType::get(getInt8Ty(), ARM_width/8), gep);
+    Value * perm = CreateLoad(FixedVectorType::get(getInt8Ty(), ARM_Neon_width/8), gep);
     return mvmd_shuffle(8, a, perm, ShuffleMode::ZeroOnIndexOver);
 }
 
 Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {
-    if (getVectorBitWidth(a) == ARM_width) {
+    if (getVectorBitWidth(a) == ARM_Neon_width) {
         if (fw == 16 || fw == 32 || fw == 64) {
             return fieldPermute(fw, a, select_mask, false);
         }
@@ -312,7 +312,7 @@ Value * IDISA_ARM_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_
 }
 
 Value * IDISA_ARM_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_mask) {
-    if (getVectorBitWidth(a) == ARM_width) {
+    if (getVectorBitWidth(a) == ARM_Neon_width) {
         if (fw == 16 || fw == 32 || fw == 64) {
             return fieldPermute(fw, a, select_mask, true);
         }
@@ -321,7 +321,7 @@ Value * IDISA_ARM_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_ma
 }
 
 Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_Neon_width)) {
         int nElems = getVectorBitWidth(a) / fw;
         int halfFw = fw / 2;
         Function* uzp1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
@@ -334,7 +334,7 @@ Value * IDISA_ARM_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_Neon_width)) {
         int nElems = getVectorBitWidth(a) / fw;
         int halfFw = fw / 2;
         Function* uzp2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
@@ -347,7 +347,7 @@ Value * IDISA_ARM_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
-  if ((fw == 16) && (getVectorBitWidth(a) == ARM_width)) {
+  if ((fw == 16) && (getVectorBitWidth(a) == ARM_Neon_width)) {
     Function * vqmovun_s16_func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_uqxtn, FixedVectorType::get(getInt8Ty(), 8));
     Value * sat_a = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, a));
     Value * sat_b = CreateCall(vqmovun_s16_func->getFunctionType(), vqmovun_s16_func, fwCast(16, b));
@@ -358,7 +358,7 @@ Value * IDISA_ARM_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_Neon_width)) {
         int nElms = getVectorBitWidth(a) / fw;
         Function * zip2_fn = Intrinsic::getOrInsertDeclaration(getModule(),
                                                      Intrinsic::aarch64_sve_zip2,
@@ -369,7 +369,7 @@ Value * IDISA_ARM_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_ARM_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_width)) {
+    if ((fw >= 16) && (fw <= 64) && (getVectorBitWidth(a) == ARM_Neon_width)) {
         int nElms = getVectorBitWidth(a) / fw;
         Function * zip1_fn = Intrinsic::getOrInsertDeclaration(getModule(),
                                                      Intrinsic::aarch64_sve_zip1,

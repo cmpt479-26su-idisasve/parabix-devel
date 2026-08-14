@@ -4,17 +4,15 @@
 
 namespace IDISA {
 
-constexpr unsigned ARM_width = 128;
+constexpr unsigned ARM_Neon_width = 128;
 
 class IDISA_ARM_Builder : public virtual IDISA_Builder {
 public:
-    static constexpr unsigned NativeBitBlockWidth = ARM_width;
-    
-    IDISA_ARM_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet, unsigned bitBlockWidth, unsigned laneWidth)
-    : IDISA_Builder(C, featureSet, ARM_width, bitBlockWidth, laneWidth) {
-        
-    }
-    
+    static constexpr unsigned NativeBitBlockWidth() {return ARM_Neon_width;}
+
+    IDISA_ARM_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
+    ~IDISA_ARM_Builder() = default;
+
     virtual std::string getBuilderUniqueName() override;
     llvm::Value* simd_popcount(unsigned fw, llvm::Value* a) override;
     llvm::Value* simd_bitreverse(unsigned fw, llvm::Value* a) override;
@@ -29,8 +27,6 @@ public:
                                 ShuffleMode m = ShuffleMode::TruncateIndex) override;
     llvm::Value * mvmd_compress(unsigned fw, llvm::Value * a, llvm::Value * select_mask) override;
     llvm::Value * mvmd_expand(unsigned fw, llvm::Value * a, llvm::Value * select_mask) override;
-    
-    ~IDISA_ARM_Builder() {}
     
 protected:
     llvm::Value * byteMaskToLaneMask(llvm::Value * byteMask);

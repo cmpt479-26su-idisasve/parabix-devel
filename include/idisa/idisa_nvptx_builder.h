@@ -11,18 +11,19 @@ namespace IDISA {
 
 class IDISA_NVPTX20_Builder : public IDISA_I64_Builder {
 public:
-    static const unsigned NativeBitBlockWidth = 4096;
-    IDISA_NVPTX20_Builder(llvm::LLVMContext & C, unsigned vectorWidth, unsigned laneWidth)
-    : IDISA_Builder(C, NativeBitBlockWidth, vectorWidth, laneWidth)
-    , IDISA_I64_Builder(C, laneWidth, laneWidth)
-    , groupThreads(vectorWidth / laneWidth)
+    static constexpr unsigned NativeBitBlockWidth() {return 4096;}
+
+    IDISA_NVPTX20_Builder()
+    : IDISA_Builder(DONTUSE_CONSTRUCTOR())
+    , IDISA_I64_Builder()
+    , groupThreads(mBitBlockWidth / mLaneWidth)
     , barrierFunc(nullptr)
     , tidFunc(nullptr)
     , mLongAdvanceFunc(nullptr)
     , mLongAddFunc(nullptr)
     , carry(nullptr)
     , bubble(nullptr) {
-        assert ((vectorWidth % laneWidth) == 0);
+        assert ((mBitBlockWidth % mLaneWidth) == 0);
     }
 
     ~IDISA_NVPTX20_Builder() {}
