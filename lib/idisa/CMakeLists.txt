@@ -12,6 +12,7 @@ SRC
     idisa_builder.cpp
     idisa_i64_builder.cpp
     idisa_arm_builder.cpp
+    idisa_sve_builder.cpp
 DEPS
     toolchain
     ${Boost_LIBRARIES})
