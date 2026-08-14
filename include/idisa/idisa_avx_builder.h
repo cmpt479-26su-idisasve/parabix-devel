@@ -16,8 +16,9 @@ constexpr unsigned AVX512_width = 512;
 
 class IDISA_AVX_Builder : public IDISA_SSE2_Builder {
 public:
-    static const unsigned NativeBitBlockWidth = AVX_width;
-    IDISA_AVX_Builder(llvm::LLVMContext & C, const FeatureSet &featureSet, unsigned vectorWidth, unsigned laneWidth);
+    static constexpr unsigned NativeBitBlockWidth() {return AVX_width;}
+    
+    IDISA_AVX_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
     virtual std::string getBuilderUniqueName() override;
 
@@ -26,14 +27,13 @@ public:
     llvm::Value * CreatePextract(llvm::Value * v, llvm::Value * mask, const llvm::Twine Name = "") override;
     llvm::Value * CreatePdeposit(llvm::Value * v, llvm::Value * mask, const llvm::Twine Name = "") override;
 
-    ~IDISA_AVX_Builder() override {}
-
 };
 
 class IDISA_AVX2_Builder : public IDISA_AVX_Builder {
 public:
-    static const unsigned NativeBitBlockWidth = AVX_width;
-    IDISA_AVX2_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet, unsigned vectorWidth, unsigned laneWidth);
+    using IDISA_AVX_Builder::NativeBitBlockWidth;
+
+    IDISA_AVX2_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
     virtual std::string getBuilderUniqueName() override;
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
@@ -64,8 +64,9 @@ public:
 
 class IDISA_AVX512F_Builder : public IDISA_AVX2_Builder {
 public:
-    static const unsigned NativeBitBlockWidth = AVX512_width;
-    IDISA_AVX512F_Builder(llvm::LLVMContext & C, const FeatureSet & featureSet, unsigned vectorWidth, unsigned laneWidth);
+    static constexpr unsigned NativeBitBlockWidth() {return AVX512_width;}
+
+    IDISA_AVX512F_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
     virtual std::string getBuilderUniqueName() override;
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
@@ -89,9 +90,6 @@ public:
     llvm::Value * simd_if(unsigned fw, llvm::Value * cond, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * simd_ternary(unsigned char mask, llvm::Value * a, llvm::Value * b, llvm::Value * c) override;
     std::pair<llvm::Value *, llvm::Value *> bitblock_advance(llvm::Value * a, llvm::Value * shiftin, unsigned shift) override;
-
-    ~IDISA_AVX512F_Builder() override {
-    }
 
 };
 

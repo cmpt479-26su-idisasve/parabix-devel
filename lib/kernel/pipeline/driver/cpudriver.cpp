@@ -85,7 +85,12 @@ CPUDriver::CPUDriver(std::string && moduleName)
     if (mTarget == nullptr) {
         throw std::runtime_error("Could not selectTarget");
     }
-    mEngine.reset(builder.create());
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
+    auto triple = mTarget->getTargetTriple().getTriple();
+#else
+    auto triple = mTarget->getTargetTriple();
+#endif
+    mEngine.reset(builder.create(mTarget.release()));
     if (mEngine == nullptr) {
         throw std::runtime_error("Could not create ExecutionEngine: " + errMessage);
     }
@@ -96,11 +101,6 @@ CPUDriver::CPUDriver(std::string && moduleName)
     mEngine->DisableLazyCompilation(true);
     mEngine->DisableGVCompilation(true);
 
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
-    auto triple = mTarget->getTargetTriple().getTriple();
-#else
-    auto triple = mTarget->getTargetTriple();
-#endif
     const DataLayout DL(mTarget->createDataLayout());
     mMainModule->setTargetTriple(triple);
     mMainModule->setDataLayout(DL);

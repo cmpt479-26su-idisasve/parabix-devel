@@ -113,27 +113,12 @@ bool AVX512BW_available() {
 namespace IDISA {
 
 KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & features) {
-    IDISA_Builder::FeatureSet featureSet;
+    codegen::FeatureSet featureSet;
     if (codegen::BlockSize == 64) {
         return new KernelBuilderImpl<IDISA_I64_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
     }
-#ifdef PARABIX_ARM_TARGET
-    if (LLVM_LIKELY(codegen::BlockSize == 0)) {  // No BlockSize override: use processor SIMD width
-        codegen::BlockSize = 128;
-    }
-    // TODO maybe don't check for NEON, it should always be available on aarch64
-    // Try for SVE/SVE2
-    if (SVE_available()) {
-        return new KernelBuilderImpl<IDISA_SVE_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
-    }
-    // If not available, use NEON
-    if (NEON_available()) {
-        return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
-    }
-    // aarch64 is supposed to always include NEON so shouldn't get here, but if we do, we'll fall back to scalar
-#endif
-#ifdef PARABIX_X86_TARGET
 
+#ifdef PARABIX_X86_TARGET
     const auto HasAVX = features.lookup("avx");
     const auto HasAVX2 = features.lookup("avx2");
     const auto HasAVX512F = features.lookup("avx512f");
@@ -185,14 +170,22 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
         }
     }
     // Otherwise, fall through...
-#endif
     llvm::errs() << "BlockSize 64 default!\n";
     codegen::BlockSize = 64;
     return new KernelBuilderImpl<IDISA_I64_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
-}
-#ifdef PARABIX_NVPTX_TARGET
+#elif defined(PARABIX_ARM_TARGET)
+    // Try for SVE/SVE2
+    if (featureSet.test((size_t)codegen::Feature::SVE)) {
+        return new KernelBuilderImpl<IDISA_SVE_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
+    }
+    // As of July 2026, aarch64 is supposed to always include Neon
+    return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
+#elif defined(PARABIX_NVPTX_TARGET)
 KernelBuilder * GetIDISA_GPU_Builder(llvm::LLVMContext & C) {
     return new KernelBuilderImpl<IDISA_NVPTX20_Builder>(C, 64 * 64, 64);
-}
+#else
+#error Unknown target type?
 #endif
+}
+
 }
