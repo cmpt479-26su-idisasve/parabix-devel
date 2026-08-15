@@ -12,6 +12,7 @@
 #include <llvm/Support/Host.h>
 #endif
 #include <llvm/Support/raw_ostream.h>
+#include <llvm/ADT/StringRef.h>
 #include <boost/interprocess/mapped_region.hpp>
 #include <thread>
 
@@ -51,6 +52,20 @@ llvm::StringMap<bool> GetFeatureNames() {
     // Better yet, parse a list of "mattrs", which are comma-separated +X or -X
     // strings, adding them to the map with true/false depending on whether they
     // are +/-. That is, "+sse,-bmi" would map to "sse"=true, "bmi"=false.
+    if (!CPUFeatureOptions.empty()) {
+        llvm::StringRef ref(CPUFeatureOptions);
+        while (!ref.empty()) {
+            llvm::StringRef feature;
+            std::tie(feature, ref) = ref.split(',');
+            feature = feature.trim();
+            if (feature.size() > 1) {
+                char op = feature[0];
+                if (op == '+' || op == '-') {
+                    features[feature.drop_front(1)] = (op == '+');
+                }
+            }
+        }
+    }
     return features;
 }
 
@@ -200,6 +215,11 @@ static cl::opt<std::string, true> optPreserveAllStreamSetDataOption("preserve-al
 std::string DoubleStreamSetSizeOptions = "";
 static cl::opt<std::string, true> optDoubleStreamSetSizeOptions("double-streamset-size", cl::location(DoubleStreamSetSizeOptions), cl::ValueOptional,
   cl::desc("Comma delimited list of which streamsets to permit to be thread local (default=all)"),
+  cl::value_desc("regex"), cl::cat(CodeGenOptions));
+
+std::string CPUFeatureOptions = "";
+static cl::opt<std::string, true> optCPUFeatureOptions("cpu-features", cl::location(CPUFeatureOptions), cl::ValueOptional,
+  cl::desc("Comma delimited list of CPU features to enable or disable"),
   cl::value_desc("regex"), cl::cat(CodeGenOptions));
 
 #ifdef ENABLE_PAPI
