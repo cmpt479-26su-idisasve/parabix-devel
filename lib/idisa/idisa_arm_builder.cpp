@@ -198,7 +198,7 @@ Value * IDISA_ARM_Builder::simd_bitreverse(unsigned fw, Value * a) {
 
 Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value * index_vector, ShuffleMode mode) {
     auto vec_width = getVectorBitWidth(data_table);
-    if (vec_width == mNativeBitBlockWidth && fw == 8) {
+    if (vec_width == ARM_Neon_width && fw == 8) {
         auto fieldCount = vec_width/fw;
         // Default for ARM is ShuffleMode::ZeroOnIndexOver
         if (mode == ShuffleMode::TruncateIndex) {
@@ -217,7 +217,7 @@ Value * IDISA_ARM_Builder::mvmd_shuffle(unsigned fw, Value * data_table, Value *
 
 Value * IDISA_ARM_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value * table1, Value * index_vector, ShuffleMode mode) {
     auto vec_width = getVectorBitWidth(table0);
-    if (vec_width == mNativeBitBlockWidth && fw == 8) {
+    if (vec_width == ARM_Neon_width && fw == 8) {
         auto fieldCount = vec_width/fw;
         Function * shuf8Func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_neon_tbl2, FixedVectorType::get(getInt8Ty(), 16));
         // Default for ARM is ShuffleMode::ZeroOnIndexOver

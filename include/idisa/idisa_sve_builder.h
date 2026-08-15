@@ -1,7 +1,7 @@
 #pragma once
 
-#include "idisa_builder.h"
 #include <idisa/idisa_arm_builder.h>
+#include <idisa/idisa_builder.h>
 
 namespace IDISA {
 
@@ -31,7 +31,19 @@ class IDISA_SVE_Builder : public IDISA_ARM_Builder {
     ~IDISA_SVE_Builder() = default;
 
   private:
-    unsigned mVecLen;
+    template <class F>
+    llvm::Value *with_native_width(unsigned temp_width, F &&f) {
+        unsigned real_width = mNativeBitBlockWidth;
+        try {
+            const_cast<unsigned &>(mNativeBitBlockWidth) = temp_width;
+            llvm::Value *result = f();
+            const_cast<unsigned &>(mNativeBitBlockWidth) = real_width;
+            return result;
+        } catch (...) {
+            const_cast<unsigned &>(mNativeBitBlockWidth) = real_width;
+            throw;
+        }
+    }
 };
 
 } // namespace IDISA

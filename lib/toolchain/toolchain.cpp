@@ -38,15 +38,20 @@ inline unsigned getPageSize() {
 }
 
 llvm::StringMap<bool> GetFeatureNames() {
-#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
+#if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     if (!sys::getHostCPUFeatures(features)) {
-        llvm::report_fatal_error("SVE2_available() failed to get host CPU features");
+        llvm::report_fatal_error(
+            "codegen::GetFeatureNames() failed to get host CPU features");
     }
-    return features;
 #else
-    return sys::getHostCPUFeatures();
+    features = sys::getHostCPUFeatures();
 #endif
+    // Strip out "sve2" here, if it's suppressed on the command line
+    // Better yet, parse a list of "mattrs", which are comma-separated +X or -X
+    // strings, adding them to the map with true/false depending on whether they
+    // are +/-. That is, "+sse,-bmi" would map to "sse"=true, "bmi"=false.
+    return features;
 }
 
 FeatureSet MapFeatureNames(llvm::StringMap<bool> const &namedFeatures) {
@@ -78,7 +83,7 @@ FeatureSet MapFeatureNames(llvm::StringMap<bool> const &namedFeatures) {
     };
 
     // Translate feature list to bit flags
-    for (auto const & f : namedFeatures) {
+    for (auto const &f : namedFeatures) {
         auto found = namesToFeatures.find(f.first());
         if (f.second && found != namesToFeatures.end()) {
             featureSet.set((size_t)found->second);
@@ -88,7 +93,7 @@ FeatureSet MapFeatureNames(llvm::StringMap<bool> const &namedFeatures) {
     return featureSet;
 }
 
-unsigned DefaultBlockSizeForFeatures(const codegen::FeatureSet & featureSet) {
+unsigned DefaultBlockSizeForFeatures(const FeatureSet &featureSet) {
 #if defined(PARABIX_X86_TARGET)
     if (featureSet.test((size_t)Feature::AVX512F)) {
         return 512;
@@ -98,7 +103,7 @@ unsigned DefaultBlockSizeForFeatures(const codegen::FeatureSet & featureSet) {
         return 128;
     }
 #elif defined(PARABIX_ARM_TARGET)
-    if(featureSet.test((size_t)Feature::SVE)) {
+    if (featureSet.test((size_t)Feature::SVE)) {
         return HostSVEBitWidth();
     }
     return 128;
@@ -106,14 +111,6 @@ unsigned DefaultBlockSizeForFeatures(const codegen::FeatureSet & featureSet) {
     return 64;
 #endif
 }
-
-#if defined(PARABIX_ARM_TARGET)
-__attribute__((target ("+sve")))
-unsigned HostSVEBitWidth() {
-    return svcntb() * 8;
-}
-#endif
-
 
 cl::OptionCategory JIT_InfoOptions("J.  JIT Information Options", 
     "These options control production of information reports during JIT compilation.");
@@ -426,6 +423,9 @@ void ParseCommandLineOptions(int argc, const char * const *argv, std::initialize
         cl::HideUnrelatedOptions(ArrayRef<const cl::OptionCategory *>(hiding));
     }
     cl::ParseCommandLineOptions(argc, argv);
+    if(BlockSize == 0) {
+        BlockSize = DefaultBlockSizeForFeatures(MapFeatureNames(GetFeatureNames()));
+    }
 //    if (LLVM_UNLIKELY(!PabloIllustrateBitstreamRegEx.empty() || IllustratorDisplay != 0)) {
 //        EnableIllustrator = true;
 //    }

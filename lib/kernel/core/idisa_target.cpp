@@ -54,38 +54,6 @@ Features getHostCPUFeatures(const StringMap<bool> & features) {
     return hostCPUFeatures;
 }
 
-bool NEON_available() {
-#ifdef PARABIX_ARM_TARGET
-    return true;
-#else
-    return false;
-#endif
-}
-
-bool SVE_available() {
-#ifdef PARABIX_ARM_TARGET
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
-    StringMap<bool> features;
-    if (LLVM_UNLIKELY(!sys::getHostCPUFeatures(features))) {
-        return false;
-    }
-    #else
-    const auto features = sys::getHostCPUFeatures();
-    #endif
-
-    llvm::errs() << "SVE_available discovered features:";
-    std::vector<std::string> attrs;
-    for (auto & flag : features) {
-        llvm::errs() << " " << (flag.second ? '+' : '-') << flag.first();
-    }
-    llvm::errs() << "\n";
-
-    return features.lookup("sve");
-#else
-    return false;
-#endif
-}
-
 bool AVX2_available() {
     #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
     StringMap<bool> features;
@@ -113,43 +81,21 @@ bool AVX512BW_available() {
 namespace IDISA {
 
 KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & features) {
-    codegen::FeatureSet featureSet;
+    if (((codegen::BlockSize & (codegen::BlockSize - 1)) != 0) || (codegen::BlockSize < 64)) {
+        llvm::report_fatal_error("BlockSize must be a power of 2 and >=64");
+    }
+
+    codegen::FeatureSet featureSet = codegen::MapFeatureNames(features);
+
     if (codegen::BlockSize == 64) {
         return new KernelBuilderImpl<IDISA_I64_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
     }
 
 #ifdef PARABIX_X86_TARGET
-    const auto HasAVX = features.lookup("avx");
-    const auto HasAVX2 = features.lookup("avx2");
-    const auto HasAVX512F = features.lookup("avx512f");
+    const auto HasAVX = featureSet.test((size_t)codegen::Feature::AVX);
+    const auto HasAVX2 = featureSet.test((size_t)codegen::Feature::AVX2);
+    const auto HasAVX512F = featureSet.test((size_t)codegen::Feature::AVX512F);
 
-    if (LLVM_LIKELY(codegen::BlockSize == 0)) {  // No BlockSize override: use processor SIMD width
-        if (LLVM_UNLIKELY(HasAVX512F)) {
-            codegen::BlockSize = 512;
-        } else if (HasAVX2) {
-            codegen::BlockSize = 256;
-        } else {
-            codegen::BlockSize = 128;
-        }
-    } else if (((codegen::BlockSize & (codegen::BlockSize - 1)) != 0) || (codegen::BlockSize < 64)) {
-        llvm::report_fatal_error("BlockSize must be a power of 2 and >=64");
-    }
-
-    if (HasAVX || HasAVX2) {
-        ADD_IF_FOUND(AVX_BMI, "bmi");
-        ADD_IF_FOUND(AVX_BMI2, "bmi2");
-    }
-    if (HasAVX512F) {
-        ADD_IF_FOUND(AVX512_CD, "avx512cd");
-        ADD_IF_FOUND(AVX512_BW, "avx512bw");
-        ADD_IF_FOUND(AVX512_DQ, "avx512dq");
-        ADD_IF_FOUND(AVX512_VL, "avx512vl");
-        // AVX512_VBMI, AVX512_VBMI2 and AVX512_VPOPCNTDQ  have not been tested as we
-        //did not have hardware support. It should work in theory (tm)
-        ADD_IF_FOUND(AVX512_VBMI, "avx512vbmi");
-        ADD_IF_FOUND(AVX512_VBMI2, "avx512vbmi2");
-        ADD_IF_FOUND(AVX512_VPOPCNTDQ, "avx512vpopcntdq");
-    }
     // AVX512BW builder can only be used for BlockSize multiples of 512
     if (codegen::BlockSize >= 512 && HasAVX512F) {
         return new KernelBuilderImpl<IDISA_AVX512F_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
@@ -182,7 +128,7 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
     return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
 #elif defined(PARABIX_NVPTX_TARGET)
 KernelBuilder * GetIDISA_GPU_Builder(llvm::LLVMContext & C) {
-    return new KernelBuilderImpl<IDISA_NVPTX20_Builder>(C, 64 * 64, 64);
+    return new KernelBuilderImpl<IDISA_NVPTX20_Builder>(C, featureSet, 64 * 64, 64);
 #else
 #error Unknown target type?
 #endif
