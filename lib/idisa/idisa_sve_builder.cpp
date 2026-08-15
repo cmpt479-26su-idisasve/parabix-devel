@@ -15,8 +15,33 @@ using namespace llvm;
 
 namespace IDISA {
 
+static svpattern PatternForVectorLength(unsigned svN) {
+    switch (svN) {
+    case 1:
+        return SV_VL1;
+    case 2:
+        return SV_VL2;
+    case 4:
+        return SV_VL4;
+    case 8:
+        return SV_VL8;
+    case 16:
+        return SV_VL16;
+    case 32:
+        return SV_VL32;
+    case 64:
+        return SV_VL64;
+    case 128:
+        return SV_VL128;
+    case 256:
+        return SV_VL256;
+    default:
+        report_fatal_error(StringRef("simd_popcount: Vector size has no predicate pattern: ") + std::to_string(svN));
+    }
+}
+
 unsigned IDISA_SVE_Builder::NativeBitBlockWidth() {
-#if 0
+#if 1
     // This unfortunately doesn't work: LLVM doesn't know what to do with big fixed vectors
     return codegen::HostSVEBitWidth();
 #else
@@ -41,47 +66,33 @@ llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
         return IDISA_Builder::simd_popcount(fw, a);
     }
     if ((vectorWidth <= mNativeBitBlockWidth) && (fw >= 8) && (fw <= 64)) {
-        unsigned svN = mNativeBitBlockWidth / fw;
+        unsigned fvN = mNativeBitBlockWidth / fw;
+        unsigned svN = ARM_SVE_min_width / fw;
         IntegerType *fTy = getIntNTy(fw);
-        FixedVectorType *vTy = FixedVectorType::get(fTy, svN);
+        FixedVectorType *fvTy = FixedVectorType::get(fTy, fvN);
         ScalableVectorType *svTy = ScalableVectorType::get(fTy, svN);
         ScalableVectorType *svPTy = ScalableVectorType::get(getInt1Ty(), svN);
 
-        Function *svePtrue = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_sve_ptrue, {svPTy});
-        // Function *svePtrue = Intrinsic::getOrInsertDeclaration(
-        //     getModule(), Intrinsic::aarch64_sve_whilelo, {vTy, svTy});
-
-        Function *vectorExtract =
-            Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::vector_extract, {vTy, svTy});
-        Function *vectorInsert = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::vector_insert, {svTy, vTy});
-        Function *sveCnt = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_sve_cnt, {svTy});
-        // Constant *i64Zero = ConstantInt::get(getIntNTy(64), 0);
         Constant *i64Zero = Constant::getNullValue(getIntNTy(64));
-        svpattern pattern;
-        // clang-format off
-        switch (svN) {
-            case 1:   pattern = SV_VL1;   break;
-            case 2:   pattern = SV_VL2;   break;
-            case 4:   pattern = SV_VL4;   break;
-            case 8:   pattern = SV_VL8;   break;
-            case 16:  pattern = SV_VL16;  break;
-            case 32:  pattern = SV_VL32;  break;
-            case 64:  pattern = SV_VL64;  break;
-            case 128: pattern = SV_VL128; break;
-            case 256: pattern = SV_VL256; break;
-            default:  pattern = SV_ALL;   break;
-        }
-        // clang-format on
-        if (pattern == SV_ALL) {
-            report_fatal_error(StringRef("simd_popcount: Vector size has no predicate pattern: ") +
-                               std::to_string(svN));
-        }
-        Constant *i32PredPat = ConstantInt::get(getIntNTy(32), pattern);
+        Constant *i32PredPat = ConstantInt::get(getIntNTy(32), PatternForVectorLength(fvN));
 
-        Value *v1 = CreateCall(vectorInsert->getFunctionType(), vectorInsert, {UndefValue::get(svTy), a, i64Zero});
-        Value *pred = CreateCall(svePtrue->getFunctionType(), svePtrue, {i32PredPat});
-        Value *v2 = CreateCall(sveCnt->getFunctionType(), sveCnt, {UndefValue::get(svTy), pred, v1});
-        Value *v3 = CreateCall(vectorExtract->getFunctionType(), vectorExtract, {v2, i64Zero});
+        Value *pred = CreateIntrinsic(Intrinsic::aarch64_sve_ptrue, {svPTy}, {i32PredPat});
+
+        // Value *PoisonValue::get(svTy);
+        // for (unsigned i = 0; i <) {
+        //     CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvTy}, {, a, i64Zero});
+        // }
+
+        // Value *v1 = CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvTy}, {PoisonValue::get(svTy), a, i64Zero});
+        Value *tempP = CreateAlloca(fvTy);
+        CreateStore(a, tempP);
+        Value *v1 = CreateIntrinsic(Intrinsic::aarch64_sve_ld1, {svTy}, {pred, tempP});
+
+        Value *v2 = CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {PoisonValue::get(svTy), pred, v1});
+
+        // Value *v3 = CreateIntrinsic(Intrinsic::vector_extract, {fvTy, svTy}, {v2, i64Zero});
+        CreateIntrinsic(Intrinsic::aarch64_sve_st1, {svTy}, {v2, pred, tempP});
+        Value *v3 = CreateLoad(fvTy, tempP);
 
         return v3;
     } else {
