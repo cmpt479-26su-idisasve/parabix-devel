@@ -21,7 +21,7 @@ using boost::intrusive::detail::floor_log2;
 #define getOrInsertDeclaration getDeclaration
 #endif
 
-#define ADD_IF_FOUND(Flag, Value) if (features.lookup(Value)) featureSet.set((size_t)Feature::Flag)
+#define ADD_IF_FOUND(Flag, Value) if (features.lookup(Value)) featureSet.set((size_t)codegen::Feature::Flag)
 
 using namespace llvm;
 
@@ -59,7 +59,7 @@ Value * IDISA_AVX_Builder::hsimd_signmask(unsigned fw, Value * a) {
 }
 
 Value * IDISA_AVX_Builder::CreateZeroHiBitsFrom(Value * bits, Value * pos, const Twine Name) {
-    if (hasFeature(Feature::AVX_BMI)) {
+    if (hasFeature(codegen::Feature::AVX_BMI)) {
         Type * const Ty = bits->getType();
         if (Ty == getInt64Ty()) {
             Function * bzhi_64 = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_bmi_bzhi_64);
@@ -74,7 +74,7 @@ Value * IDISA_AVX_Builder::CreateZeroHiBitsFrom(Value * bits, Value * pos, const
 }
 
 Value * IDISA_AVX_Builder::CreatePextract(Value * bits, Value * mask, const Twine Name) {
-    if (hasFeature(Feature::AVX_BMI2)) {
+    if (hasFeature(codegen::Feature::AVX_BMI2)) {
         Type * Ty = bits->getType();
         unsigned width = Ty->getPrimitiveSizeInBits();
         if (width == 64) {
@@ -98,7 +98,7 @@ Value * IDISA_AVX_Builder::CreatePextract(Value * bits, Value * mask, const Twin
 }
 
 Value * IDISA_AVX_Builder::CreatePdeposit(Value * bits, Value * mask, const Twine Name) {
-    if (hasFeature(Feature::AVX_BMI2)) {
+    if (hasFeature(codegen::Feature::AVX_BMI2)) {
         Type * Ty = bits->getType();
         unsigned width = Ty->getPrimitiveSizeInBits();
         if (width == 64) {
@@ -175,7 +175,7 @@ Value * IDISA_AVX2_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_AVX2_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
-    if (getVectorBitWidth(a) == mNativeBitBlockWidth) {
+    if (getVectorBitWidth(a) == AVX_width) {
         if ((fw == 1) || (fw == 2)) {
             // Bit interleave using shuffle.
             Function * shufFn = Intrinsic::getOrInsertDeclaration(getModule(),  Intrinsic::x86_avx2_pshuf_b);
@@ -199,7 +199,7 @@ Value * IDISA_AVX2_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_AVX2_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-    if (getVectorBitWidth(a) == mNativeBitBlockWidth) {
+    if (getVectorBitWidth(a) == AVX_width) {
         if ((fw == 1) || (fw == 2)) {
             // Bit interleave using shuffle.
             Function * shufFn = Intrinsic::getOrInsertDeclaration(getModule(),  Intrinsic::x86_avx2_pshuf_b);
@@ -334,7 +334,7 @@ std::pair<Value *, Value *> IDISA_AVX2_Builder::bitblock_advance(Value * a, Valu
 }
 
 std::vector<Value *> IDISA_AVX2_Builder::simd_pext(unsigned fieldwidth, std::vector<Value *> v, Value * extract_mask) {
-    if (hasFeature(Feature::AVX_BMI2)) {
+    if (hasFeature(codegen::Feature::AVX_BMI2)) {
         const auto n = getVectorBitWidth(v[0]) / fieldwidth;
         std::vector<Value *> mask(n);
         for (unsigned i = 0; i < n; i++) {
@@ -356,7 +356,7 @@ std::vector<Value *> IDISA_AVX2_Builder::simd_pext(unsigned fieldwidth, std::vec
 }
 
 Value * IDISA_AVX2_Builder::simd_pdep(unsigned fieldwidth, Value * v, Value * deposit_mask) {
-    if (hasFeature(Feature::AVX_BMI2)) {
+    if (hasFeature(codegen::Feature::AVX_BMI2)) {
         const auto n = getVectorBitWidth(v) / fieldwidth;
         Value * result = UndefValue::get(v->getType());
         for (unsigned i = 0; i < n; i++) {
@@ -372,7 +372,7 @@ Value * IDISA_AVX2_Builder::simd_pdep(unsigned fieldwidth, Value * v, Value * de
 
 std::pair<Value *, Value *> IDISA_AVX2_Builder::bitblock_indexed_advance(Value * strm, Value * index_strm, Value * shiftIn, unsigned shiftAmount) {
     const unsigned bitWidth = getSizeTy()->getBitWidth();
-    if (hasFeature(Feature::AVX_BMI2) && ((bitWidth == 64) || (bitWidth == 32))) {
+    if (hasFeature(codegen::Feature::AVX_BMI2) && ((bitWidth == 64) || (bitWidth == 32))) {
         Function * PEXT_f = (bitWidth == 64) ? Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_bmi_pext_64)
                                           : Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_bmi_pext_32);
         Function * PDEP_f = (bitWidth == 64) ? Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_bmi_pdep_64)
@@ -581,7 +581,7 @@ llvm::Value * IDISA_AVX2_Builder::mvmd_shuffle2(unsigned fw, llvm::Value * table
 }
 
 Value * IDISA_AVX2_Builder::mvmd_compress(unsigned fw, Value * a, Value * select_mask) {
-    if (hasFeature(Feature::AVX_BMI2) && (getVectorBitWidth(a) == AVX_width)) {
+    if (hasFeature(codegen::Feature::AVX_BMI2) && (getVectorBitWidth(a) == AVX_width)) {
         if (fw == 64) {
             Function * PDEP_func = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_bmi_pdep_32);
             Value * mask = CreateZExtOrTrunc(select_mask, getInt32Ty());
@@ -683,7 +683,7 @@ Value * IDISA_AVX2_Builder::mvmd_compress(unsigned fw, Value * a, Value * select
 Value * IDISA_AVX2_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_mask) {
 // Generic mvmd_expand is faster
 #if 0
-    if (hasFeature(Feature::AVX_BMI2) && (getVectorBitWidth(a) == AVX_width)) {
+    if (hasFeature(codegen::Feature::AVX_BMI2) && (getVectorBitWidth(a) == AVX_width)) {
          if (fw >= 8) {
 
              const auto fieldCount = 256 / fw;
@@ -780,7 +780,7 @@ Value * IDISA_AVX512F_Builder::hsimd_packl(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_AVX512F_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
-    if (hasFeature(Feature::AVX512_BW) && ((fw == 16) || (fw == 32)) && (getVectorBitWidth(a) == AVX512_width)) {
+    if (hasFeature(codegen::Feature::AVX512_BW) && ((fw == 16) || (fw == 32)) && (getVectorBitWidth(a) == AVX512_width)) {
         Function * pack_func = Intrinsic::getOrInsertDeclaration(getModule(), fw == 16 ? Intrinsic::x86_avx512_packuswb_512 : Intrinsic::x86_avx512_packusdw_512);
         Value * packed = CreateCall(pack_func->getFunctionType(), pack_func, {fwCast(fw, a), fwCast(fw, b)});
         auto field_count = AVX512_width/64;
@@ -797,7 +797,7 @@ Value * IDISA_AVX512F_Builder::hsimd_packus(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_AVX512F_Builder::hsimd_packss(unsigned fw, Value * a, Value * b) {
-    if (hasFeature(Feature::AVX512_BW) && ((fw == 16) || (fw == 32)) && (getVectorBitWidth(a) == AVX512_width)) {
+    if (hasFeature(codegen::Feature::AVX512_BW) && ((fw == 16) || (fw == 32)) && (getVectorBitWidth(a) == AVX512_width)) {
         Function * pack_func = Intrinsic::getOrInsertDeclaration(getModule(), fw == 16 ? Intrinsic::x86_avx512_packsswb_512 : Intrinsic::x86_avx512_packssdw_512);
         Value * packed = CreateCall(pack_func->getFunctionType(), pack_func, {fwCast(fw, a), fwCast(fw, b)});
         auto field_count = AVX512_width/64;
@@ -875,9 +875,9 @@ Value * IDISA_AVX512F_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value 
             permuteFunc = Intrinsic::getOrInsertDeclaration(getModule(), AVX512_MASK_PERMUTE_INTRINSIC(var_d_512));
         } else if (fw == 64) {
             permuteFunc = Intrinsic::getOrInsertDeclaration(getModule(), AVX512_MASK_PERMUTE_INTRINSIC(var_q_512));
-        } else if (fw == 16 && hasFeature(Feature::AVX512_BW)) {
+        } else if (fw == 16 && hasFeature(codegen::Feature::AVX512_BW)) {
             permuteFunc = Intrinsic::getOrInsertDeclaration(getModule(), AVX512_MASK_PERMUTE_INTRINSIC(var_hi_512));
-        } else if (fw == 8 && hasFeature(Feature::AVX512_VBMI)) {
+        } else if (fw == 8 && hasFeature(codegen::Feature::AVX512_VBMI)) {
             permuteFunc = Intrinsic::getOrInsertDeclaration(getModule(), AVX512_MASK_PERMUTE_INTRINSIC(var_qi_512));
         }
         if (permuteFunc) {
@@ -891,7 +891,7 @@ Value * IDISA_AVX512F_Builder::mvmd_shuffle2(unsigned fw, Value * table0, Value 
             }
             return shuf; // if (mode == ShuffleMode::TruncateIndex)
         }
-        if (fw == 8 && hasFeature(Feature::AVX512_BW)) {
+        if (fw == 8 && hasFeature(codegen::Feature::AVX512_BW)) {
 
             // If we have AVX512BW but not AVX512VBMI, we can use 16 bit shuffles to replicate an 8 bit shuffle.
             // This requires us to split the table look up into a lower and higher "half" table and index vectors
@@ -966,11 +966,11 @@ Value * IDISA_AVX512F_Builder::mvmd_compress(unsigned fw, Value * a, Value * sel
         }
 
         if (fw == 8) {
-            if (hasFeature(Feature::AVX512_VBMI2)){
+            if (hasFeature(codegen::Feature::AVX512_VBMI2)){
                 Type * maskTy = FixedVectorType::get(getInt1Ty(), fieldCount);
                 Function * compressFunc = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_avx512_mask_compress, fwVectorType(fw));
                 return CreateCall(compressFunc->getFunctionType(), compressFunc, {fwCast(8, a), fwCast(8, allZeroes()), CreateBitCast(mask, maskTy)});
-            } else if (hasFeature(Feature::AVX512_VBMI) || hasFeature(Feature::AVX512_BW)) {
+            } else if (hasFeature(codegen::Feature::AVX512_VBMI) || hasFeature(codegen::Feature::AVX512_BW)) {
 
                 // Step 1: Initialize indices as 6-bit bixnum in an array of 64-bit integers
                 uint64_t indices[6] = {
@@ -1039,7 +1039,7 @@ Value * IDISA_AVX512F_Builder::mvmd_expand(unsigned fw, Value * a, Value * selec
     if (getVectorBitWidth(a) == AVX512_width) {
         const auto fieldCount = getVectorBitWidth(a) / fw;
         Value * mask = CreateZExtOrTrunc(select_mask, getIntNTy(fieldCount));
-        bool has_avx_512_mask_expand = (fw == 32) || (fw == 64) || (hasFeature(Feature::AVX512_VBMI2) && ((fw == 16) | (fw == 8)));
+        bool has_avx_512_mask_expand = (fw == 32) || (fw == 64) || (hasFeature(codegen::Feature::AVX512_VBMI2) && ((fw == 16) | (fw == 8)));
         if (has_avx_512_mask_expand) {
             Type * maskTy = FixedVectorType::get(getInt1Ty(), fieldCount);
             Function * expandFunc = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_avx512_mask_expand, fwVectorType(fw));
@@ -1118,7 +1118,7 @@ Value * IDISA_AVX512F_Builder:: mvmd_slli(unsigned fw, Value * a, unsigned shift
         } else if (((shift % 2) == 0) && (fw < 32)) {
             return fwCast(fw, mvmd_slli(2 * fw, a, shift / 2));
         }
-        if ((fw == 32) || (hasFeature(Feature::AVX512_BW) && (fw == 16)))   {
+        if ((fw == 32) || (hasFeature(codegen::Feature::AVX512_BW) && (fw == 16)))   {
             return mvmd_dslli(fw, a, allZeroes(), shift);
         } else {
             unsigned field32_shift = (shift * fw) / 32;
@@ -1141,7 +1141,7 @@ Value * IDISA_AVX512F_Builder:: mvmd_dslli(unsigned fw, Value * a, Value * b, un
             return fwCast(fw, mvmd_dslli(2 * fw, a, b, shift / 2));
         }
         const unsigned fieldCount = AVX512_width/fw;
-        if ((fw == 32) || (hasFeature(Feature::AVX512_BW) && (fw == 16)))   {
+        if ((fw == 32) || (hasFeature(codegen::Feature::AVX512_BW) && (fw == 16)))   {
             //llvm::errs() << " fw = " << fw << ", shift = " << shift << "\n";
             Type * fwTy = getIntNTy(fw);
             SmallVector<Constant *, 16> indices(fieldCount);
@@ -1176,11 +1176,11 @@ Value * IDISA_AVX512F_Builder::simd_popcount(unsigned fw, Value * a) {
              c = CreateCall(horizSADfunc->getFunctionType(), horizSADfunc, {c, zero16xi8});
              return CreateInsertElement(allZeroes(), CreateExtractElement(c, zeroInt32), zeroInt32);
         }
-        if (hasFeature(Feature::AVX512_VPOPCNTDQ) && (fw == 32 || fw == 64)) {
+        if (hasFeature(codegen::Feature::AVX512_VPOPCNTDQ) && (fw == 32 || fw == 64)) {
             //llvm should use vpopcntd or vpopcntq instructions
             return CreatePopcount(fwCast(fw, a));
         }
-        if (hasFeature(Feature::AVX512_BW) && (fw == 64)) {
+        if (hasFeature(codegen::Feature::AVX512_BW) && (fw == 64)) {
             Function * horizSADfunc = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::x86_avx512_psad_bw_512);
             return CreateCall(horizSADfunc->getFunctionType(), horizSADfunc, {fwCast(8, simd_popcount(8, a)), fwCast(8, allZeroes())});
         }
@@ -1232,7 +1232,7 @@ Value * IDISA_AVX512F_Builder::hsimd_signmask(unsigned fw, Value * a) {
 
 Value * IDISA_AVX512F_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
     if (getVectorBitWidth(a) == AVX512_width) {
-        if (hasFeature(Feature::AVX512_BW) && ((fw == 1) || (fw == 2))) {
+        if (hasFeature(codegen::Feature::AVX512_BW) && ((fw == 1) || (fw == 2))) {
             // Bit interleave using shuffle.
             // Make a shuffle table that translates the lower 4 bits of each byte in
             // order to spread out the bits: xxxxdcba => .d.c.b.a
@@ -1253,7 +1253,7 @@ Value * IDISA_AVX512F_Builder::esimd_mergeh(unsigned fw, Value * a, Value * b) {
 }
 
 Value * IDISA_AVX512F_Builder::esimd_mergel(unsigned fw, Value * a, Value * b) {
-    if ((getVectorBitWidth(a) == AVX512_width) && hasFeature(Feature::AVX512_BW) && ((fw == 1) || (fw == 2))) {
+    if ((getVectorBitWidth(a) == AVX512_width) && hasFeature(codegen::Feature::AVX512_BW) && ((fw == 1) || (fw == 2))) {
         // Bit interleave using shuffle.
         // Make a shuffle table that translates the lower 4 bits of each byte in
         // order to spread out the bits: xxxxdcba => .d.c.b.a

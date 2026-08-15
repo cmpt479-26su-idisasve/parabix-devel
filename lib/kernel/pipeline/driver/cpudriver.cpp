@@ -90,6 +90,7 @@ CPUDriver::CPUDriver(std::string && moduleName)
 #else
     auto triple = mTarget->getTargetTriple();
 #endif
+    const DataLayout DL(mTarget->createDataLayout());
     mEngine.reset(builder.create(mTarget.release()));
     if (mEngine == nullptr) {
         throw std::runtime_error("Could not create ExecutionEngine: " + errMessage);
@@ -101,7 +102,6 @@ CPUDriver::CPUDriver(std::string && moduleName)
     mEngine->DisableLazyCompilation(true);
     mEngine->DisableGVCompilation(true);
 
-    const DataLayout DL(mTarget->createDataLayout());
     mMainModule->setTargetTriple(triple);
     mMainModule->setDataLayout(DL);
     mBuilder.reset(IDISA::GetIDISA_Builder(*mContext, features));

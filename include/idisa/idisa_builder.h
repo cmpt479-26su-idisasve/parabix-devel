@@ -5,6 +5,7 @@
  *  SPDX-License-Identifier: OSL-3.0
  */
 #include <codegen/CBuilder.h>
+#include <toolchain/toolchain.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <bitset>
 #include <string>
@@ -32,22 +33,6 @@ unsigned getStreamFieldWidth (const llvm::Type * const t);
 
 unsigned getVectorBitWidth(llvm::Value * vec);
 
-// not an exhaustive list; can be extended but keep __Count as the last entry
-enum class Feature : size_t {
-    AVX_BMI,
-    AVX_BMI2,
-    // ---------------
-    AVX512_CD,
-    AVX512_BW,
-    AVX512_DQ,
-    AVX512_VL,
-    AVX512_VBMI,
-    AVX512_VBMI2,
-    AVX512_VPOPCNTDQ,
-    // ---------------
-    __Count
-};
-
 class IDISA_Builder : public CBuilder {
 
 public:
@@ -60,7 +45,7 @@ public:
     IDISA_Builder(llvm::LLVMContext & C, const codegen::FeatureSet & featureSet,
                   unsigned nativeVectorWidth, unsigned vectorWidth, unsigned laneWidth, unsigned maxShiftFw = 64, unsigned minShiftFw = 16);
 
-    bool hasFeature(const IDISA::Feature feature) const LLVM_READNONE {
+    bool hasFeature(const codegen::Feature feature) const LLVM_READNONE {
         return mFeatureSet.test((size_t)feature);
     }
 
