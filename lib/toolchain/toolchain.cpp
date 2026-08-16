@@ -48,10 +48,9 @@ llvm::StringMap<bool> GetFeatureNames() {
 #else
     features = sys::getHostCPUFeatures();
 #endif
-    // Strip out "sve2" here, if it's suppressed on the command line
-    // Better yet, parse a list of "mattrs", which are comma-separated +X or -X
-    // strings, adding them to the map with true/false depending on whether they
-    // are +/-. That is, "+sse,-bmi" would map to "sse"=true, "bmi"=false.
+
+    // Parse a list of feature options basically like "mattrs", comma-separated +X or -X strings, adding them to the map
+    // with true/false depending on whether they are +/-. That is, "+sse,-bmi" would map to "sse"=true, "bmi"=false.
     if (!CPUFeatureOptions.empty()) {
         llvm::StringRef ref(CPUFeatureOptions);
         while (!ref.empty()) {
@@ -66,6 +65,7 @@ llvm::StringMap<bool> GetFeatureNames() {
             }
         }
     }
+
     return features;
 }
 
@@ -205,22 +205,22 @@ static cl::opt<std::string, true> ToShowIRFilerOption("ToShow", cl::location(Sho
 std::string ThreadLocalPermittedOptions = "";
 static cl::opt<std::string, true> optThreadLocalPermittedOption("permitted-thread-local-streamsets", cl::location(ThreadLocalPermittedOptions), cl::ValueOptional,
   cl::desc("Comma delimited list of which streamsets to permit to be thread local (default=all)"),
-  cl::value_desc("regex"), cl::cat(CodeGenOptions));
+  cl::value_desc("streamsets"), cl::cat(CodeGenOptions));
 
 std::string PreserveAllStreamSetDataOptions = "";
 static cl::opt<std::string, true> optPreserveAllStreamSetDataOption("preserve-all-streamset-data", cl::location(PreserveAllStreamSetDataOptions), cl::ValueOptional,
   cl::desc("Comma delimited list of which streamsets to permit to be thread local (default=all)"),
-  cl::value_desc("regex"), cl::cat(CodeGenOptions));
+  cl::value_desc("streamsets"), cl::cat(CodeGenOptions));
 
 std::string DoubleStreamSetSizeOptions = "";
 static cl::opt<std::string, true> optDoubleStreamSetSizeOptions("double-streamset-size", cl::location(DoubleStreamSetSizeOptions), cl::ValueOptional,
   cl::desc("Comma delimited list of which streamsets to permit to be thread local (default=all)"),
-  cl::value_desc("regex"), cl::cat(CodeGenOptions));
+  cl::value_desc("streamsets"), cl::cat(CodeGenOptions));
 
 std::string CPUFeatureOptions = "";
 static cl::opt<std::string, true> optCPUFeatureOptions("cpu-features", cl::location(CPUFeatureOptions), cl::ValueOptional,
   cl::desc("Comma delimited list of CPU features to enable or disable"),
-  cl::value_desc("regex"), cl::cat(CodeGenOptions));
+  cl::value_desc("attrs"), cl::cat(CodeGenOptions));
 
 #ifdef ENABLE_PAPI
 std::string PapiCounterOptions = OmittedOption;
