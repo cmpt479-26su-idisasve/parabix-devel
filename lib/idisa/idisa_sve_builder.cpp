@@ -61,43 +61,46 @@ llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
     assert(mNativeBitBlockWidth >= fw);
 
     unsigned vectorWidth = getVectorBitWidth(a);
-    if (vectorWidth > mNativeBitBlockWidth) {
-        // Let IDISA_Builder split the instruction up -- it should call
-        // back into us with operations on smaller chunks
-        return IDISA_Builder::simd_popcount(fw, a);
-    }
-    if ((vectorWidth <= mNativeBitBlockWidth) && (fw >= 8) && (fw <= 64)) {
-        unsigned fvN = mNativeBitBlockWidth / fw;
+    if ((vectorWidth >= ARM_SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        unsigned fvN = vectorWidth / fw;
         unsigned svN = ARM_SVE_min_width / fw;
+        unsigned fvChunkN = std::min(vectorWidth / fw, mNativeBitBlockWidth / fw);
         IntegerType *fTy = getIntNTy(fw);
         FixedVectorType *fvTy = FixedVectorType::get(fTy, fvN);
+        FixedVectorType *fvChunkTy = FixedVectorType::get(fTy, fvChunkN);
         ScalableVectorType *svTy = ScalableVectorType::get(fTy, svN);
         ScalableVectorType *svPTy = ScalableVectorType::get(getInt1Ty(), svN);
 
-        Constant *i64Zero = Constant::getNullValue(getIntNTy(64));
-        Constant *i32PredPat = ConstantInt::get(getIntNTy(32), PatternForVectorLength(fvN));
+        unsigned nChunks = fvN / fvChunkN;
 
-        Value *pred = CreateIntrinsic(Intrinsic::aarch64_sve_ptrue, {svPTy}, {i32PredPat});
+        Value *pred =
+            CreateIntrinsic(Intrinsic::aarch64_sve_ptrue, {svPTy}, {getIntN(32, PatternForVectorLength(fvChunkN))});
+        Value *result = PoisonValue::get(fvTy);
 
-        // Value *PoisonValue::get(svTy);
-        // for (unsigned i = 0; i <) {
-        //     CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvTy}, {, a, i64Zero});
-        // }
-
-        // Value *v1 = CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvTy}, {PoisonValue::get(svTy), a, i64Zero});
-        Value *tempP = CreateAlloca(fvTy);
-        CreateStore(a, tempP);
-        Value *v1 = CreateIntrinsic(Intrinsic::aarch64_sve_ld1, {svTy}, {pred, tempP});
-
-        Value *v2 = CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {PoisonValue::get(svTy), pred, v1});
-
-        // Value *v3 = CreateIntrinsic(Intrinsic::vector_extract, {fvTy, svTy}, {v2, i64Zero});
-        CreateIntrinsic(Intrinsic::aarch64_sve_st1, {svTy}, {v2, pred, tempP});
-        Value *v3 = CreateLoad(fvTy, tempP);
-
-        return v3;
+        // In theory, our block width could be bigger than the SVE registers; in that case we must repeat the operation
+        // multiple times.
+        for (unsigned i = 0; i < nChunks; ++i) {
+            // If we're NOT iterating, the input is just the whole fixed a, otherwise extract the appropriate chunk
+            Value *inputFixedChunk = (nChunks == 1) ? a
+                                                    : CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, fvTy},
+                                                                      {a, getIntN(64, i * fvChunkN)});
+            // Fixed vector converted to scalable via insert
+            Value *inputScalableChunk = CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
+                                                        {PoisonValue::get(svTy), inputFixedChunk, getIntN(64, 0)});
+            Value *resultScalableChunk =
+                CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {PoisonValue::get(svTy), pred, inputScalableChunk});
+            // Scalable vector converted to fixed via extract
+            Value *resultFixedChunk =
+                CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, svTy}, {resultScalableChunk, getIntN(64, 0)});
+            // If we're NOT iterating, result is the fixed chunk directly, otherwise build the full result up in the
+            // result value
+            result = (nChunks == 1) ? resultFixedChunk
+                                    : CreateIntrinsic(Intrinsic::vector_insert, {fvTy, fvChunkTy},
+                                                      {result, resultFixedChunk, getIntN(64, i * fvChunkN)});
+        }
+        return result;
     } else {
-        return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::simd_popcount(fw, a); });
+        return IDISA_Builder::simd_popcount(fw, a);
     }
 }
 
