@@ -3,6 +3,7 @@
  *  SPDX-License-Identifier: OSL-3.0
  */
 
+#include "idisa/idisa_builder.h"
 #include <idisa/idisa_sve_builder.h>
 #include <kernel/core/kernel_builder.h>
 #include <toolchain/toolchain.h>
@@ -49,7 +50,7 @@ unsigned IDISA_SVE_Builder::NativeBitBlockWidth() {
 #endif
 }
 
-std::string IDISA_SVE_Builder::getBuilderUniqueName() { return "SVE"; }
+DEFINE_BUILDER_CACHE_NAME(IDISA_SVE_Builder, "ARM_SVE_VL" + std::to_string(mNativeBitBlockWidth), mNativeBitBlockWidth)
 
 llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
     // TODO JL make a fallback for fw<8 and fw>64..?

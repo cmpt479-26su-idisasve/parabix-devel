@@ -33,6 +33,35 @@ unsigned getStreamFieldWidth (const llvm::Type * const t);
 
 unsigned getVectorBitWidth(llvm::Value * vec);
 
+#define CACHE_NAME_BUILD_ID \
+    { \
+        /*Year*/    __DATE__[7], __DATE__[8], __DATE__[9], __DATE__[10], \
+        /*Month*/   __DATE__[0], __DATE__[1], __DATE__[2], \
+        /*Day*/     __DATE__[4] == ' ' ? '0' : __DATE__[4], __DATE__[5], \
+                    'T', \
+        /*Hour*/    __TIME__[0], __TIME__[1], \
+        /*Min*/     __TIME__[3], __TIME__[4], \
+        /*Sec*/     __TIME__[6], __TIME__[7], \
+                    0 \
+    }
+
+// Put this in your IDISA_Builder descendant's .cpp file to define the cache name
+// e.g.: DEFINE_BUILDER_CACHE_NAME(IDISA_ARM_Builder, "ARM_Neon", ARM_Neon_width)
+// The override for makeCacheName must still be declared in the header.
+#define DEFINE_BUILDER_CACHE_NAME(classname, basename, nativebits) \
+    std::string classname::getBuilderCacheName() { \
+        static constexpr char const cacheName[] = CACHE_NAME_BUILD_ID; \
+        std::string name = basename; \
+        if(mBitBlockWidth != nativebits) { \
+            name += '_'; \
+            name += std::to_string(mBitBlockWidth); \
+        } \
+        name += '_'; \
+        name += cacheName; \
+        return name; \
+    }
+
+
 class IDISA_Builder : public CBuilder {
 
 public:
@@ -51,7 +80,7 @@ public:
 
     virtual ~IDISA_Builder();
 
-    virtual std::string getBuilderUniqueName() = 0;  // A name uniquely identifying builder/bitBlockWidth/stride.
+    virtual std::string getBuilderCacheName() = 0;  // A name uniquely identifying builder/bitBlockWidth/stride.
 
     llvm::Value * bitCast(llvm::Value * a) {
         return fwCast(mLaneWidth, a);

@@ -11,7 +11,7 @@ class IDISA_SVE_Builder : public IDISA_ARM_Builder {
   public:
     unsigned NativeBitBlockWidth();
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
 
     llvm::Value *simd_popcount(unsigned fw, llvm::Value *a) override;
     llvm::Value *simd_bitreverse(unsigned fw, llvm::Value *a) override;

@@ -13,7 +13,7 @@ public:
     IDISA_ARM_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
     ~IDISA_ARM_Builder() = default;
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
     llvm::Value* simd_popcount(unsigned fw, llvm::Value* a) override;
     llvm::Value* simd_bitreverse(unsigned fw, llvm::Value* a) override;
     llvm::Value * esimd_mergeh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
