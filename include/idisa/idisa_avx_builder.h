@@ -20,7 +20,7 @@ public:
     
     IDISA_AVX_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
 
     llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
     llvm::Value * CreateZeroHiBitsFrom(llvm::Value * bits, llvm::Value * pos, const llvm::Twine Name = "") override;
@@ -35,7 +35,7 @@ public:
 
     IDISA_AVX2_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packus(unsigned fw, llvm::Value * a, llvm::Value * b) override;
@@ -68,7 +68,7 @@ public:
 
     IDISA_AVX512F_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packus(unsigned fw, llvm::Value * a, llvm::Value * b) override;

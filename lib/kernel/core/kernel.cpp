@@ -18,6 +18,7 @@
 #include <boost/uuid/detail/sha1.hpp>
 #endif
 #include <boost/intrusive/detail/math.hpp>
+#include <idisa/idisa_builder.h>
 
 using namespace llvm;
 using namespace boost;
@@ -179,7 +180,10 @@ std::unique_ptr<KernelCompiler> Kernel::instantiateKernelCompiler(KernelBuilder 
 std::string Kernel::makeCacheName(KernelBuilder & b) {
     std::string cacheName;
     raw_string_ostream out(cacheName);
-    out << getName() << '_' << b.getBuilderUniqueName();
+    out << getName() << '_' << b.getBuilderCacheName();
+    if (IDISA::IDISA_Experiment != "") {
+        out << '_' << IDISA::IDISA_Experiment;
+    }
 #if 0
     auto appendStreamSetType = [&](const char code, const Bindings & bindings) {
         for (const auto & binding : bindings) {

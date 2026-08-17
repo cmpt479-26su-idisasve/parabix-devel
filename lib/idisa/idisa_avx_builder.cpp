@@ -27,17 +27,7 @@ using namespace llvm;
 
 namespace IDISA {
 
-std::string IDISA_AVX_Builder::getBuilderUniqueName() {
-    std::stringstream uname;
-    uname << "AVX";
-    if (mBitBlockWidth != AVX_width) {
-        uname << "_" << mBitBlockWidth;
-    }
-    if (IDISA::IDISA_Experiment != "") {
-        uname << IDISA::IDISA_Experiment;
-    }
-    return uname.str();
-}
+DEFINE_BUILDER_CACHE_NAME(IDISA_AVX_Builder, "AVX", AVX_width)
 
 Value * IDISA_AVX_Builder::hsimd_signmask(unsigned fw, Value * a) {
     // AVX2 special cases
@@ -121,9 +111,7 @@ Value * IDISA_AVX_Builder::CreatePdeposit(Value * bits, Value * mask, const Twin
     return IDISA_Builder::CreatePdeposit(mask, bits, Name);
 }
 
-std::string IDISA_AVX2_Builder::getBuilderUniqueName() {
-    return mBitBlockWidth != AVX_width ? "AVX2_" + std::to_string(mBitBlockWidth) : "AVX2";
-}
+DEFINE_BUILDER_CACHE_NAME(IDISA_AVX2_Builder, "AVX2", AVX_width)
 
 Value * IDISA_AVX2_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
     if (getVectorBitWidth(a) == AVX_width) {
@@ -740,17 +728,7 @@ Value * IDISA_AVX2_Builder::mvmd_expand(unsigned fw, Value * a, Value * select_m
     return IDISA_AVX_Builder::mvmd_expand(fw, a, select_mask);
 }
 
-std::string IDISA_AVX512F_Builder::getBuilderUniqueName() {
-    std::stringstream uname;
-    uname << "AVX512F";
-    if (mBitBlockWidth != AVX512_width) {
-        uname << "_" << mBitBlockWidth;
-    }
-    if (IDISA::IDISA_Experiment != "") {
-        uname << IDISA::IDISA_Experiment;
-    }
-    return uname.str();
-}
+DEFINE_BUILDER_CACHE_NAME(IDISA_AVX512F_Builder, "AVX512F", AVX512_width)
 
 Value * IDISA_AVX512F_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
     if ((getVectorBitWidth(a) == AVX512_width) && (fw == 16)) {

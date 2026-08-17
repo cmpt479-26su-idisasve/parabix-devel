@@ -12,7 +12,7 @@ using namespace llvm;
 
 namespace IDISA {
 
-std::string IDISA_NVPTX20_Builder::getBuilderUniqueName() { return "NVPTX20_" + std::to_string(groupThreads);}
+DEFINE_BUILDER_CACHE_NAME(IDISA_ARM_Builder, "NVPTX20_" + std::to_string(groupThreads), NativeBitBlockWidth())
 
 unsigned IDISA_NVPTX20_Builder::getGroupThreads() const{
     return groupThreads;

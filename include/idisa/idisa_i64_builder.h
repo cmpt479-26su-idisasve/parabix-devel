@@ -16,7 +16,7 @@ public:
 
     IDISA_I64_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {} 
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
 
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;

@@ -1541,9 +1541,6 @@ IDISA_Builder::IDISA_Builder(LLVMContext & C, const codegen::FeatureSet &feature
 , mOneInitializer(Constant::getAllOnesValue(mBitBlockType))
 , mPrintRegisterFunction(nullptr)
 , mFeatureSet(featureSet) {
-    llvm::errs() << "IDISA_Builder @ " << (void *)this << ": " << mBitBlockWidth
-                 << " (" << vectorWidth << ")" << ", " << mNativeBitBlockWidth
-                 << " (" << nativeVectorWidth << ")" << " native\n";
 }
 
 IDISA_Builder::~IDISA_Builder() {

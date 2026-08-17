@@ -9,18 +9,8 @@
 using namespace llvm;
 
 namespace IDISA {
-    
-std::string IDISA_I64_Builder::getBuilderUniqueName() {
-    std::stringstream uname;
-    uname << "C";
-    if (mBitBlockWidth != 64) {
-        uname << "_" << mBitBlockWidth;
-    }
-    if (IDISA::IDISA_Experiment != "") {
-        uname << IDISA::IDISA_Experiment;
-    }
-    return uname.str();
-}
+
+DEFINE_BUILDER_CACHE_NAME(IDISA_I64_Builder, "C", I64_width)
 
 Value * IDISA_I64_Builder::hsimd_packh(unsigned fw, Value * a, Value * b) {
     unsigned vec_width = getVectorBitWidth(a);
