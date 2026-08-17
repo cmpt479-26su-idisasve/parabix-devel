@@ -1,0 +1,11 @@
+#!/bin/bash
+export CMAKE_BUILD_TYPE=Debug
+export CMAKE_INSTALL_PREFIX=`pwd`/../aarch64/target
+export CMAKE_TOOLCHAIN_FILE=`pwd`/TC-CrossAArch64.cmake
+export O=build-cross-aarch64
+
+if [ ! -d $O ]; then
+  cmake -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE"  --debug-output -Wno-dev \
+        -S . -B $O -G Ninja || exit 1
+fi
+cmake --build $O && cmake --install $O
