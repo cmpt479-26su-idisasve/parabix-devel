@@ -197,8 +197,8 @@ Value *IDISA_Neon_Builder::mvmd_shuffle_impl(unsigned fw, Value *data_table, Val
     return IDISA_Generic_Builder::mvmd_shuffle_impl(fw, data_table, index_vector, mode);
 }
 
-Value *IDISA_Neon_Builder::mvmd_shuffle2(unsigned fw, Value *table0, Value *table1, Value *index_vector,
-                                         ShuffleMode mode) {
+Value *IDISA_Neon_Builder::mvmd_shuffle2_impl(unsigned fw, Value *table0, Value *table1, Value *index_vector,
+                                              ShuffleMode mode) {
     auto vec_width = getVectorBitWidth(table0);
     if (vec_width == Neon_width && fw == 8) {
         auto fieldCount = vec_width / fw;
@@ -210,33 +210,17 @@ Value *IDISA_Neon_Builder::mvmd_shuffle2(unsigned fw, Value *table0, Value *tabl
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         } else if (mode == ShuffleMode::ZeroOnHighIndexBit) {
             // Preserve high bit for zeroing, but clear others.
-            Constant *fieldMask = ConstantInt::get(mCB->getIntNTy(fw), (1 << (fw - 1)) + fieldCount - 1);
+            Constant *fieldMask = ConstantInt::get(mCB->getIntNTy(fw), (1 << (fw - 1)) + 2 * fieldCount - 1);
             index_vector = simd_and(index_vector, getSplat(fieldCount, fieldMask));
         }
         Value *rslt = mCB->CreateCall(shuf8Func->getFunctionType(), shuf8Func,
                                       {fwCast(8, table0), fwCast(8, table1), fwCast(8, index_vector)});
         return rslt;
     }
-    return IDISA_Generic_Builder::mvmd_shuffle2(fw, table0, table1, index_vector, mode);
+    return IDISA_Generic_Builder::mvmd_shuffle2_impl(fw, table0, table1, index_vector, mode);
 }
 
-// Expand a 16-bit mask to one boolean byte lane per bit.
-Value *IDISA_Neon_Builder::byteMaskToLaneMask_impl(Value *byteMask) {
-    FixedVectorType *v16xi8Ty = FixedVectorType::get(mCB->getInt8Ty(), 16);
-    Value *maskPair = mCB->CreateBitCast(mCB->CreateZExtOrTrunc(byteMask, mCB->getInt16Ty()),
-                                         FixedVectorType::get(mCB->getInt8Ty(), 2));
-    SmallVector<int, 16> halfIdx(16);
-    Constant *sel[16];
-    for (unsigned i = 0; i < 16; i++) {
-        halfIdx[i] = i / 8;
-        sel[i] = mCB->getInt8(1u << (i % 8));
-    }
-    Value *spread = mCB->CreateShuffleVector(maskPair, maskPair, halfIdx);
-    Value *selVec = ConstantVector::get(ArrayRef<Constant *>(sel, 16));
-    return mCB->CreateICmpNE(fwCast(8, simd_and(spread, selVec)), ConstantAggregateZero::get(v16xi8Ty));
-}
-
-Value *IDISA_Neon_Builder::compressBytes_impl(Value *a, Value *byteMask) {
+Value *IDISA_Neon_Builder::compressBytes(Value *a, Value *byteMask) {
     GlobalVariable *table = getOrCreateByteCompressTable(mCB->getModule(), mCB->getContext());
     Type *i32Ty = mCB->getInt32Ty();
     FixedVectorType *v16xi8Ty = FixedVectorType::get(mCB->getInt8Ty(), 16);
@@ -269,7 +253,7 @@ Value *IDISA_Neon_Builder::compressBytes_impl(Value *a, Value *byteMask) {
 // Masking the index to fieldCount bits is required, not an optimization. The
 // tables at fw 32 and 64 have only 16 and 4 entries, so an unmasked mask would
 // index past the end.
-Value *IDISA_Neon_Builder::fieldPermute_impl(unsigned fw, Value *a, Value *select_mask, bool isExpand) {
+Value *IDISA_Neon_Builder::fieldPermute(unsigned fw, Value *a, Value *select_mask, bool isExpand) {
     const unsigned fieldCount = Neon_width / fw;
     GlobalVariable *table = getOrCreateFieldPermuteTable(mCB->getModule(), mCB->getContext(), fw, isExpand);
     Type *i32Ty = mCB->getInt32Ty();

@@ -29,7 +29,6 @@ class IDISA_Neon_Builder : public IDISA_Generic_Builder {
     llvm::Value *mvmd_expand_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) override;
 
   protected:
-    llvm::Value *byteMaskToLaneMask(llvm::Value *byteMask);
     llvm::Value *compressBytes(llvm::Value *a, llvm::Value *byteMask);
     llvm::Value *fieldPermute(unsigned fw, llvm::Value *a, llvm::Value *select_mask, bool isExpand);
 };

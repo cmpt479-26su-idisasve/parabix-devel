@@ -27,7 +27,6 @@ class IDISA_SVE_Builder : public IDISA_Generic_Builder {
     llvm::Value *mvmd_expand_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) override;
 
   private:
-    template <class F> llvm::Value *withNativeWidth(unsigned tempWidth, F &&f);
     template <class F> llvm::Value *encapsulateScalableUnary(unsigned fw, llvm::Value *param, F &&createOp);
     template <class F>
     llvm::Value *encapsulateScalableBinary(unsigned fw, llvm::Value *param1, llvm::Value *param2, F &&createOp);
