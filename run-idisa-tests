@@ -37,15 +37,20 @@ OPS=(
     mvmd_expand
     mvmd_dslli
 )
+FWS=(32 8 64 1 2 4 16 128)
+
+#OPS=(mvmd_shuffleH)
+#FWS=(8)
+
 
 IDISA_TEST="$1"
 if [ -z "${IDISA_TEST}" ]; then
-    IDISA_TEST=build-cross-aarch64/bin/idisa_test
+    IDISA_TEST=build-vscode/bin/idisa_test
 fi
 
 for OP in ${OPS[@]}; do
     echo "--- Testing operation ${OP} ---"
-    for FW in 32 8 64 1 2 4 16; do
+    for FW in ${FWS[@]}; do
         ${IDISA_TEST} $2 $3 $4 $5 \
             $OP $FW TestOutput/vec1 TestOutput/vec2 \
             2>&1 | tee "TestOutput/${OP}${FW}.result" &

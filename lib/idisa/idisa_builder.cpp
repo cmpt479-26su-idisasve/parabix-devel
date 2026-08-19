@@ -85,6 +85,15 @@ Constant *IDISA_Builder::getSplat(const unsigned fieldCount, Constant *Elt) {
     return ConstantVector::getSplat(ElementCount::get(fieldCount, false), Elt);
 }
 
+Constant *IDISA_Builder::getSplat(const unsigned fieldCount, APInt intVal) {
+    assert(intVal.getBitWidth() <= 64);
+    return ConstantVector::getSplat(ElementCount::get(fieldCount, false), ConstantInt::get(getContext(), intVal));
+}
+
+Constant *IDISA_Builder::getSplatN(const unsigned fw, const unsigned fieldCount, int intVal) {
+    return ConstantVector::getSplat(ElementCount::get(fieldCount, false), mCB->getIntN(fw, intVal));
+}
+
 Constant *IDISA_Builder::getConstantVectorSequence(unsigned fw, unsigned first, unsigned last, unsigned by) {
     const unsigned seqLgth = (last - first) / by + 1;
     assert(((first + (seqLgth - 1) * by) == last) && "invalid element sequence");

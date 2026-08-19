@@ -95,7 +95,9 @@ class IDISA_Builder {
     llvm::Value *CreateDoubleVector(llvm::Value *lo, llvm::Value *hi);
 
     llvm::Constant *getSplat(const unsigned fieldCount, llvm::Constant *Elt);
-
+    llvm::Constant *getSplat(const unsigned fieldCount, llvm::APInt intVal);
+    llvm::Constant *getSplatN(const unsigned fw, const unsigned fieldCount, int intVal);
+    
     llvm::LoadInst *CreateBlockAlignedLoad(llvm::Type *type, llvm::Value *const ptr) {
         return mCB->CreateAlignedLoad(type, ptr, mBitBlockWidth / 8);
     }

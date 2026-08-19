@@ -281,23 +281,31 @@ std::vector<Value *> IDISA_AVX2_Builder::simd_pext_impl(unsigned fw, std::vector
         SmallVector<Value *> mask(fieldCount);
         for (unsigned i = 0; i < fieldCount; i++) {
             mask[i] = mvmd_extract(fw, extract_mask, i);
+            if (fw < 32) {
+                mask[i] = mCB->CreateZExt(mask[i], mCB->getInt32Ty());
+            }
         }
+        Type *fwTy = mCB->getIntNTy(fw);
         std::vector<Value *> results;
         for (Value *v : vs) {
             assert((getVectorBitWidth(v) == fw * fieldCount) && "Vectors must have uniform size");
-            results.push_back(vectorize(fw, v, [=](unsigned i, Value *v_i) -> Value * {
-                Value *mask_i = mask[i];
-                if (fw == 64) {
-                    return mCB->CreateIntrinsic(Intrinsic::x86_bmi_pdep_64, {v_i, mask_i});
-                } else if (fw == 32) {
-                    return mCB->CreateIntrinsic(Intrinsic::x86_bmi_pdep_32, {v_i, mask_i});
-                } else {
+            Value *res;
+            if (fw == 64) {
+                res = vectorize(fw, v, [=](unsigned i, Value *v_i) -> Value * {
+                    return mCB->CreateIntrinsic(Intrinsic::x86_bmi_pext_64, {v_i, mask[i]});
+                });
+            } else if (fw == 32) {
+                res = vectorize(fw, v, [=](unsigned i, Value *v_i) -> Value * {
+                    return mCB->CreateIntrinsic(Intrinsic::x86_bmi_pext_32, {v_i, mask[i]});
+                });
+            } else {
+                res = vectorize(fw, v, [=](unsigned i, Value *v_i) -> Value * {
                     v_i = mCB->CreateZExt(v_i, mCB->getInt32Ty());
-                    mask_i = mCB->CreateZExt(mask_i, mCB->getInt32Ty());
-                    Value *r = mCB->CreateIntrinsic(Intrinsic::x86_bmi_pdep_32, {v_i, mask_i});
-                    return mCB->CreateTrunc(r, v_i->getType());
-                }
-            }));
+                    Value *r = mCB->CreateIntrinsic(Intrinsic::x86_bmi_pext_32, {v_i, mask[i]});
+                    return mCB->CreateTrunc(r, fwTy);
+                });
+            }
+            results.push_back(res);
         }
         return results;
     }
@@ -306,18 +314,23 @@ std::vector<Value *> IDISA_AVX2_Builder::simd_pext_impl(unsigned fw, std::vector
 
 Value *IDISA_AVX2_Builder::simd_pdep_impl(unsigned fw, Value *v, Value *deposit_mask) {
     if (mCB->hasFeature(codegen::Feature::AVX_BMI2) && (fw <= 64)) {
-        return vectorize(fw, v, deposit_mask, [=](unsigned i, Value *v_i, Value *mask_i) -> Value * {
-            if (fw == 64) {
+        if (fw == 64) {
+            return vectorize(fw, v, deposit_mask, [=](unsigned i, Value *v_i, Value *mask_i) -> Value * {
                 return mCB->CreateIntrinsic(Intrinsic::x86_bmi_pdep_64, {v_i, mask_i});
-            } else if (fw == 32) {
+            });
+        } else if (fw == 32) {
+            return vectorize(fw, v, deposit_mask, [=](unsigned i, Value *v_i, Value *mask_i) -> Value * {
                 return mCB->CreateIntrinsic(Intrinsic::x86_bmi_pdep_32, {v_i, mask_i});
-            } else {
+            });
+        } else {
+            Type *fwTy = mCB->getIntNTy(fw);
+            return vectorize(fw, v, deposit_mask, [=](unsigned i, Value *v_i, Value *mask_i) -> Value * {
                 v_i = mCB->CreateZExt(v_i, mCB->getInt32Ty());
                 mask_i = mCB->CreateZExt(mask_i, mCB->getInt32Ty());
                 Value *r = mCB->CreateIntrinsic(Intrinsic::x86_bmi_pdep_32, {v_i, mask_i});
-                return mCB->CreateTrunc(r, v_i->getType());
-            }
-        });
+                return mCB->CreateTrunc(r, fwTy);
+            });
+        }
     }
     return IDISA_AVX_Builder::simd_pdep_impl(fw, v, deposit_mask);
 }
@@ -501,48 +514,38 @@ Value *IDISA_AVX2_Builder::mvmd_shuffle_impl(unsigned fw, Value *a, Value *index
     }
     if (getVectorBitWidth(a) == AVX_width && (fw == 8)) {
         // x86_avx2_pshuf_b shuffles within 128 bit lanes, zeroing if the high bit is set.
-        constexpr unsigned fieldCount = 256 / 8;
+        constexpr unsigned fieldCount = AVX_width / 8;
 
         if (mode == ShuffleMode::TruncateIndex) {
             // Clear high bits
-            index_vector = simd_and(index_vector, getSplat(fieldCount, mCB->getInt8(fieldCount - 1)));
+            index_vector = simd_and(index_vector, getSplatN(8, fieldCount, fieldCount - 1));
         } else if (mode == ShuffleMode::ZeroOnIndexOver) {
-            Value *over = simd_ugt(fw, index_vector, getSplat(fieldCount, mCB->getInt8(fieldCount - 1)));
+            Value *over = simd_ugt(fw, index_vector, getSplatN(8, fieldCount, fieldCount - 1));
             index_vector = simd_or(index_vector, over);
         }
 
-        IntegerType *const int8Ty = mCB->getInt8Ty();
-
-        Constant *SIXTEEN = getSplat(fieldCount, ConstantInt::get(int8Ty, 16));
-
-        auto createShuffleVec = [&](int a, int b, int c, int d) {
-            FixedArray<Constant *, 4> idx;
-            idx[0] = mCB->getInt32(a);
-            idx[1] = mCB->getInt32(b);
-            idx[2] = mCB->getInt32(c);
-            idx[3] = mCB->getInt32(d);
-            return ConstantVector::get(idx);
-        };
-
-        FixedVectorType *vec64Ty = FixedVectorType::get(mCB->getInt64Ty(), 256 / 64);
-        Function *shufFunc = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::x86_avx2_pshuf_b);
+        VectorType *vec64Ty = fwVectorType(64);
         Value *const a64 = mCB->CreateBitCast(a, vec64Ty);
-        FixedVectorType *vecTy = FixedVectorType::get(int8Ty, 256 / 8);
+        VectorType *vecTy = fwVectorType(8);
         index_vector = mCB->CreateBitCast(index_vector, vecTy);
 
-        FixedArray<Value *, 2> args;
-        Value *a0 = mCB->CreateShuffleVector(a64, UndefValue::get(vec64Ty), createShuffleVec(0, 1, 0, 1));
-        args[0] = mCB->CreateBitCast(a0, vecTy);
-        args[1] = mCB->CreateOr(index_vector, mCB->CreateSExt(mCB->CreateICmpUGE(index_vector, SIXTEEN), vecTy));
-        Value *a1 = mCB->CreateCall(shufFunc->getFunctionType(), shufFunc, args);
-        assert(a1->getType() == vecTy);
-        Value *b0 = mCB->CreateShuffleVector(a64, UndefValue::get(vec64Ty), createShuffleVec(2, 3, 2, 3));
-        assert(b0->getType() == vec64Ty);
-        args[0] = mCB->CreateBitCast(b0, vecTy);
-        args[1] = mCB->CreateSub(index_vector, SIXTEEN); // sets sign bit automatically if selected in a0
-        Value *b1 = mCB->CreateCall(shufFunc->getFunctionType(), shufFunc, args);
-        assert(b1->getType() == vecTy);
-        return mCB->CreateOr(a1, b1);
+        // Because the shuffle only happens within 128-bit lanes, we do it twice, once to select the elements we want
+        // from the bottom half of the 256-bit word, and a second time to select the elements from the top half. Then,
+        // OR those results together.
+        Constant *hiBits = getSplat(fieldCount, APInt::getHighBitsSet(8, 1));
+        Value *isHiIdxs = simd_and(simd_slli(fw, index_vector, 3), hiBits);
+
+        Value *loSelect = ConstantVector::get({mCB->getInt64(0), mCB->getInt64(1), mCB->getInt64(0), mCB->getInt64(1)});
+        Value *loVec = fwCast(fw, mCB->CreateShuffleVector(a64, UndefValue::get(vec64Ty), loSelect));
+        Value *loShufIdxs = simd_or(index_vector, isHiIdxs);
+
+        Value *hiSelect = ConstantVector::get({mCB->getInt64(2), mCB->getInt64(3), mCB->getInt64(2), mCB->getInt64(3)});
+        Value *hiVec = fwCast(fw, mCB->CreateShuffleVector(a64, UndefValue::get(vec64Ty), hiSelect));
+        Value *hiShufIdxs = simd_or(index_vector, simd_xor(isHiIdxs, hiBits));
+        
+        Value *loShuffle = mCB->CreateIntrinsic(Intrinsic::x86_avx2_pshuf_b, {loVec, fwCast(fw, loShufIdxs)});
+        Value *hiShuffle = mCB->CreateIntrinsic(Intrinsic::x86_avx2_pshuf_b, {hiVec, fwCast(fw, hiShufIdxs)});
+        return fwCast(fw, simd_or(loShuffle, hiShuffle));
     }
     return IDISA_AVX_Builder::mvmd_shuffle_impl(fw, a, index_vector, mode);
 }

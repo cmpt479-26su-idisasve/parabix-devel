@@ -781,7 +781,7 @@ void IdisaBinaryOpCheckKernel::generateDoBlockMethod(KernelBuilder &b) {
         b.CallPrintRegister(std::string(mIdisaOperation->getName()) + "(" + std::to_string(mTestFw) +
                                 ", operand1, operand2)",
                             resultBlock);
-        b.CallPrintRegister("expecting", expectedBlock);
+        b.CallPrintRegister("expecting", b.bitCast(expectedBlock));
         b.CreateBr(continueTest);
         b.SetInsertPoint(continueTest);
     }
