@@ -74,7 +74,6 @@ void PipelineAnalysis::identifyZeroExtendedStreamSets() {
             const auto k = source(e, mStreamGraph);
             const RelationshipNode & rn = mStreamGraph[k];
             assert (rn.Type == RelationshipNode::IsBinding);
-            const Binding & binding = rn.Binding;
             const RelationshipType & port = mStreamGraph[e];
 
             if (LLVM_UNLIKELY(in_degree(k, mStreamGraph) != 1)) {

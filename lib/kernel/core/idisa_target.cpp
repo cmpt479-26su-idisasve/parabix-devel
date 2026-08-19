@@ -9,7 +9,7 @@
 #include <idisa/idisa_i64_builder.h>
 #ifdef PARABIX_ARM_TARGET
 #include <llvm/TargetParser/AArch64TargetParser.h>
-#include <idisa/idisa_arm_builder.h>
+#include <idisa/idisa_neon_builder.h>
 #include <idisa/idisa_sve_builder.h>
 #endif
 #ifdef PARABIX_X86_TARGET
@@ -125,7 +125,7 @@ KernelBuilder * GetIDISA_Builder(llvm::LLVMContext & C, const StringMap<bool> & 
         return new KernelBuilderImpl<IDISA_SVE_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
     }
     // As of July 2026, aarch64 is supposed to always include Neon
-    return new KernelBuilderImpl<IDISA_ARM_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
+    return new KernelBuilderImpl<IDISA_Neon_Builder>(C, featureSet, codegen::BlockSize, codegen::LaneWidth);
 #elif defined(PARABIX_NVPTX_TARGET)
 KernelBuilder * GetIDISA_GPU_Builder(llvm::LLVMContext & C) {
     return new KernelBuilderImpl<IDISA_NVPTX20_Builder>(C, featureSet, 64 * 64, 64);

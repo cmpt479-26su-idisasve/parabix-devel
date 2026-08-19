@@ -1,14 +1,16 @@
 #pragma once
 
-#include <idisa/idisa_neon_builder.h>
+#include <idisa/idisa_generic_builder.h>
 
 namespace IDISA {
 
-constexpr unsigned SVE_min_width = 128;
+constexpr unsigned Neon_width = 128;
 
-class IDISA_SVE_Builder : public IDISA_Generic_Builder {
+class IDISA_Neon_Builder : public IDISA_Generic_Builder {
   public:
-    explicit IDISA_SVE_Builder(CBuilder *cb, unsigned vectorWidth, unsigned laneWidth);
+    explicit IDISA_Neon_Builder(CBuilder *cb, unsigned vectorWidth, unsigned laneWidth)
+        : IDISA_Generic_Builder(cb, vectorWidth, laneWidth, Neon_width) {}
+    ~IDISA_Neon_Builder() = default;
 
     std::string getBuilderCacheName() override;
 
@@ -20,18 +22,15 @@ class IDISA_SVE_Builder : public IDISA_Generic_Builder {
     llvm::Value *hsimd_packl_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
     llvm::Value *hsimd_packus_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
     llvm::Value *mvmd_shuffle_impl(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
-                              ShuffleMode m = ShuffleMode::TruncateIndex) override;
+                                   ShuffleMode m = ShuffleMode::TruncateIndex) override;
     llvm::Value *mvmd_shuffle2_impl(unsigned fw, llvm::Value *table0, llvm::Value *table1, llvm::Value *index_vector,
-                               ShuffleMode m = ShuffleMode::TruncateIndex) override;
+                                    ShuffleMode m = ShuffleMode::TruncateIndex) override;
     llvm::Value *mvmd_compress_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) override;
     llvm::Value *mvmd_expand_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) override;
 
-  private:
-    template <class F> llvm::Value *encapsulateScalableUnary(unsigned fw, llvm::Value *param, F &&createOp);
-    template <class F>
-    llvm::Value *encapsulateScalableBinary(unsigned fw, llvm::Value *param1, llvm::Value *param2, F &&createOp);
-
-    IDISA_Neon_Builder mNeonB;
+  protected:
+    llvm::Value *compressBytes(llvm::Value *a, llvm::Value *byteMask);
+    llvm::Value *fieldPermute(unsigned fw, llvm::Value *a, llvm::Value *select_mask, bool isExpand);
 };
 
 } // namespace IDISA

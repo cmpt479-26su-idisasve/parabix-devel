@@ -520,7 +520,7 @@ std::unique_ptr<IdisaBinaryOp> binaryOps[] = {
     makeBinOp(
         "mvmd_shuffle",
         [](KernelBuilder &b, Config const &c, Value *operand1, Value *operand2) -> Value * {
-            return b.mvmd_shuffle(c.fw, operand1, operand2, IDISA::IDISA_Builder::ShuffleMode::TruncateIndex);
+            return b.mvmd_shuffle(c.fw, operand1, operand2, IDISA::ShuffleMode::TruncateIndex);
         },
         [](KernelBuilder &b, Config const &c, Value *operand1Block, Value *operand2Block) -> Value * {
             Value *expectedBlock = Constant::getNullValue(b.fwVectorType(c.fw));
@@ -537,7 +537,7 @@ std::unique_ptr<IdisaBinaryOp> binaryOps[] = {
     makeBinOp(
         "mvmd_shuffleO",
         [](KernelBuilder &b, Config const &c, Value *operand1, Value *operand2) -> Value * {
-            return b.mvmd_shuffle(c.fw, operand1, operand2, IDISA::IDISA_Builder::ShuffleMode::ZeroOnIndexOver);
+            return b.mvmd_shuffle(c.fw, operand1, operand2, IDISA::ShuffleMode::ZeroOnIndexOver);
         },
         [](KernelBuilder &b, Config const &c, Value *operand1Block, Value *operand2Block) -> Value * {
             Constant *fieldLimit = ConstantInt::get(c.fwTy, c.fCount);
@@ -556,7 +556,7 @@ std::unique_ptr<IdisaBinaryOp> binaryOps[] = {
     makeBinOp(
         "mvmd_shuffleH",
         [](KernelBuilder &b, Config const &c, Value *operand1, Value *operand2) -> Value * {
-            return b.mvmd_shuffle(c.fw, operand1, operand2, IDISA::IDISA_Builder::ShuffleMode::ZeroOnHighIndexBit);
+            return b.mvmd_shuffle(c.fw, operand1, operand2, IDISA::ShuffleMode::ZeroOnHighIndexBit);
         },
         [](KernelBuilder &b, Config const &c, Value *operand1Block, Value *operand2Block) -> Value * {
             Value *expectedBlock = Constant::getNullValue(b.fwVectorType(c.fw));
@@ -667,13 +667,13 @@ std::unique_ptr<IdisaBinaryOp> binaryOps[] = {
         }),
 };
 
-// static cl::opt<IDISA::IDISA_Builder::ShuffleMode>
+// static cl::opt<IDISA::ShuffleMode>
 //     ShuffleIndex("ShuffleIndex",
-//                  cl::values(clEnumValN(IDISA::IDISA_Builder::ShuffleMode::TruncateIndex, "Truncate",
+//                  cl::values(clEnumValN(IDISA::ShuffleMode::TruncateIndex, "Truncate",
 //                                        "Truncate out-of-bound shuffle indexes."),
-//                             clEnumValN(IDISA::IDISA_Builder::ShuffleMode::ZeroOnIndexOver, "ZeroOnOver",
+//                             clEnumValN(IDISA::ShuffleMode::ZeroOnIndexOver, "ZeroOnOver",
 //                                        "Select zero for shuffle indexes out of bound."),
-//                             clEnumValN(IDISA::IDISA_Builder::ShuffleMode::ZeroOnHighIndexBit, "ZeroOnHighBit",
+//                             clEnumValN(IDISA::ShuffleMode::ZeroOnHighIndexBit, "ZeroOnHighBit",
 //                                        "Select zero if high index bit set, otherwise truncate.")),
 //                  cl::init(IDISA::IDISA_Builder::ShuffleMode::TruncateIndex));
 
@@ -781,7 +781,7 @@ void IdisaBinaryOpCheckKernel::generateDoBlockMethod(KernelBuilder &b) {
         b.CallPrintRegister(std::string(mIdisaOperation->getName()) + "(" + std::to_string(mTestFw) +
                                 ", operand1, operand2)",
                             resultBlock);
-        b.CallPrintRegister("expecting", expectedBlock);
+        b.CallPrintRegister("expecting", b.bitCast(expectedBlock));
         b.CreateBr(continueTest);
         b.SetInsertPoint(continueTest);
     }

@@ -17,8 +17,6 @@
 
 using boost::intrusive::detail::is_pow2;
 
-using IDISA::FixedVectorType;
-
 namespace kernel {
 
 #define COMPILER (static_cast<PipelineCompiler *>(b.getCompiler()))
