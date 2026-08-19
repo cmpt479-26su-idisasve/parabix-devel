@@ -302,7 +302,8 @@ void KernelCompiler::runAllOptimizationPasses(KernelBuilder & b, Kernel::Selecte
             unoptimizedOut = std::make_unique<raw_fd_ostream>(STDERR_FILENO, false, true);
         } else {
             std::error_code unoptimizedErr;
-            unoptimizedOut = std::make_unique<raw_fd_ostream>(options, unoptimizedErr, sys::fs::OpenFlags::OF_None);
+            unoptimizedOut = std::make_unique<raw_fd_ostream>(
+                options, unoptimizedErr, sys::fs::OpenFlags::OF_Append | sys::fs::OpenFlags::OF_Text);
         }
         if (codegen::ShowIRFilter.empty()) {
             FPM.addPass(PrintFunctionPass(*unoptimizedOut));
@@ -383,12 +384,13 @@ void KernelCompiler::runAllOptimizationPasses(KernelBuilder & b, Kernel::Selecte
     // ShowIRFilter
 
     if (LLVM_UNLIKELY(codegen::ShowIROption != codegen::OmittedOption)) {
-        const auto & options = codegen::ShowIROption;
+        const auto &options = codegen::ShowIROption;
         if (options.empty()) {
             optimizedOut = std::make_unique<raw_fd_ostream>(STDERR_FILENO, false, true);
         } else {
             std::error_code optimizedErr;
-            optimizedOut = std::make_unique<raw_fd_ostream>(options, optimizedErr, sys::fs::OpenFlags::OF_None);
+            optimizedOut = std::make_unique<raw_fd_ostream>(
+                options, optimizedErr, sys::fs::OpenFlags::OF_Append | sys::fs::OpenFlags::OF_Text);
         }
         if (codegen::ShowIRFilter.empty()) {
             FPM.addPass(PrintFunctionPass(*optimizedOut));

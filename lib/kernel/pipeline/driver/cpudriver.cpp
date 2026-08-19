@@ -236,7 +236,8 @@ void * CPUDriver::finalizeObject(kernel::Kernel * const pk) {
     if (LLVM_UNLIKELY(codegen::ShowASMOption != codegen::OmittedOption)) {
         if (!codegen::ShowASMOption.empty()) {
             std::error_code error;
-            mASMOutputStream = std::make_unique<raw_fd_ostream>(codegen::ShowASMOption, error, sys::fs::OpenFlags::OF_None);
+            mASMOutputStream = std::make_unique<raw_fd_ostream>(
+                codegen::ShowASMOption, error, sys::fs::OpenFlags::OF_Append | sys::fs::OpenFlags::OF_Text);
         } else {
             mASMOutputStream = std::make_unique<raw_fd_ostream>(STDERR_FILENO, false, true);
         }
