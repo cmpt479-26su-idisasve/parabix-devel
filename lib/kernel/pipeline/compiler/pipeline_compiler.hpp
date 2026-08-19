@@ -16,7 +16,6 @@ using namespace boost::adaptors;
 using boost::container::flat_set;
 using boost::container::flat_map;
 using namespace llvm;
-using IDISA::FixedVectorType;
 
 #include "analysis/pipeline_analysis.hpp"
 

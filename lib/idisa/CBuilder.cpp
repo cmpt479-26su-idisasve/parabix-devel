@@ -3,37 +3,41 @@
  *  SPDX-License-Identifier: OSL-3.0
  */
 
-#include <idisa/CBuilder.h>
-#include <kernel/pipeline/driver/driver.h>
-#include <llvm/IR/Mangler.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/Intrinsics.h>
-#include <llvm/IR/MDBuilder.h>
-#include <llvm/IR/Metadata.h>
-#include <llvm/IR/Dominators.h>
-#include <llvm/Transforms/Utils/Local.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/Format.h>
-#include <toolchain/toolchain.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <cstdarg>
-#include <cstdlib>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <stdio.h>
 #include <boost/filesystem.hpp>
 #include <boost/format.hpp>
 #include <boost/icl/interval_set.hpp>
 #include <boost/interprocess/mapped_region.hpp>
 #include <boost/intrusive/detail/math.hpp>
 #include <boost/predef.h>
+#include <cstdarg>
+#include <cstdlib>
 #include <cxxabi.h>
-using boost::intrusive::detail::floor_log2;
+#include <idisa/CBuilder.h>
+#include <kernel/pipeline/driver/driver.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/Dominators.h>
+#include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/MDBuilder.h>
+#include <llvm/IR/Mangler.h>
+#include <llvm/IR/Metadata.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/Alignment.h>
+#include <llvm/Support/Format.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Transforms/Utils/Local.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <toolchain/toolchain.h>
 #include <unistd.h>
+
+#ifdef PARABIX_X86_TARGET
+#include <llvm/IR/IntrinsicsX86.h>
+#endif
+
+using boost::intrusive::detail::floor_log2;
 
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(20, 0, 0)
 #define getOrInsertDeclaration getDeclaration
@@ -77,10 +81,6 @@ static constexpr auto ALIGNED_ALLOC_NAME = "std_aligned_alloc";
 #undef ENABLE_LIBBACKTRACE
 #endif
 #endif
-
-typedef llvm::Align         AlignType;
-
-using FixedVectorType = llvm::FixedVectorType;
 
 #define BEGIN_SCOPED_REGION {
 #define END_SCOPED_REGION }
@@ -433,8 +433,57 @@ CallInst * CBuilder::CallPrintInt(StringRef name, Value * const value, const STD
     return CreateCall(FT, printRegister, {getInt32(static_cast<uint32_t>(fd)), GetString(name), num});
 }
 
-
-
+CallInst * CBuilder::CallPrintRegister(StringRef name, Value * const value, const STD_FD fd) {
+    Module * const m = getModule();
+    unsigned vec_width = value->getType()->getPrimitiveSizeInBits();
+    std::string fn_name = "print_register_" + std::to_string(vec_width);
+    Function * printRegister = m->getFunction(fn_name);
+    if (LLVM_UNLIKELY(printRegister == nullptr)) {
+        FunctionType *FT = FunctionType::get(getVoidTy(), { getInt32Ty(), getInt8PtrTy(0), value->getType() }, false);
+        Function * function = Function::Create(FT, Function::InternalLinkage, fn_name, m);
+        auto arg = function->arg_begin();
+        std::string tmp;
+        raw_string_ostream out(tmp);
+        #ifdef PRINT_DEBUG_MESSAGES_INCLUDE_THREAD_NUM
+        out << "%016" PRIx64 "  ";
+        #endif
+        out << "%-40s =";
+        for(unsigned i = 0; i < (vec_width / 8); ++i) {
+            out << " %02" PRIx32;
+        }
+        out << '\n';
+        BasicBlock * entry = BasicBlock::Create(m->getContext(), "entry", function);
+        IRBuilder<> builder(entry);
+        Value * const fdInt = &*(arg++);
+        Value * const name = &*(arg++);
+        name->setName("name");
+        Value * value = &*arg;
+        value->setName("value");
+        Type * const byteFixedVectorType = FixedVectorType::get(getInt8Ty(), (vec_width / 8));
+        value = builder.CreateBitCast(value, byteFixedVectorType);
+        std::vector<Value *> args;
+        args.push_back(fdInt);
+        args.push_back(GetString(out.str()));
+        #ifdef PRINT_DEBUG_MESSAGES_INCLUDE_THREAD_NUM
+        Function * pthreadSelfFn = m->getFunction("pthread_self");
+        if (pthreadSelfFn == nullptr) {
+            IntegerType * const pThreadTy = IntegerType::getIntNTy(getContext(), sizeof(pthread_t) * CHAR_BIT);
+            FunctionType * funTy = FunctionType::get(pThreadTy, false);
+            pthreadSelfFn = LinkFunction("pthread_self", funTy, (void*)&pthread_self);
+        }
+        args.push_back(builder.CreateCall(pthreadSelfFn));
+        #endif
+        args.push_back(name);
+        for(unsigned i = (vec_width / 8); i != 0; --i) {
+            args.push_back(builder.CreateZExt(builder.CreateExtractElement(value, builder.getInt32(i - 1)), builder.getInt32Ty()));
+        }
+        Function * Dprintf = GetDprintf();
+        builder.CreateCall(Dprintf->getFunctionType(), Dprintf, args);
+        builder.CreateRetVoid();
+        printRegister = function;
+    }
+    return CreateCall(printRegister->getFunctionType(), printRegister, {getInt32(static_cast<uint32_t>(fd)), GetString(name), value});
+}
 
 Value * CBuilder::CreateMalloc(Value * size) {
     Module * const m = getModule();
@@ -649,7 +698,7 @@ Value * CBuilder::CreateMemFdCreate(Value * const name, Value * const flags) {
     }
     Value * retVal = CreateCall(fShmOpen->getFunctionType(), fShmOpen, {name, flags});
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-        Value * success = CreateICmpNE(retVal, ConstantInt::get(getInt32Ty(), -1ULL));
+        Value * success = CreateICmpNE(retVal, getInt32(-1));
         CreateAssert(success, "CreateMemFdCreate: failed to create anonymous memory file");
     }
     return retVal;
@@ -667,7 +716,7 @@ Value * CBuilder::CreateFTruncate(Value * const fd, Value * size) {
     }
     Value * retVal = CreateCall(fTruncate->getFunctionType(), fTruncate, {fd, size});
     if (LLVM_UNLIKELY(codegen::DebugOptionIsSet(codegen::EnableAsserts))) {
-        Value * success = CreateICmpNE(retVal, ConstantInt::get(getInt32Ty(), -1ULL));
+        Value * success = CreateICmpNE(retVal, getInt32(-1));
         __CreateAssert(success, "CreateFTruncate: failed to truncate fd", {});
     }
     return retVal;
@@ -1373,10 +1422,22 @@ Value * CBuilder::CreateMaskToLowestBitExclusive(Value * bits, const Twine Name)
     return CreateAnd(CreateSub(bits, ConstantInt::get(bits->getType(), 1)), CreateNot(bits), Name);
 }
 
-Value * CBuilder::CreateZeroHiBitsFrom(Value * bits, Value * pos, const Twine Name) {
-    Type * Ty = bits->getType();
-    Constant * one = Constant::getIntegerValue(Ty, APInt(Ty->getScalarSizeInBits(), 1));
-    Value * mask = CreateSub(CreateShl(one, pos), one);
+Value *CBuilder::CreateZeroHiBitsFrom(Value *bits, Value *pos, const Twine Name) {
+#ifdef PARABIX_X86_TARGET
+    // Some special-case paths for AVX
+    if (hasFeature(codegen::Feature::AVX_BMI)) {
+        const unsigned width = bits->getType()->getPrimitiveSizeInBits();
+        if (width == 64) {
+            return CreateIntrinsic(Intrinsic::x86_bmi_bzhi_64, {bits, pos}, {}, Name);
+        } else if (width == 32) {
+            return CreateIntrinsic(Intrinsic::x86_bmi_bzhi_32, {bits, pos}, {}, Name);
+        }
+    }
+#endif // PARABIX_X86_TARGET
+    // Otherwise, default handling:
+    Type *Ty = bits->getType();
+    Constant *one = Constant::getIntegerValue(Ty, APInt(Ty->getScalarSizeInBits(), 1));
+    Value *mask = CreateSub(CreateShl(one, pos), one);
     return CreateAnd(bits, mask, Name);
 }
 
@@ -1461,7 +1522,7 @@ LoadInst * CBuilder::CreateAlignedLoad(Type * type, Value * Ptr, const unsigned 
         CreateAssertZero(alignmentOffset, "CreateAlignedLoad: pointer (%" PRIxsz ") is misaligned (%" PRIdsz ")", Ptr, align);
     }
     LoadInst * LI = CreateLoad(type, Ptr, Name);
-    LI->setAlignment(AlignType{Align});
+    LI->setAlignment(llvm::Align{Align});
     return LI;
 }
 
@@ -1475,7 +1536,7 @@ LoadInst * CBuilder::CreateAlignedLoad(Type * type, Value * Ptr, const unsigned 
         CreateAssertZero(alignmentOffset, "CreateAlignedLoad: pointer " + Name + " (%" PRIxsz ") is misaligned (%" PRIdsz ")", Ptr, align);
     }
     LoadInst * LI = CreateLoad(type, Ptr, Name);
-    LI->setAlignment(AlignType{Align});
+    LI->setAlignment(llvm::Align{Align});
     return LI;
 }
 
@@ -1489,7 +1550,7 @@ LoadInst * CBuilder::CreateAlignedLoad(Type * type, Value * Ptr, const unsigned 
         CreateAssertZero(alignmentOffset, "CreateAlignedLoad: pointer (%" PRIxsz ") is misaligned (%" PRIdsz ")", Ptr, align);
     }
     LoadInst * LI = CreateLoad(type, Ptr, isVolatile, Name);
-    LI->setAlignment(AlignType{Align});
+    LI->setAlignment(llvm::Align{Align});
     return LI;
 }
 
@@ -1503,7 +1564,7 @@ StoreInst * CBuilder::CreateAlignedStore(Value * Val, Value * Ptr, const unsigne
         CreateAssertZero(alignmentOffset, "CreateAlignedStore: pointer (%" PRIxsz ") is misaligned (%" PRIdsz ")", Ptr, align);
     }
     StoreInst * SI = CreateStore(Val, Ptr, isVolatile);
-    SI->setAlignment(AlignType{Align});
+    SI->setAlignment(llvm::Align{Align});
     return SI;
 }
 
@@ -1541,14 +1602,14 @@ CallInst * CBuilder::CreateMemMove(Value * Dst, Value * Src, Value *Size, const 
         }
     }
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
-    return IRBuilder<>::CreateMemMove(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+    return IRBuilder<>::CreateMemMove(Dst, llvm::Align{Align}, Src, llvm::Align{Align}, Size, isVolatile, TBAATag, ScopeTag, NoAliasTag);
 #else
-    llvm::AAMDNodes AAInfo;
+    AAMDNodes AAInfo;
     AAInfo.TBAA = TBAATag;
     AAInfo.Scope = ScopeTag;
     AAInfo.NoAlias = NoAliasTag;
-    return IRBuilder<>::CreateMemMove(Dst, AlignType{Align},
-                                      Src, AlignType{Align},
+    return IRBuilder<>::CreateMemMove(Dst, llvm::Align{Align},
+                                      Src, llvm::Align{Align},
                                       Size, isVolatile,
                                       AAInfo);
 #endif
@@ -1577,15 +1638,15 @@ CallInst * CBuilder::CreateMemCpy(Value *Dst, Value *Src, Value *Size, const uns
         CreateAssert(nonOverlapping, "CreateMemCpy: overlapping ranges is undefined");
     }
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
-    return IRBuilder<>::CreateMemCpy(Dst, AlignType{Align}, Src, AlignType{Align}, Size, isVolatile, TBAATag, TBAAStructTag, ScopeTag, NoAliasTag);
+    return IRBuilder<>::CreateMemCpy(Dst, llvm::Align{Align}, Src, llvm::Align{Align}, Size, isVolatile, TBAATag, TBAAStructTag, ScopeTag, NoAliasTag);
 #else
-    llvm::AAMDNodes AAInfo;
+    AAMDNodes AAInfo;
     AAInfo.TBAA = TBAATag;
     AAInfo.TBAAStruct = TBAAStructTag;
     AAInfo.Scope = ScopeTag;
     AAInfo.NoAlias = NoAliasTag;
-    return IRBuilder<>::CreateMemCpy(Dst, AlignType{Align},
-                                     Src, AlignType{Align},
+    return IRBuilder<>::CreateMemCpy(Dst, llvm::Align{Align},
+                                     Src, llvm::Align{Align},
                                      Size, isVolatile,
                                      AAInfo);
 #endif
@@ -1604,13 +1665,13 @@ CallInst * CBuilder::CreateMemSet(Value * Ptr, Value * Val, Value * Size, const 
         }
     }
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
-    return IRBuilder<>::CreateMemSet(Ptr, Val, Size, AlignType{Align}, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+    return IRBuilder<>::CreateMemSet(Ptr, Val, Size, llvm::Align{Align}, isVolatile, TBAATag, ScopeTag, NoAliasTag);
 #else
-    llvm::AAMDNodes AAInfo;
+    AAMDNodes AAInfo;
     AAInfo.TBAA = TBAATag;
     AAInfo.Scope = ScopeTag;
     AAInfo.NoAlias = NoAliasTag;
-    return IRBuilder<>::CreateMemSet(Ptr, Val, Size, AlignType{Align}, isVolatile, AAInfo);
+    return IRBuilder<>::CreateMemSet(Ptr, Val, Size, llvm::Align{Align}, isVolatile, AAInfo);
 #endif
 }
 
@@ -1660,11 +1721,11 @@ AllocaInst * CBuilder::CreateAllocaAtEntryPoint(Type * Ty, Value * ArraySize, co
 
 AllocaInst * CBuilder::CreateAlignedAlloca(Type * const Ty, const unsigned Align, Value * const ArraySize) {
     AllocaInst * const alloca = IRBuilder<>::CreateAlloca(Ty, ArraySize);
-    alloca->setAlignment(AlignType{Align});
+    alloca->setAlignment(llvm::Align{Align});
     return alloca;
 }
 
-AllocaInst * CBuilder::CreateAlignedAllocaAtEntryPoint(llvm::Type * const Ty, const unsigned alignment, llvm::Value * const ArraySize) {
+AllocaInst * CBuilder::CreateAlignedAllocaAtEntryPoint(Type * const Ty, const unsigned alignment, Value * const ArraySize) {
     auto BB = GetInsertBlock();
     auto F = BB->getParent();
     auto entryBlock = F->begin();
@@ -1684,7 +1745,7 @@ AllocaInst * CBuilder::CreateAlignedAllocaAtEntryPoint(llvm::Type * const Ty, co
     } else {
         alloca = new AllocaInst(Ty, addrSize, ArraySize, "", first);
     }
-    AlignType align{alignment};
+    llvm::Align align{alignment};
     alloca->setAlignment(align);
     return alloca;
 }
@@ -1960,11 +2021,12 @@ void __backtrace_set_true_on_error_callback(void *data, const char *msg, int err
 }
 #endif
 
-CBuilder::CBuilder(LLVMContext & C)
+CBuilder::CBuilder(LLVMContext & C, const codegen::FeatureSet & featureSet)
 : IRBuilder<>(C)
 , mCacheLineAlignment(64)
 , mSizeType(IntegerType::get(getContext(), sizeof(size_t) * 8))
-, mDriver(nullptr) {
+, mDriver(nullptr)
+, mFeatureSet(featureSet) {
     #ifdef ENABLE_LIBBACKTRACE
     if (LLVM_UNLIKELY(codegen::AnyAssertionOptionIsSet())) {
         auto p = boost::filesystem::absolute(codegen::ProgramName).lexically_normal().native();
@@ -2037,7 +2099,7 @@ bool RemoveRedundantAssertionsPass::runOnModule(Module & M) {
                         return ci.isIndirectCall();
                     };
                     if (!(ci.getCalledFunction() || isIndirectCall())) {
-                        auto & out = llvm::errs();
+                        auto & out = errs();
                         B.print(out);
                         errs() << "\n\n";
                         ci.print(out);
@@ -2235,7 +2297,7 @@ bool RemoveRedundantAssertionsPass::runOnModule(Module & M) {
 
 
         // Replace the assertion function with a "try/throw" block
-        CBuilder builder(M.getContext());
+        CBuilder builder(M.getContext(), codegen::MapFeatureNames(codegen::GetFeatureNames()));
         builder.setModule(&M);
         builder.SetInsertPoint(&F.front());
         BasicBlock * const rethrow = builder.WriteDefaultRethrowBlock();
@@ -2278,7 +2340,7 @@ ConstantInt * LLVM_READNONE CBuilder::getTypeSize(Type * type, IntegerType * val
     return ConstantInt::get(valType, getTypeSize(dl, type));
 }
 
-uintptr_t LLVM_READNONE CBuilder::getTypeSize(const llvm::DataLayout & DL, llvm::Type * type) {
+uintptr_t LLVM_READNONE CBuilder::getTypeSize(const DataLayout & DL, Type * type) {
     uintptr_t size = 0;
     if (LLVM_LIKELY(type != nullptr)) {
         size = DL.getTypeAllocSize(type).getFixedValue();
@@ -2286,7 +2348,7 @@ uintptr_t LLVM_READNONE CBuilder::getTypeSize(const llvm::DataLayout & DL, llvm:
     return size;
 }
 
-uintptr_t LLVM_READNONE CBuilder::getAlignOf(const llvm::DataLayout & DL, llvm::Type * type) {
+uintptr_t LLVM_READNONE CBuilder::getAlignOf(const DataLayout & DL, Type * type) {
     assert (type);
     if (isa<StructType>(type)) {
         const auto l = cast<StructType>(type)->getStructNumElements();

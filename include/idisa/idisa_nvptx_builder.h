@@ -3,83 +3,74 @@
 /*
  *  Part of the Parabix Project, under the Open Software License 3.0.
  *  SPDX-License-Identifier: OSL-3.0
-*/
+ */
 
 #include <idisa/idisa_i64_builder.h>
 
 namespace IDISA {
 
+static constexpr unsigned NVPTX20_width = 4096;
+
 class IDISA_NVPTX20_Builder : public IDISA_I64_Builder {
-public:
-    static constexpr unsigned NativeBitBlockWidth() {return 4096;}
-
-    IDISA_NVPTX20_Builder()
-    : IDISA_Builder(DONTUSE_CONSTRUCTOR())
-    , IDISA_I64_Builder()
-    , groupThreads(mBitBlockWidth / mLaneWidth)
-    , barrierFunc(nullptr)
-    , tidFunc(nullptr)
-    , mLongAdvanceFunc(nullptr)
-    , mLongAddFunc(nullptr)
-    , carry(nullptr)
-    , bubble(nullptr) {
-        assert ((mBitBlockWidth % mLaneWidth) == 0);
+  public:
+    explicit IDISA_NVPTX20_Builder(CBuilder *cb, unsigned vectorWidth, unsigned laneWidth)
+        : IDISA_I64_Builder(cb, vectorWidth, laneWidth, NVPTX20_width),
+          groupThreads(ib->mBitBlockWidth / ib->mLaneWidth), barrierFunc(nullptr), tidFunc(nullptr),
+          mLongAdvanceFunc(nullptr), mLongAddFunc(nullptr), carry(nullptr), bubble(nullptr) {
+        assert((ib->mBitBlockWidth % ib->mLaneWidth) == 0);
     }
-
-    ~IDISA_NVPTX20_Builder() {}
-
-    virtual std::string getBuilderCacheName() override;
-
-    unsigned getGroupThreads() const;
 
     void CreateBaseFunctions() override;
 
-    llvm::Value * bitblock_any(llvm::Value * a) override;
-    std::pair<llvm::Value *, llvm::Value *> bitblock_add_with_carry(llvm::Value * a, llvm::Value * b, llvm::Value * carryin) override;
-    virtual std::pair<llvm::Value *, llvm::Value *> bitblock_advance(llvm::Value * a, llvm::Value * shiftin, unsigned shift) override;
-    llvm::Value * bitblock_mask_from(llvm::Value * pos, const bool safe) override;
-    llvm::Value * bitblock_set_bit(llvm::Value * pos, const bool safe) override;
+    std::string getBuilderCacheName() override;
 
-    llvm::Value * getEOFMask(llvm::Value * remainingBytes);
+    unsigned getGroupThreads() const;
 
-    llvm::Value * Advance(const unsigned index, const unsigned shiftAmount, llvm::Value * const value);
-    llvm::Value * LongAdd(llvm::Value * const valA, llvm::Value * const valB, llvm::Value * carryIn);
+    llvm::Value *bitblock_any_impl(llvm::Value *a) override;
+    std::pair<llvm::Value *, llvm::Value *> bitblock_add_with_carry_impl(llvm::Value *a, llvm::Value *b,
+                                                                         llvm::Value *carryin) override;
+    virtual std::pair<llvm::Value *, llvm::Value *> bitblock_advance_impl(llvm::Value *a, llvm::Value *shiftin,
+                                                                          unsigned shift) override;
+    llvm::Value *bitblock_mask_from_impl(llvm::Value *pos, const bool safe) override;
+    llvm::Value *bitblock_set_bit_impl(llvm::Value *pos, const bool safe) override;
 
-    llvm::LoadInst * CreateAtomicLoadAcquire(llvm::Value * ptr) override;
-    llvm::StoreInst * CreateAtomicStoreRelease(llvm::Value * val, llvm::Value * ptr) override;
+    llvm::Value *getEOFMask(llvm::Value *remainingBytes);
 
-    bool supportsIndirectBr() const final {
-        return false;
-    }
+    llvm::Value *Advance(const unsigned index, const unsigned shiftAmount, llvm::Value *const value);
+    llvm::Value *LongAdd(llvm::Value *const valA, llvm::Value *const valB, llvm::Value *carryIn);
 
-    #ifdef HAS_ADDRESS_SANITIZER
-    llvm::LoadInst * CreateLoad(llvm::Value *Ptr, const char *Name) override;
+    llvm::LoadInst *CreateAtomicLoadAcquire(llvm::Value *ptr) override;
+    llvm::StoreInst *CreateAtomicStoreRelease(llvm::Value *val, llvm::Value *ptr) override;
 
-    llvm::LoadInst * CreateLoad(llvm::Value *Ptr, const llvm::Twine Name = "") override;
+    bool supportsIndirectBr() const final { return false; }
 
-    llvm::LoadInst * CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const llvm::Twine Name = "") override;
+#ifdef HAS_ADDRESS_SANITIZER
+    llvm::LoadInst *CreateLoad(llvm::Value *Ptr, const char *Name) override;
 
-    llvm::LoadInst * CreateLoad(llvm::Value *Ptr, bool isVolatile, const llvm::Twine Name = "") override;
+    llvm::LoadInst *CreateLoad(llvm::Value *Ptr, const llvm::Twine Name = "") override;
 
-    llvm::StoreInst * CreateStore(llvm::Value *Val, llvm::Value *Ptr, bool isVolatile = false) override;
-    #endif
+    llvm::LoadInst *CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const llvm::Twine Name = "") override;
 
-private:
+    llvm::LoadInst *CreateLoad(llvm::Value *Ptr, bool isVolatile, const llvm::Twine Name = "") override;
 
+    llvm::StoreInst *CreateStore(llvm::Value *Val, llvm::Value *Ptr, bool isVolatile = false) override;
+#endif
+
+  private:
     void CreateGlobals();
     void CreateBuiltinFunctions();
     void CreateLongAdvanceFunc();
     void CreateLongAddFunc();
     void CreateBallotFunc();
 
-private:
-    const unsigned              groupThreads;
-    llvm::Function *            barrierFunc;
-    llvm::Function *            tidFunc;
-    llvm::Function *            mLongAdvanceFunc;
-    llvm::Function *            mLongAddFunc;
-    llvm::GlobalVariable*       carry;
-    llvm::GlobalVariable*       bubble;
+  private:
+    const unsigned groupThreads;
+    llvm::Function *barrierFunc;
+    llvm::Function *tidFunc;
+    llvm::Function *mLongAdvanceFunc;
+    llvm::Function *mLongAddFunc;
+    llvm::GlobalVariable *carry;
+    llvm::GlobalVariable *bubble;
 };
 
 #if 0
@@ -94,4 +85,4 @@ class IDISA_NVPTX35_Builder : public IDISA_NVPTX20_Builder {
 };
 #endif
 
-}
+} // namespace IDISA

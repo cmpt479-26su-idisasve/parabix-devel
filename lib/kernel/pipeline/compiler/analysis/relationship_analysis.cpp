@@ -1431,7 +1431,7 @@ void PipelineAnalysis::addKernelRelationshipsInReferenceOrdering(const unsigned 
     Graph E(numOfPorts);
 
     #ifndef NDEBUG
-    flat_set<size_t> _portCount;
+    flat_set<int> _portCount;
     #endif
 
     for (auto e : make_iterator_range(in_edges(kernel, G))) {

@@ -3,7 +3,7 @@
  *  SPDX-License-Identifier: OSL-3.0
  */
 
-#include "idisa/idisa_builder.h"
+#include "idisa/idisa_neon_builder.h"
 #include <idisa/idisa_sve_builder.h>
 #include <kernel/core/kernel_builder.h>
 #include <toolchain/toolchain.h>
@@ -41,18 +41,18 @@ static svpattern PatternForVectorLength(unsigned svN) {
     }
 }
 
-unsigned IDISA_SVE_Builder::NativeBitBlockWidth() {
+DEFINE_BUILDER_CACHE_NAME(IDISA_SVE_Builder, "ARM_SVE_VL" + std::to_string(getBitBlockWidth()), getBitBlockWidth())
+
 #if 1
-    // This unfortunately doesn't work: LLVM doesn't know what to do with big fixed vectors
-    return codegen::HostSVEBitWidth();
+IDISA_SVE_Builder::IDISA_SVE_Builder(CBuilder *cb, unsigned vectorWidth, unsigned laneWidth)
+    : IDISA::IDISA_Generic_Builder(cb, vectorWidth, laneWidth, codegen::HostSVEBitWidth()),
+      mNeonB(cb, vectorWidth, laneWidth) {}
 #else
-    return IDISA::ARM_Neon_width;
+IDISA_SVE_Builder::IDISA_SVE_Builder(CBuilder *cb, unsigned vectorWidth, unsigned laneWidth)
+    : IDISA::IDISA_Generic_Builder(cb, vectorWidth, laneWidth, SVE_min_width), mNeonB(cb, vectorWidth, laneWidth) {}
 #endif
-}
 
-DEFINE_BUILDER_CACHE_NAME(IDISA_SVE_Builder, "ARM_SVE_VL" + std::to_string(mNativeBitBlockWidth), mNativeBitBlockWidth)
-
-template <class F> llvm::Value *IDISA_SVE_Builder::withNativeWidth(unsigned tempWidth, F &&f) {
+template <class F> llvm::Value *IDISA_SVE_Builder::withNativeWidth_impl(unsigned tempWidth, F &&f) {
     unsigned realWidth = mNativeBitBlockWidth;
     try {
         const_cast<unsigned &>(mNativeBitBlockWidth) = tempWidth;
@@ -66,10 +66,10 @@ template <class F> llvm::Value *IDISA_SVE_Builder::withNativeWidth(unsigned temp
 }
 
 template <class F>
-llvm::Value *IDISA_SVE_Builder::encapsulateScalableUnary(unsigned fw, llvm::Value *param, F &&createOp) {
+llvm::Value *IDISA_SVE_Builder::encapsulateScalableUnary_impl(unsigned fw, llvm::Value *param, F &&createOp) {
     unsigned vectorWidth = getVectorBitWidth(param);
     unsigned fvN = vectorWidth / fw;
-    unsigned svN = ARM_SVE_min_width / fw;
+    unsigned svN = SVE_min_width / fw;
     unsigned fvChunkN = std::min(vectorWidth / fw, mNativeBitBlockWidth / fw);
     IntegerType *fTy = getIntNTy(fw);
     FixedVectorType *fvTy = FixedVectorType::get(fTy, fvN);
@@ -107,12 +107,12 @@ llvm::Value *IDISA_SVE_Builder::encapsulateScalableUnary(unsigned fw, llvm::Valu
 }
 
 template <class F>
-llvm::Value *IDISA_SVE_Builder::encapsulateScalableBinary(unsigned fw, llvm::Value *param1, llvm::Value *param2,
-                                                          F &&createOp) {
+llvm::Value *IDISA_SVE_Builder::encapsulateScalableBinary_impl(unsigned fw, llvm::Value *param1, llvm::Value *param2,
+                                                               F &&createOp) {
     unsigned vectorWidth = getVectorBitWidth(param1);
     assert(getVectorBitWidth(param2) == vectorWidth);
     unsigned fvN = vectorWidth / fw;
-    unsigned svN = ARM_SVE_min_width / fw;
+    unsigned svN = SVE_min_width / fw;
     unsigned fvChunkN = std::min(vectorWidth / fw, mNativeBitBlockWidth / fw);
     IntegerType *fTy = getIntNTy(fw);
     FixedVectorType *fvTy = FixedVectorType::get(fTy, fvN);
@@ -155,9 +155,9 @@ llvm::Value *IDISA_SVE_Builder::encapsulateScalableBinary(unsigned fw, llvm::Val
     return result;
 }
 
-llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
+llvm::Value *IDISA_SVE_Builder::simd_popcount_impl(unsigned fw, llvm::Value *a) {
     unsigned vectorWidth = getVectorBitWidth(a);
-    if ((vectorWidth >= ARM_SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+    if ((vectorWidth >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
         return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
             return CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
         });
@@ -166,9 +166,9 @@ llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
     }
 }
 
-llvm::Value *IDISA_SVE_Builder::simd_bitreverse(unsigned fw, llvm::Value *a) {
+llvm::Value *IDISA_SVE_Builder::simd_bitreverse_impl(unsigned fw, llvm::Value *a) {
     unsigned vectorWidth = getVectorBitWidth(a);
-    if ((vectorWidth >= ARM_SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+    if ((vectorWidth >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
         return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
             return CreateIntrinsic(Intrinsic::aarch64_sve_rbit, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
         });
@@ -177,9 +177,9 @@ llvm::Value *IDISA_SVE_Builder::simd_bitreverse(unsigned fw, llvm::Value *a) {
     }
 }
 
-llvm::Value *IDISA_SVE_Builder::esimd_mergeh(unsigned fw, llvm::Value *a, llvm::Value *b) {
+llvm::Value *IDISA_SVE_Builder::esimd_mergeh_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // unsigned vectorWidth = getVectorBitWidth(a);
-    // if ((vectorWidth >= ARM_SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+    // if ((vectorWidth >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
     //     return encapsulateScalableBinary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
     //         return CreateIntrinsic(Intrinsic::aarch64_sve_rbit, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
     //     });
@@ -187,51 +187,51 @@ llvm::Value *IDISA_SVE_Builder::esimd_mergeh(unsigned fw, llvm::Value *a, llvm::
     //     return IDISA_Builder::simd_bitreverse(fw, a);
     // }
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::esimd_mergeh(fw, a, b); });
+    return withNativeWidth(Neon_width, [=]() { return IDISA_Neon_Builder::esimd_mergeh_impl(fw, a, b); });
 }
 
-llvm::Value *IDISA_SVE_Builder::esimd_mergel(unsigned fw, llvm::Value *a, llvm::Value *b) {
+llvm::Value *IDISA_SVE_Builder::esimd_mergel_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::esimd_mergel(fw, a, b); });
+    return withNativeWidth(Neon_width, [=]() { return IDISA_Neon_Builder::esimd_mergel_impl(fw, a, b); });
 }
 
-llvm::Value *IDISA_SVE_Builder::hsimd_packh(unsigned fw, llvm::Value *a, llvm::Value *b) {
+llvm::Value *IDISA_SVE_Builder::hsimd_packh_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packh(fw, a, b); });
+    return withNativeWidth(Neon_width, [=]() { return IDISA_Neon_Builder::hsimd_packh_impl(fw, a, b); });
 }
 
-llvm::Value *IDISA_SVE_Builder::hsimd_packl(unsigned fw, llvm::Value *a, llvm::Value *b) {
+llvm::Value *IDISA_SVE_Builder::hsimd_packl_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packl(fw, a, b); });
+    return withNativeWidth(Neon_width, [=]() { return IDISA_Neon_Builder::hsimd_packl_impl(fw, a, b); });
 }
 
-llvm::Value *IDISA_SVE_Builder::hsimd_packus(unsigned fw, llvm::Value *a, llvm::Value *b) {
+llvm::Value *IDISA_SVE_Builder::hsimd_packus_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packus(fw, a, b); });
+    return withNativeWidth(Neon_width, [=]() { return IDISA_Neon_Builder::hsimd_packus_impl(fw, a, b); });
 }
 
-llvm::Value *IDISA_SVE_Builder::mvmd_shuffle(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
-                                             ShuffleMode m) {
+llvm::Value *IDISA_SVE_Builder::mvmd_shuffle_impl(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
+                                                  ShuffleMode m) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width,
-                           [=]() { return IDISA_ARM_Builder::mvmd_shuffle(fw, data_table, index_vector); });
+    return withNativeWidth(Neon_width,
+                           [=]() { return IDISA_Neon_Builder::mvmd_shuffle_impl(fw, data_table, index_vector); });
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_shuffle2(unsigned fw, llvm::Value *table0, llvm::Value *table1,
                                               llvm::Value *index_vector, ShuffleMode m) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width,
-                           [=]() { return IDISA_ARM_Builder::mvmd_shuffle2(fw, table0, table1, index_vector); });
+    return withNativeWidth(Neon_width,
+                           [=]() { return IDISA_Neon_Builder::mvmd_shuffle2(fw, table0, table1, index_vector); });
 }
 
-llvm::Value *IDISA_SVE_Builder::mvmd_compress(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
+llvm::Value *IDISA_SVE_Builder::mvmd_compress_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::mvmd_compress(fw, a, select_mask); });
+    return withNativeWidth(Neon_width, [=]() { return IDISA_Neon_Builder::mvmd_compress_impl(fw, a, select_mask); });
 }
 
-llvm::Value *IDISA_SVE_Builder::mvmd_expand(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
+llvm::Value *IDISA_SVE_Builder::mvmd_expand_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
     // TODO JL implement
-    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::mvmd_expand(fw, a, select_mask); });
+    return withNativeWidth(Neon_width, [=]() { return IDISA_Neon_Builder::mvmd_expand_impl(fw, a, select_mask); });
 }
 
 } // namespace IDISA

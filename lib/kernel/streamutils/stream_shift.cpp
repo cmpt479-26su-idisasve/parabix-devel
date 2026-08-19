@@ -195,24 +195,29 @@ void IndexedShiftBack::generateMultiBlockLogic(KernelBuilder & b, Value * const 
     //  Find the low markers of nonempty scan words.
     std::vector<Value *> highMarkerMask(mNumMarkerStreams);
     std::vector<Value *> updated(mNumMarkerStreams);
+    unsigned fw = indexMask->getType()->getPrimitiveSizeInBits();
+    VectorType *singleFieldTy = b.singletonVectorType(fw);
     for (unsigned i = 0; i < mNumMarkerStreams; i++) {
-        Value * const extractedLowMarkers = b.CreatePextract(lowMarkerMask[i], indexMask);
+        // Watch out for regression here, recently converted to single-field-vector pext -JL
+        Value *const extractedLowMarkers = b.simd_pext(fw, b.CreateBitCast(lowMarkerMask[i], singleFieldTy),
+                                                       b.CreateBitCast(indexMask, singleFieldTy));
         //  The low markers are shifted back to be deposited with the prior
         //  nonempty scanword.
-        Value * const shiftBackLowMarkers = b.CreateLShr(extractedLowMarkers, sz_ONE);
-        highMarkerMask[i] = b.CreatePdeposit(shiftBackLowMarkers, indexMask);
-        //b.CallPrintInt("shiftBackLowMarkers", shiftBackLowMarkers);
-        //b.CallPrintInt("highMarkerMask[i]", highMarkerMask[i]);
+        Value *const shiftBackLowMarkers = b.simd_slli(fw, extractedLowMarkers, 1);
+        highMarkerMask[i] =
+            b.CreateBitCast(b.simd_pdep(fw, shiftBackLowMarkers, indexMask), lowMarkerMask[i]->getType());
+        // b.CallPrintInt("shiftBackLowMarkers", shiftBackLowMarkers);
+        // b.CallPrintInt("highMarkerMask[i]", highMarkerMask[i]);
         //
-        //  If there is a marker at the lowest index position in this stride,
-        //  extract it to deposit at the recorded previous output position, if any.
-        Value * const lowIndexPositionMarker = b.CreateTrunc(extractedLowMarkers, b.getInt1Ty());
-        Value * const bitToUpdate = b.CreateSelect(lowIndexPositionMarker, bitPosition, b.allZeroes());
-        Value * const priorWrittenPtr = b.getOutputStreamBlockPtr("shiftResults", b.getSize(i), outputBlockOffset);
-        Value * const priorWritten = b.CreateBlockAlignedLoad(blockTy, priorWrittenPtr);
+        //   If there is a marker at the lowest index position in this stride,
+        //   extract it to deposit at the recorded previous output position, if any.
+        Value *const lowIndexPositionMarker = b.CreateTrunc(extractedLowMarkers, b.getInt1Ty());
+        Value *const bitToUpdate = b.CreateSelect(lowIndexPositionMarker, bitPosition, b.allZeroes());
+        Value *const priorWrittenPtr = b.getOutputStreamBlockPtr("shiftResults", b.getSize(i), outputBlockOffset);
+        Value *const priorWritten = b.CreateBlockAlignedLoad(blockTy, priorWrittenPtr);
         updated[i] = b.simd_or(bitToUpdate, priorWritten);
     }
-    Value * const inputBlock = b.CreateAdd(initialInputBlock, strideBlockOffset);
+    Value *const inputBlock = b.CreateAdd(initialInputBlock, strideBlockOffset);
     Value * const catchupBlocks = b.CreateSub(inputBlock, priorOutputBlock);
     b.CreateCondBr(b.CreateIsNotNull(catchupBlocks), outputCatchupLoop, strideLoop);
 

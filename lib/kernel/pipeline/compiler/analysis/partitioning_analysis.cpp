@@ -905,7 +905,7 @@ start_of_transfer_loop:
                     for (const auto e : make_iterator_range(out_edges(currentPartId, partGraph))) {
                         const BindingInfo & bi = partGraph[e];
                         if (bi.Producer == potentiallyTransferedKernel) {
-                            assert (bi.Consumer != -1);
+                            assert (bi.Consumer != -1U);
                             if (target(e, partGraph) == currentPartId) {
                                 knownLocalConsumers++;
                             }
@@ -1113,7 +1113,7 @@ start_of_transfer_loop:
                     vec.push_back(roots[0]);
                 } else {
                     const auto l = vec.size();
-                    for (auto j = 0; j < roots.size(); ++j) {
+                    for (auto j = 0U; j < roots.size(); ++j) {
                         vec.push_back(roots[j]);
                         enumerateAllOptions(vec);
                         vec.resize(l);
