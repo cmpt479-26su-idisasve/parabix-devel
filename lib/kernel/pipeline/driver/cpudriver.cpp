@@ -74,17 +74,19 @@ CPUDriver::CPUDriver(std::string && moduleName)
     }
     builder.setMAttrs(attrs);
 
-    mTarget.reset(builder.selectTarget());
-    if (mTarget == nullptr) {
+    std::unique_ptr<TargetMachine> TM(builder.selectTarget());
+    if (!TM) {
         throw std::runtime_error("Could not selectTarget");
     }
+    mTarget = TM.get();
 #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(21, 0, 0)
     auto triple = mTarget->getTargetTriple().getTriple();
 #else
     auto triple = mTarget->getTargetTriple();
 #endif
     const DataLayout DL(mTarget->createDataLayout());
-    mEngine.reset(builder.create(mTarget.release()));
+    // mEngine will own TM, but we can keep a reference in mTarget as long as mEngine is live
+    mEngine.reset(builder.create(TM.release()));
     if (mEngine == nullptr) {
         throw std::runtime_error("Could not create ExecutionEngine: " + errMessage);
     }
