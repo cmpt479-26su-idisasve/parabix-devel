@@ -23,11 +23,6 @@
 using namespace llvm;
 using namespace boost;
 using boost::container::flat_set;
-using IDISA::FixedVectorType;
-
-
-using boost::intrusive::detail::floor_log2;
-using boost::intrusive::detail::is_pow2;
 using boost::uuids::detail::sha1;
 
 namespace kernel {

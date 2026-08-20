@@ -285,7 +285,7 @@ void PipelineAnalysis::printBufferGraph(KernelBuilder & b, raw_ostream & out) co
             out << ':'
                 << ty->getArrayNumElements() << 'x';
             ty = ty->getArrayElementType();
-            ty = cast<IDISA::FixedVectorType>(ty)->getElementType();
+            ty = cast<llvm::FixedVectorType>(ty)->getElementType();
             out << ty->getIntegerBitWidth();
         }
 
@@ -586,12 +586,12 @@ void PipelineAnalysis::printBufferGraph(KernelBuilder & b, raw_ostream & out) co
         }
         // out << " {G" << pd.GlobalPortId << ",L" << pd.LocalPortId << '}';
 
-        size_t lookAhead = 0;
+        int lookAhead = 0;
         bool isZeroExtended = false;
         for (auto & attr : binding.getAttributes()) {
             switch (attr.getKind()) {
                 case AttrId::LookAhead:
-                    lookAhead = std::max(lookAhead, attr.amount());
+                    lookAhead = std::max<int>(lookAhead, attr.amount());
                     break;
                 case AttrId::ZeroExtended:
                     isZeroExtended = true;

@@ -43,7 +43,7 @@ void PipelineCompiler::addBufferHandlesToPipelineKernel(KernelBuilder & b, const
         }
 
         if (LLVM_UNLIKELY(mTraceDynamicBuffers && bn.canTrackBufferExpansionData())) {
-            const auto numOfConsumers = std::max(out_degree(streamSet, mConsumerGraph), 1UL);
+            // const auto numOfConsumers = std::max(out_degree(streamSet, mConsumerGraph), 1UL);
 
             // segment num  0
             // new capacity 1

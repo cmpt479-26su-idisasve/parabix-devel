@@ -63,7 +63,7 @@ public:
     unsigned getBitBlockWidth() const final;
 
     llvm::TargetMachine * getTargetMachine() {
-        return mTarget.get();
+        return mTarget;
     }
 
 protected:
@@ -104,7 +104,7 @@ protected:
 protected:
 
     std::unique_ptr<llvm::LLVMContext>                      mContext;
-    std::unique_ptr<llvm::TargetMachine>                    mTarget;
+    llvm::TargetMachine*                                    mTarget;
     llvm::Module * const                                    mMainModule;
     std::unique_ptr<kernel::KernelBuilder>                  mBuilder;
     std::unique_ptr<ParabixObjectCache>                     mObjectCache;

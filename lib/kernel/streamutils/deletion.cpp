@@ -251,32 +251,12 @@ void FieldCompressKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value
     std::vector<Value *> maskVec = streamutils::loadInputSelectionsBlock(b, {mMaskOp}, blockOffsetPhi);
     std::vector<Value *> input = streamutils::loadInputSelectionsBlock(b, mInputOps, blockOffsetPhi);
 
-    if (b.hasFeature(codegen::Feature::AVX_BMI2)) {
-        Type * fieldTy = b.getIntNTy(mFW);
-        const unsigned fieldsPerBlock = b.getBitBlockWidth()/mFW;
-        Value * extractionMask = b.fwCast(mFW, maskVec[0]);
-        std::vector<Value *> mask(fieldsPerBlock);
-        for (unsigned i = 0; i < fieldsPerBlock; i++) {
-            mask[i] = b.CreateExtractElement(extractionMask, b.getInt32(i));
-        }
-        for (unsigned j = 0; j < input.size(); ++j) {
-            Value * fieldVec = b.fwCast(mFW, input[j]);
-            Value * output = UndefValue::get(extractionMask->getType());
-            for (unsigned i = 0; i < fieldsPerBlock; i++) {
-                Value * field = b.CreateExtractElement(fieldVec, b.getInt32(i));
-                Value * compressed = b.CreatePextract(field, mask[i]);
-                // Pextract is returning 32-bit integers but fieldTy is 16 bit?
-                compressed = b.CreateZExtOrTrunc(compressed, fieldTy);
-                output = b.CreateInsertElement(output, compressed, b.getInt32(i));
-            }
-            output = b.CreateBitCast(output, b.getBitBlockType());
-            b.storeOutputStreamBlock("outputStreamSet", b.getInt32(j), blockOffsetPhi, output);
-        }
-    } else {
-        std::vector<Value *> output = b.simd_pext(mFW, input, maskVec[0]);
-        for (unsigned j = 0; j < output.size(); ++j) {
-            b.storeOutputStreamBlock("outputStreamSet", b.getInt32(j), blockOffsetPhi, output[j]);
-        }
+    // Removed a redundant-seeming specialization here for AVX_BMI2: it sure looked like it would end up calling
+    // through to the same simd_pext, but I can't 100% prove that the generic implementation is equivalent --
+    // just watch out for a regression here -JL
+    std::vector<Value *> output = b.simd_pext(mFW, input, maskVec[0]);
+    for (unsigned j = 0; j < output.size(); ++j) {
+        b.storeOutputStreamBlock("outputStreamSet", b.getInt32(j), blockOffsetPhi, output[j]);
     }
     Value * nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
     blockOffsetPhi->addIncoming(nextBlk, processLoopBody);
@@ -328,17 +308,19 @@ void PEXTFieldCompressKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::V
     PHINode * blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
     blockOffsetPhi->addIncoming(ZERO, entry);
     std::vector<Value *> mask(fieldsPerBlock);
+    VectorType * singleVecTy = b.singletonVectorType(mPEXTWidth);
     Value * extractionMaskPtr = b.getInputStreamBlockPtr("extractionMask", ZERO, blockOffsetPhi);
     for (unsigned i = 0; i < fieldsPerBlock; i++) {
-        mask[i] = b.CreateLoad(fieldTy, b.CreateGEP(fieldTy, extractionMaskPtr, b.getInt32(i)));
+        mask[i] = b.CreateLoad(singleVecTy, b.CreateGEP(fieldTy, extractionMaskPtr, b.getInt32(i)));
     }
     for (unsigned j = 0; j < mStreamCount; ++j) {
         Value * inputPtr = b.getInputStreamBlockPtr("inputStreamSet", b.getInt32(j), blockOffsetPhi);
         Value * outputPtr = b.getOutputStreamBlockPtr("outputStreamSet", b.getInt32(j), blockOffsetPhi);
         for (unsigned i = 0; i < fieldsPerBlock; i++) {
-            Value * field = b.CreateLoad(fieldTy, b.CreateGEP(fieldTy, inputPtr, b.getInt32(i)));
-            Value * compressed = b.CreatePextract(field, mask[i]);
-            b.CreateStore(compressed, b.CreateGEP(fieldTy, outputPtr, b.getInt32(i)));
+            Value *field = b.CreateLoad(singleVecTy, b.CreateGEP(singleVecTy, inputPtr, b.getInt32(i)));
+            // Watch out for regression here, recently converted to single-field-vector pext -JL
+            Value *compressed = b.simd_pext(mPEXTWidth, field, mask[i]);
+            b.CreateStore(compressed, b.CreateGEP(singleVecTy, outputPtr, b.getInt32(i)));
         }
     }
     Value * nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
@@ -1112,18 +1094,18 @@ Returns:
 
 SwizzledDeleteByPEXTkernel::SwizzleSets SwizzledDeleteByPEXTkernel::makeSwizzleSets(KernelBuilder & b, llvm::Value * const selectors, Value * const strideIndex) {
 
+    VectorType * const vecTy = b.fwVectorType(mPEXTWidth);
+    VectorType * const singleVecTy = b.singletonVectorType(mPEXTWidth);
+
     Value * const m = b.fwCast(mPEXTWidth, selectors);
 
     std::vector<Value *> masks(mSwizzleFactor);
     for (unsigned i = 0; i < mSwizzleFactor; i++) {
-        masks[i] = b.CreateExtractElement(m, i);
-
+        masks[i] = b.CreateIntrinsic(Intrinsic::vector_extract, {singleVecTy, vecTy}, {m, b.getInt32(i)});
     }
 
     SwizzleSets swizzleSets;
     swizzleSets.reserve(mSwizzleSetCount);
-
-    VectorType * const vecTy = b.fwVectorType(mPEXTWidth);
 
     UndefValue * const outputInitializer = UndefValue::get(vecTy);
 
@@ -1148,12 +1130,15 @@ SwizzledDeleteByPEXTkernel::SwizzleSets SwizzledDeleteByPEXTkernel::makeSwizzleS
         for (unsigned j = 0; j < mSwizzleFactor; j++) {
             for (unsigned k = 0; k < mSwizzleFactor; k++) {
                 // Load block j,k
-                Value * const field = b.CreateExtractElement(input[j], k);
+                Value *const fieldVec =
+                    b.CreateIntrinsic(Intrinsic::vector_extract, {singleVecTy, vecTy}, {input[j], b.getInt32(k)});
                 // Apply PEXT deletion
-                Value * const selected = b.CreatePextract(field, masks[k]);
+                // Watch out for regression here, recently converted to single-field-vector pext -JL
+                Value *const selected = b.simd_pext(mPEXTWidth, fieldVec, masks[k]);
 
                 // Then store it as our k,j-th output
-                output[k] = b.CreateInsertElement(output[k], selected, j);
+                output[k] = b.CreateIntrinsic(Intrinsic::vector_insert, {vecTy, singleVecTy},
+                                              {output[k], selected, b.getInt32(j)});
             }
         }
         swizzleSets.emplace_back(output);
@@ -1181,10 +1166,12 @@ void DeleteByPEXTkernel::generateFinalBlockMethod(KernelBuilder & b, Value * rem
 }
 
 void DeleteByPEXTkernel::generateProcessingLoop(KernelBuilder & b, Value * delMask) {
+    VectorType * const singleVecTy = b.singletonVectorType(mPEXTWidth);
+    VectorType * const vecTy = b.fwVectorType(mPEXTWidth);
     std::vector<Value *> masks(mSwizzleFactor);
     Value * const m = b.fwCast(mPEXTWidth, b.simd_not(delMask));
     for (unsigned i = 0; i < mSwizzleFactor; i++) {
-        masks[i] = b.CreateExtractElement(m, i);
+        masks[i] = b.CreateIntrinsic(Intrinsic::vector_extract, {singleVecTy, vecTy}, {m, b.getInt32(i)});
     }
 
     for (unsigned i = 0; i < mStreamCount; ++i) {
@@ -1192,9 +1179,11 @@ void DeleteByPEXTkernel::generateProcessingLoop(KernelBuilder & b, Value * delMa
         Value * value = b.fwCast(mPEXTWidth, input);
         Value * output = UndefValue::get(value->getType());
         for (unsigned j = 0; j < mSwizzleFactor; j++) {
-            Value * field = b.CreateExtractElement(value, j);
-            Value * const compressed = b.CreatePextract(field, masks[j]);
-            output = b.CreateInsertElement(output, compressed, j);
+            Value *field = b.CreateIntrinsic(Intrinsic::vector_extract, {singleVecTy, vecTy}, {value, b.getInt32(j)});
+                // Watch out for regression here, recently converted to single-field-vector pext -JL
+            Value *const compressed = b.simd_pext(mPEXTWidth, field, masks[j]);
+            output =
+                b.CreateIntrinsic(Intrinsic::vector_insert, {vecTy, singleVecTy}, {output, compressed, b.getInt32(j)});
         }
         b.storeOutputStreamBlock("outputStreamSet", b.getInt32(i), output);
     }
@@ -1373,7 +1362,6 @@ FilterByMaskKernel::FilterByMaskKernel(LLVMTypeSystemInterface & ts,
 }
 
 void FilterByMaskKernel::generateMultiBlockLogic(KernelBuilder & kb, llvm::Value * const numOfStrides) {
-    const auto Use_BMI_PEXT = kb.hasFeature(codegen::Feature::AVX_BMI2);
     assert ((mStride % kb.getBitBlockWidth()) == 0);
     Constant * const sz_BLOCKS_PER_STRIDE = kb.getSize(mStride/kb.getBitBlockWidth());
     Constant * const sz_ZERO = kb.getSize(0);
@@ -1443,9 +1431,8 @@ void FilterByMaskKernel::generateMultiBlockLogic(KernelBuilder & kb, llvm::Value
     }
     std::vector<Value *> input = streamutils::loadInputSelectionsBlock(kb, mInputOps, strideBlockIndex);
     for (unsigned j = 0; j < input.size(); ++j) {
-        if (!Use_BMI_PEXT) {
-            input[j] = kb.simd_pext(mFW, input[j], extractionMask);
-        }
+        // Watch out for regression here, recently modified that BMI PEXT is embedded in simd_pext -JL
+        input[j] = kb.simd_pext(mFW, input[j], extractionMask);
 
         input[j] = kb.fwCast(mFW, input[j]);
     }
@@ -1466,9 +1453,7 @@ void FilterByMaskKernel::generateMultiBlockLogic(KernelBuilder & kb, llvm::Value
         Value * const fieldIndex = kb.CreateLShr(kb.CreateAnd(producedOffset, BLOCK_WIDTH_MASK), LOG_2_FIELD_WIDTH);
         if (mStreamCount < MIN_STREAMS_TO_SWIZZLE) {
             for (unsigned j = 0; j < input.size(); ++j) {
-                Value * field = kb.CreateExtractElement(input[j], kb.getInt32(i));
-                Value * compressed =
-                    Use_BMI_PEXT ? kb.CreatePextract(field, mask[i]) : field;
+                Value * compressed = kb.CreateExtractElement(input[j], kb.getInt32(i));
                 Value * const shiftedItems = kb.CreateShl(compressed, kb.CreateZExtOrTrunc(pendingOffset, fieldTy));
                 Value * const combined = kb.CreateOr(pendingData[j], shiftedItems);
                 Value * outputPtr = kb.getOutputStreamBlockPtr("filteredOutput", kb.getInt32(j), outputBlock);
@@ -1484,8 +1469,7 @@ void FilterByMaskKernel::generateMultiBlockLogic(KernelBuilder & kb, llvm::Value
             std::vector<Value *> swizzles(mPendingSetCount, ConstantInt::getNullValue(blockTy));
             for (unsigned j = 0; j < input.size(); ++j) {
                 unsigned swizzleNo = j/mFieldsPerBlock;
-                Value * field = kb.CreateExtractElement(input[j], kb.getInt32(i));
-                Value * compressed = Use_BMI_PEXT ? kb.CreatePextract(field, mask[i]) : field;
+                Value * compressed = kb.CreateExtractElement(input[j], kb.getInt32(i));
                 swizzles[swizzleNo] = kb.CreateInsertElement(swizzles[swizzleNo], compressed, j%mFieldsPerBlock);
             }
             // Field compression into the swizzles is now complete.   Next we apply

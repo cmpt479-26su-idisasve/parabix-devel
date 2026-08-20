@@ -9,7 +9,7 @@ set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++-15)
 # where is the target environment located
 # this path should look like a root path -- it should have bin, include, lib, share dirs
 # those dirs should contain cross-built libraries for all the dependencies we need
-set(CMAKE_FIND_ROOT_PATH ../aarch64/target /usr/aarch64-linux-gnu)
+set(CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../aarch64/target /usr/aarch64-linux-gnu)
 
 # adjust the default behavior of the FIND_XXX() commands:
 # search programs in the host environment

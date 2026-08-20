@@ -6,6 +6,7 @@
 #include <toolchain/toolchain.h>
 #include <ucd/core/UCD_Config.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/FileSystem.h>
 #if LLVM_VERSION_INTEGER >= LLVM_VERSION_CODE(17, 0, 0)
 #include <llvm/TargetParser/Host.h>
 #else
@@ -13,6 +14,7 @@
 #endif
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/ADT/StringRef.h>
+#include <boost/algorithm/string.hpp>
 #include <boost/interprocess/mapped_region.hpp>
 #include <thread>
 
@@ -54,9 +56,9 @@ llvm::StringMap<bool> GetFeatureNames() {
     if (!CPUFeatureOptions.empty()) {
         llvm::StringRef ref(CPUFeatureOptions);
         while (!ref.empty()) {
-            llvm::StringRef feature;
-            std::tie(feature, ref) = ref.split(',');
-            feature = feature.trim();
+            llvm::StringRef raw;
+            std::tie(raw, ref) = ref.split(',');
+            llvm::StringRef feature = raw.trim().lower();
             if (feature.size() > 1) {
                 char op = feature[0];
                 if (op == '+' || op == '-') {
@@ -445,6 +447,15 @@ void ParseCommandLineOptions(int argc, const char * const *argv, std::initialize
     cl::ParseCommandLineOptions(argc, argv);
     if(BlockSize == 0) {
         BlockSize = DefaultBlockSizeForFeatures(MapFeatureNames(GetFeatureNames()));
+    }
+    if ((ShowUnoptimizedIROption != OmittedOption) && !ShowUnoptimizedIROption.empty()) {
+        llvm::sys::fs::remove(ShowUnoptimizedIROption);
+    }
+    if ((ShowIROption != OmittedOption) && !ShowIROption.empty()) {
+        llvm::sys::fs::remove(ShowIROption);
+    }
+    if ((ShowASMOption != OmittedOption) && !ShowASMOption.empty()) {
+        llvm::sys::fs::remove(ShowASMOption);
     }
 //    if (LLVM_UNLIKELY(!PabloIllustrateBitstreamRegEx.empty() || IllustratorDisplay != 0)) {
 //        EnableIllustrator = true;
