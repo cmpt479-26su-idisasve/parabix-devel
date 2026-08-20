@@ -66,18 +66,11 @@ CPUDriver::CPUDriver(std::string && moduleName)
     builder.setTargetOptions(codegen::target_Options);
     builder.setOptLevel(codegen::BackEndOptLevel);
 
-    #if LLVM_VERSION_INTEGER < LLVM_VERSION_CODE(19, 0, 0)
-    StringMap<bool> features;
-    sys::getHostCPUFeatures(features);
-    #else
-    const StringMap<bool> features = sys::getHostCPUFeatures();
-    #endif
+    const StringMap<bool> features = codegen::GetFeatureNames();
 
     std::vector<std::string> attrs;
     for (auto & flag : features) {
-        if (flag.second) {
-            attrs.push_back("+" + flag.first().str());
-        }
+        attrs.push_back((flag.second ? "+" : "-") + flag.first().str());
     }
     builder.setMAttrs(attrs);
 

@@ -92,18 +92,7 @@ llvm::GlobalVariable * getOrCreateFieldPermuteTable(llvm::Module * mod, llvm::LL
 
 namespace IDISA {
 
-std::string IDISA_ARM_Builder::getBuilderUniqueName() { 
-    std::stringstream uname;
-    uname << "ARM_Neon";
-    if (mBitBlockWidth != ARM_Neon_width) {
-        uname << "_" << mBitBlockWidth;
-    }
-    if (IDISA::IDISA_Experiment != "") {
-        uname << IDISA::IDISA_Experiment;
-    }
-    return uname.str();
-}
-
+DEFINE_BUILDER_CACHE_NAME(IDISA_ARM_Builder, "ARM_Neon", ARM_Neon_width)
 
 Value* IDISA_ARM_Builder::simd_popcount(unsigned fw, Value * a) {
     if (getVectorBitWidth(a) != ARM_Neon_width || fw < 8 || fw % 8 != 0) {

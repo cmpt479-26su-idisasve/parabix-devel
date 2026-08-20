@@ -1,0 +1,54 @@
+#!/bin/bash
+
+OPS=(
+    simd_add
+    simd_sub
+    simd_mult
+    simd_eq
+    simd_ne
+    simd_gt
+    simd_ugt
+    simd_ge
+    simd_uge
+    simd_lt
+    simd_le
+    simd_ult
+    simd_ule
+    simd_max
+    simd_min
+    simd_umax
+    simd_umin
+    simd_sllv
+    simd_srlv
+    simd_rotl
+    simd_rotr
+    simd_pext
+    simd_pdep
+    hsimd_packh
+    hsimd_packl
+    hsimd_packus
+    hsimd_packss
+    esimd_mergeh
+    esimd_mergel
+    mvmd_shuffle
+    mvmd_shuffleO
+    mvmd_shuffleH
+    mvmd_compress
+    mvmd_expand
+    mvmd_dslli
+)
+
+IDISA_TEST="$1"
+if [ -z "${IDISA_TEST}" ]; then
+    IDISA_TEST=build-cross-aarch64/bin/idisa_test
+fi
+
+for OP in ${OPS[@]}; do
+    echo "--- Testing operation ${OP} ---"
+    for FW in 32 8 64 1 2 4 16; do
+        ${IDISA_TEST} $2 $3 $4 $5 \
+            $OP $FW TestOutput/vec1 TestOutput/vec2 \
+            2>&1 | tee "TestOutput/${OP}${FW}.result" &
+    done
+    wait
+done

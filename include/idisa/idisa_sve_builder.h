@@ -11,7 +11,7 @@ class IDISA_SVE_Builder : public IDISA_ARM_Builder {
   public:
     unsigned NativeBitBlockWidth();
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
 
     llvm::Value *simd_popcount(unsigned fw, llvm::Value *a) override;
     llvm::Value *simd_bitreverse(unsigned fw, llvm::Value *a) override;
@@ -31,19 +31,10 @@ class IDISA_SVE_Builder : public IDISA_ARM_Builder {
     ~IDISA_SVE_Builder() = default;
 
   private:
+    template <class F> llvm::Value *withNativeWidth(unsigned tempWidth, F &&f);
+    template <class F> llvm::Value *encapsulateScalableUnary(unsigned fw, llvm::Value *param, F &&createOp);
     template <class F>
-    llvm::Value *with_native_width(unsigned temp_width, F &&f) {
-        unsigned real_width = mNativeBitBlockWidth;
-        try {
-            const_cast<unsigned &>(mNativeBitBlockWidth) = temp_width;
-            llvm::Value *result = f();
-            const_cast<unsigned &>(mNativeBitBlockWidth) = real_width;
-            return result;
-        } catch (...) {
-            const_cast<unsigned &>(mNativeBitBlockWidth) = real_width;
-            throw;
-        }
-    }
+    llvm::Value *encapsulateScalableBinary(unsigned fw, llvm::Value *param1, llvm::Value *param2, F &&createOp);
 };
 
 } // namespace IDISA

@@ -18,41 +18,9 @@ using namespace llvm;
 
 namespace IDISA {
 
-std::string IDISA_SSE_Builder::getBuilderUniqueName() {
-    std::stringstream uname;
-    uname << "SSE2";
-    if (mBitBlockWidth != SSE_width) {
-        uname << "_" << mBitBlockWidth;
-    }
-    if (IDISA::IDISA_Experiment != "") {
-        uname << IDISA::IDISA_Experiment;
-    }
-    return uname.str();
-}
-
-std::string IDISA_SSE2_Builder::getBuilderUniqueName() {
-    std::stringstream uname;
-    uname << "SSE2";
-    if (mBitBlockWidth != SSE_width) {
-        uname << "_" << mBitBlockWidth;
-    }
-    if (IDISA::IDISA_Experiment != "") {
-        uname << IDISA::IDISA_Experiment;
-    }
-    return uname.str();
-}
-
-std::string IDISA_SSSE3_Builder::getBuilderUniqueName() {
-    std::stringstream uname;
-    uname << "SSSE3";
-    if (mBitBlockWidth != SSE_width) {
-        uname << "_" << mBitBlockWidth;
-    }
-    if (IDISA::IDISA_Experiment != "") {
-        uname << IDISA::IDISA_Experiment;
-    }
-    return uname.str();
-}
+DEFINE_BUILDER_CACHE_NAME(IDISA_SSE_Builder, "SSE", SSE_width)
+DEFINE_BUILDER_CACHE_NAME(IDISA_SSE2_Builder, "SSE2", SSE_width)
+DEFINE_BUILDER_CACHE_NAME(IDISA_SSSE3_Builder, "SSSE3", SSE_width)
 
 Value * IDISA_SSE_Builder::hsimd_signmask(const unsigned fw, Value * a) {
     // Produces wrong result on AVX2 with fw = 16

@@ -17,7 +17,7 @@ public:
 
     IDISA_SSE_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
     llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
     llvm::Value * mvmd_compress(unsigned fw, llvm::Value * a, llvm::Value * select_mask) override;
 };
@@ -28,7 +28,7 @@ public:
 
     IDISA_SSE2_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
     llvm::Value * hsimd_signmask(unsigned fw, llvm::Value * a) override;
     llvm::Value * hsimd_packh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * hsimd_packl(unsigned fw, llvm::Value * a, llvm::Value * b) override;
@@ -44,7 +44,7 @@ public:
 
     IDISA_SSSE3_Builder(): IDISA_Builder(DONTUSE_CONSTRUCTOR()) {}
 
-    virtual std::string getBuilderUniqueName() override;
+    virtual std::string getBuilderCacheName() override;
     llvm::Value * esimd_mergeh(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * esimd_mergel(unsigned fw, llvm::Value * a, llvm::Value * b) override;
     llvm::Value * mvmd_shuffle(unsigned fw, llvm::Value * data_table, llvm::Value * index_vector,

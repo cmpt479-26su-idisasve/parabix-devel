@@ -3,6 +3,7 @@
  *  SPDX-License-Identifier: OSL-3.0
  */
 
+#include "idisa/idisa_builder.h"
 #include <idisa/idisa_sve_builder.h>
 #include <kernel/core/kernel_builder.h>
 #include <toolchain/toolchain.h>
@@ -15,8 +16,33 @@ using namespace llvm;
 
 namespace IDISA {
 
+static svpattern PatternForVectorLength(unsigned svN) {
+    switch (svN) {
+    case 1:
+        return SV_VL1;
+    case 2:
+        return SV_VL2;
+    case 4:
+        return SV_VL4;
+    case 8:
+        return SV_VL8;
+    case 16:
+        return SV_VL16;
+    case 32:
+        return SV_VL32;
+    case 64:
+        return SV_VL64;
+    case 128:
+        return SV_VL128;
+    case 256:
+        return SV_VL256;
+    default:
+        report_fatal_error(StringRef("simd_popcount: Vector size has no predicate pattern: ") + std::to_string(svN));
+    }
+}
+
 unsigned IDISA_SVE_Builder::NativeBitBlockWidth() {
-#if 0
+#if 1
     // This unfortunately doesn't work: LLVM doesn't know what to do with big fixed vectors
     return codegen::HostSVEBitWidth();
 #else
@@ -24,123 +50,188 @@ unsigned IDISA_SVE_Builder::NativeBitBlockWidth() {
 #endif
 }
 
-std::string IDISA_SVE_Builder::getBuilderUniqueName() { return "SVE"; }
+DEFINE_BUILDER_CACHE_NAME(IDISA_SVE_Builder, "ARM_SVE_VL" + std::to_string(mNativeBitBlockWidth), mNativeBitBlockWidth)
+
+template <class F> llvm::Value *IDISA_SVE_Builder::withNativeWidth(unsigned tempWidth, F &&f) {
+    unsigned realWidth = mNativeBitBlockWidth;
+    try {
+        const_cast<unsigned &>(mNativeBitBlockWidth) = tempWidth;
+        llvm::Value *result = f();
+        const_cast<unsigned &>(mNativeBitBlockWidth) = realWidth;
+        return result;
+    } catch (...) {
+        const_cast<unsigned &>(mNativeBitBlockWidth) = realWidth;
+        throw;
+    }
+}
+
+template <class F>
+llvm::Value *IDISA_SVE_Builder::encapsulateScalableUnary(unsigned fw, llvm::Value *param, F &&createOp) {
+    unsigned vectorWidth = getVectorBitWidth(param);
+    unsigned fvN = vectorWidth / fw;
+    unsigned svN = ARM_SVE_min_width / fw;
+    unsigned fvChunkN = std::min(vectorWidth / fw, mNativeBitBlockWidth / fw);
+    IntegerType *fTy = getIntNTy(fw);
+    FixedVectorType *fvTy = FixedVectorType::get(fTy, fvN);
+    FixedVectorType *fvChunkTy = FixedVectorType::get(fTy, fvChunkN);
+    ScalableVectorType *svTy = ScalableVectorType::get(fTy, svN);
+    ScalableVectorType *svPTy = ScalableVectorType::get(getInt1Ty(), svN);
+
+    unsigned nChunks = fvN / fvChunkN;
+
+    Value *pred =
+        CreateIntrinsic(Intrinsic::aarch64_sve_ptrue, {svPTy}, {getIntN(32, PatternForVectorLength(fvChunkN))});
+    Value *result = PoisonValue::get(fvTy);
+
+    // In theory, our block width could be bigger than the SVE registers; in that case we must repeat the operation
+    // multiple times.
+    for (unsigned i = 0; i < nChunks; ++i) {
+        // If we're NOT iterating, the input is just the whole fixed param, otherwise extract the appropriate chunk
+        Value *inputFixedChunk = (nChunks == 1) ? param
+                                                : CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, fvTy},
+                                                                  {param, getIntN(64, i * fvChunkN)});
+        // Fixed vector converted to scalable via insert
+        Value *inputScalableChunk = CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
+                                                    {PoisonValue::get(svTy), inputFixedChunk, getIntN(64, 0)});
+        Value *resultScalableChunk = createOp(svTy, pred, inputScalableChunk);
+        // Scalable vector converted to fixed via extract
+        Value *resultFixedChunk =
+            CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, svTy}, {resultScalableChunk, getIntN(64, 0)});
+        // If we're NOT iterating, result is the fixed chunk directly, otherwise build the full result up in the
+        // result value
+        result = (nChunks == 1) ? resultFixedChunk
+                                : CreateIntrinsic(Intrinsic::vector_insert, {fvTy, fvChunkTy},
+                                                  {result, resultFixedChunk, getIntN(64, i * fvChunkN)});
+    }
+    return result;
+}
+
+template <class F>
+llvm::Value *IDISA_SVE_Builder::encapsulateScalableBinary(unsigned fw, llvm::Value *param1, llvm::Value *param2,
+                                                          F &&createOp) {
+    unsigned vectorWidth = getVectorBitWidth(param1);
+    assert(getVectorBitWidth(param2) == vectorWidth);
+    unsigned fvN = vectorWidth / fw;
+    unsigned svN = ARM_SVE_min_width / fw;
+    unsigned fvChunkN = std::min(vectorWidth / fw, mNativeBitBlockWidth / fw);
+    IntegerType *fTy = getIntNTy(fw);
+    FixedVectorType *fvTy = FixedVectorType::get(fTy, fvN);
+    FixedVectorType *fvChunkTy = FixedVectorType::get(fTy, fvChunkN);
+    ScalableVectorType *svTy = ScalableVectorType::get(fTy, svN);
+    ScalableVectorType *svPTy = ScalableVectorType::get(getInt1Ty(), svN);
+
+    unsigned nChunks = fvN / fvChunkN;
+
+    Value *pred =
+        CreateIntrinsic(Intrinsic::aarch64_sve_ptrue, {svPTy}, {getIntN(32, PatternForVectorLength(fvChunkN))});
+    Value *result = PoisonValue::get(fvTy);
+
+    // In theory, our block width could be bigger than the SVE registers; in that case we must repeat the operation
+    // multiple times.
+    for (unsigned i = 0; i < nChunks; ++i) {
+        // If we're NOT iterating, the input is just the whole fixed param, otherwise extract the appropriate chunk
+        Value *inputFixedChunk1 = (nChunks == 1) ? param1
+                                                 : CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, fvTy},
+                                                                   {param1, getIntN(64, i * fvChunkN)});
+        Value *inputFixedChunk2 = (nChunks == 1) ? param2
+                                                 : CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, fvTy},
+                                                                   {param2, getIntN(64, i * fvChunkN)});
+        // Fixed vector converted to scalable via insert
+        Value *inputScalableChunk1 = CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
+                                                     {PoisonValue::get(svTy), inputFixedChunk1, getIntN(64, 0)});
+        Value *inputScalableChunk2 = CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
+                                                     {PoisonValue::get(svTy), inputFixedChunk2, getIntN(64, 0)});
+
+        Value *resultScalableChunk = createOp(svTy, pred, inputScalableChunk1, inputScalableChunk2);
+        // Scalable vector converted to fixed via extract
+        Value *resultFixedChunk =
+            CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, svTy}, {resultScalableChunk, getIntN(64, 0)});
+        // If we're NOT iterating, result is the fixed chunk directly, otherwise build the full result up in the
+        // result value
+        result = (nChunks == 1) ? resultFixedChunk
+                                : CreateIntrinsic(Intrinsic::vector_insert, {fvTy, fvChunkTy},
+                                                  {result, resultFixedChunk, getIntN(64, i * fvChunkN)});
+    }
+    return result;
+}
 
 llvm::Value *IDISA_SVE_Builder::simd_popcount(unsigned fw, llvm::Value *a) {
-    // TODO JL make a fallback for fw<8 and fw>64..?
-    // ScalableVectorType::get(getInt8Ty(), fw, )
-
-    // With SVE it's actually okay to synthesize smaller chunks than "native"
-    assert(mNativeBitBlockWidth <= NativeBitBlockWidth());
-    assert(mNativeBitBlockWidth >= fw);
-
     unsigned vectorWidth = getVectorBitWidth(a);
-    if (vectorWidth > mNativeBitBlockWidth) {
-        // Let IDISA_Builder split the instruction up -- it should call
-        // back into us with operations on smaller chunks
-        return IDISA_Builder::simd_popcount(fw, a);
-    }
-    if ((vectorWidth <= mNativeBitBlockWidth) && (fw >= 8) && (fw <= 64)) {
-        unsigned svN = mNativeBitBlockWidth / fw;
-        IntegerType *fTy = getIntNTy(fw);
-        FixedVectorType *vTy = FixedVectorType::get(fTy, svN);
-        ScalableVectorType *svTy = ScalableVectorType::get(fTy, svN);
-        ScalableVectorType *svPTy = ScalableVectorType::get(getInt1Ty(), svN);
-
-        Function *svePtrue = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_sve_ptrue, {svPTy});
-        // Function *svePtrue = Intrinsic::getOrInsertDeclaration(
-        //     getModule(), Intrinsic::aarch64_sve_whilelo, {vTy, svTy});
-
-        Function *vectorExtract =
-            Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::vector_extract, {vTy, svTy});
-        Function *vectorInsert = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::vector_insert, {svTy, vTy});
-        Function *sveCnt = Intrinsic::getOrInsertDeclaration(getModule(), Intrinsic::aarch64_sve_cnt, {svTy});
-        // Constant *i64Zero = ConstantInt::get(getIntNTy(64), 0);
-        Constant *i64Zero = Constant::getNullValue(getIntNTy(64));
-        svpattern pattern;
-        // clang-format off
-        switch (svN) {
-            case 1:   pattern = SV_VL1;   break;
-            case 2:   pattern = SV_VL2;   break;
-            case 4:   pattern = SV_VL4;   break;
-            case 8:   pattern = SV_VL8;   break;
-            case 16:  pattern = SV_VL16;  break;
-            case 32:  pattern = SV_VL32;  break;
-            case 64:  pattern = SV_VL64;  break;
-            case 128: pattern = SV_VL128; break;
-            case 256: pattern = SV_VL256; break;
-            default:  pattern = SV_ALL;   break;
-        }
-        // clang-format on
-        if (pattern == SV_ALL) {
-            report_fatal_error(StringRef("simd_popcount: Vector size has no predicate pattern: ") +
-                               std::to_string(svN));
-        }
-        Constant *i32PredPat = ConstantInt::get(getIntNTy(32), pattern);
-
-        Value *v1 = CreateCall(vectorInsert->getFunctionType(), vectorInsert, {UndefValue::get(svTy), a, i64Zero});
-        Value *pred = CreateCall(svePtrue->getFunctionType(), svePtrue, {i32PredPat});
-        Value *v2 = CreateCall(sveCnt->getFunctionType(), sveCnt, {UndefValue::get(svTy), pred, v1});
-        Value *v3 = CreateCall(vectorExtract->getFunctionType(), vectorExtract, {v2, i64Zero});
-
-        return v3;
+    if ((vectorWidth >= ARM_SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
+            return CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
+        });
     } else {
-        return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::simd_popcount(fw, a); });
+        return IDISA_Builder::simd_popcount(fw, a);
     }
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_bitreverse(unsigned fw, llvm::Value *a) {
-    // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::simd_bitreverse(fw, a); });
+    unsigned vectorWidth = getVectorBitWidth(a);
+    if ((vectorWidth >= ARM_SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
+            return CreateIntrinsic(Intrinsic::aarch64_sve_rbit, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
+        });
+    } else {
+        return IDISA_Builder::simd_bitreverse(fw, a);
+    }
 }
 
 llvm::Value *IDISA_SVE_Builder::esimd_mergeh(unsigned fw, llvm::Value *a, llvm::Value *b) {
+    // unsigned vectorWidth = getVectorBitWidth(a);
+    // if ((vectorWidth >= ARM_SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+    //     return encapsulateScalableBinary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
+    //         return CreateIntrinsic(Intrinsic::aarch64_sve_rbit, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
+    //     });
+    // } else {
+    //     return IDISA_Builder::simd_bitreverse(fw, a);
+    // }
     // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::esimd_mergeh(fw, a, b); });
+    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::esimd_mergeh(fw, a, b); });
 }
 
 llvm::Value *IDISA_SVE_Builder::esimd_mergel(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::esimd_mergel(fw, a, b); });
+    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::esimd_mergel(fw, a, b); });
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packh(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packh(fw, a, b); });
+    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packh(fw, a, b); });
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packl(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packl(fw, a, b); });
+    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packl(fw, a, b); });
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packus(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packus(fw, a, b); });
+    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::hsimd_packus(fw, a, b); });
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_shuffle(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
                                              ShuffleMode m) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width,
-                             [=]() { return IDISA_ARM_Builder::mvmd_shuffle(fw, data_table, index_vector); });
+    return withNativeWidth(ARM_Neon_width,
+                           [=]() { return IDISA_ARM_Builder::mvmd_shuffle(fw, data_table, index_vector); });
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_shuffle2(unsigned fw, llvm::Value *table0, llvm::Value *table1,
                                               llvm::Value *index_vector, ShuffleMode m) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width,
-                             [=]() { return IDISA_ARM_Builder::mvmd_shuffle2(fw, table0, table1, index_vector); });
+    return withNativeWidth(ARM_Neon_width,
+                           [=]() { return IDISA_ARM_Builder::mvmd_shuffle2(fw, table0, table1, index_vector); });
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_compress(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::mvmd_compress(fw, a, select_mask); });
+    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::mvmd_compress(fw, a, select_mask); });
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_expand(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
     // TODO JL implement
-    return with_native_width(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::mvmd_expand(fw, a, select_mask); });
+    return withNativeWidth(ARM_Neon_width, [=]() { return IDISA_ARM_Builder::mvmd_expand(fw, a, select_mask); });
 }
 
 } // namespace IDISA
