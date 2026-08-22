@@ -3,7 +3,6 @@
  *  SPDX-License-Identifier: OSL-3.0
  */
 
-#include "idisa/idisa_neon_builder.h"
 #include <idisa/idisa_sve_builder.h>
 #include <kernel/core/kernel_builder.h>
 #include <toolchain/toolchain.h>

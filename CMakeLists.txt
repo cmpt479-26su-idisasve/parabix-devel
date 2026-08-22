@@ -165,8 +165,10 @@ endif()
 # Require that compilers support all features of C17 and C++17.
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS ON)
 
 # Define `CXX_STANDARD` to enable conditional compilation based on standard version.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCXX_STANDARD=${CMAKE_CXX_STANDARD}")
@@ -426,6 +428,7 @@ if (GENERATE_TOOLS)
     add_subdirectory(tools/base64)
     add_subdirectory(tools/editd)
     add_subdirectory(tools/icgrep)
+    add_subdirectory(tools/idisa_exerciser)
     add_subdirectory(tools/idisa_test)
     add_subdirectory(tools/json)
     add_subdirectory(tools/lex)
