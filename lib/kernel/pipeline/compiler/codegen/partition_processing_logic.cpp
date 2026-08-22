@@ -735,8 +735,6 @@ void PipelineCompiler::checkForPartitionExit(KernelBuilder & b) {
             mCycleCounters[TOTAL_TIME] = mPartitionStartTimePhi[nextPartitionId];
         }
 
-        const auto n = LastStreamSet - FirstStreamSet + 1U;
-
         for (auto streamSet = FirstStreamSet; streamSet <= LastStreamSet; ++streamSet) {
             PHINode * const phi = mPartitionProducedItemCountPhi[nextPartitionId][streamSet - FirstStreamSet];
             if (phi) {

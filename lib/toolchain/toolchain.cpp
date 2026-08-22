@@ -416,7 +416,7 @@ bool LLVM_READONLY AnyAssertionOptionIsSet() {
 
 const char * ProgramName;
 
-inline bool disableObjectCacheDueToCommandLineOptions() {
+static inline bool disableObjectCacheDueToCommandLineOptions() {
     if (!TraceOption.empty()) return true;
     if (JIT_InfoFlags.isSet(PrintKernelSizes)) return true;
     if (JIT_InfoFlags.isSet(PrintPipelineGraph)) return true;
@@ -428,7 +428,7 @@ inline bool disableObjectCacheDueToCommandLineOptions() {
     return false;
 }
 
-inline bool disablePipelineObjectCacheDueToCommandLineOptions() {
+static inline bool disablePipelineObjectCacheDueToCommandLineOptions() {
     if (JIT_InfoFlags.isSet(PrintPipelineGraph)) return true;
     if (KernelFlags.isSet(EnablePipelineAsserts)) return true;
     if (KernelFlags.isSet(DisableThreadLocalStreamSets)) return true;
@@ -436,15 +436,29 @@ inline bool disablePipelineObjectCacheDueToCommandLineOptions() {
     return false;
 }
 
+// Modified version of cl::HideUnrelatedOptions: it's too aggressive, this leaves things visible with --help-hidden
+static inline void gentlyHideUnrelatedOptions(ArrayRef<const cl::OptionCategory *> Categories,
+                                              cl::SubCommand &Sub = cl::SubCommand::getTopLevel()) {
+    for (auto &I : cl::getRegisteredOptions(Sub)) {
+        bool Unrelated = true;
+        for (auto &Cat : I.second->Categories) {
+            if (is_contained(Categories, Cat) || (Cat->getName() == "Generic Options"))
+                Unrelated = false;
+        }
+        // Only increase hidden-ness, don't take things from ReallyHidden down to Hidden
+        if (Unrelated && (I.second->getOptionHiddenFlag() == cl::NotHidden))
+            I.second->setHiddenFlag(cl::Hidden);
+    }
+}
 
-void ParseCommandLineOptions(int argc, const char * const *argv, std::initializer_list<const cl::OptionCategory *> hiding) {
+void ParseCommandLineOptions(int argc, const char * const *argv, std::initializer_list<const cl::OptionCategory *> hiding, StringRef overview) {
     AddParabixVersionPrinter();
 
     codegen::ProgramName = argv[0];
     if (hiding.size() != 0) {
-        cl::HideUnrelatedOptions(ArrayRef<const cl::OptionCategory *>(hiding));
+        gentlyHideUnrelatedOptions(ArrayRef<const cl::OptionCategory *>(hiding));
     }
-    cl::ParseCommandLineOptions(argc, argv);
+    cl::ParseCommandLineOptions(argc, argv, overview);
     if(BlockSize == 0) {
         BlockSize = DefaultBlockSizeForFeatures(MapFeatureNames(GetFeatureNames()));
     }
