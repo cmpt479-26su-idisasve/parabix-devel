@@ -57,6 +57,8 @@ class TestKernel : public MultiBlockKernel {
 
   protected:
     void generateMultiBlockLogic(KernelBuilder &b, llvm::Value *const numBlocks) override {
+        mConfig.logKernelBuilder(b);
+
         BasicBlock *entry = b.GetInsertBlock();
         BasicBlock *processBlock = b.CreateBasicBlock("processBlock");
         BasicBlock *done = b.CreateBasicBlock("done");
@@ -396,6 +398,7 @@ template <unsigned N> class NaryOpConfig : public OperationConfig {
     void compilePipeline() {
         assert(mPipelineBuilder);
         mCompileFunc();
+        assert(!mKernelBuilderID.empty());
     }
 
     size_t executePipeline() {

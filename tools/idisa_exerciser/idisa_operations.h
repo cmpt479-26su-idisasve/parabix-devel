@@ -38,7 +38,7 @@ class OperationConfig {
     unsigned getFieldWidth() const { return mFieldWidth; }
 
     virtual void constructPipeline(CPUDriver &driver) = 0;
-    virtual bool configurePipelineFromArgs(llvm::cl::list<std::string> &args, bool doChecks=true);
+    virtual bool configurePipelineFromArgs(llvm::cl::list<std::string> &args, bool doChecks = true);
     virtual void compilePipeline() = 0;
     virtual size_t executePipeline() = 0;
 
@@ -47,7 +47,7 @@ class OperationConfig {
         return *mPipelineBuilder;
     }
     kernel::StreamSet *getOutputStream() const { return mTestOutput; }
-    void setOutputFileName(llvm::StringRef outputFilename) {
+    void setOutputFilename(llvm::StringRef outputFilename) {
         assert(!mExecuteFunc);
         mOutputFilename = outputFilename.str();
     }
@@ -58,6 +58,13 @@ class OperationConfig {
     virtual llvm::Value *makeCheckLogic(kernel::KernelBuilder &b, std::vector<llvm::Value *> operands) = 0;
 
     void fillParams(kernel::KernelBuilder &b, std::vector<llvm::Value *> operands, Params &outParams) const;
+
+    void logKernelBuilder(kernel::KernelBuilder &b) {
+        assert(mKernelBuilderID.empty());
+        mKernelBuilderID =
+            std::format("{} @ block {} b, lane {} b", b.getBuilderCacheName(), b.getBitBlockWidth(), b.getLaneWidth());
+    }
+    llvm::StringRef getKernelBuilderID() const { return mKernelBuilderID; }
 
   protected:
     std::string mDescription;
@@ -79,6 +86,8 @@ class OperationConfig {
     std::function<size_t()> mExecuteFunc;
     std::vector<std::function<void()>> mResetFuncs;
     std::vector<std::function<void()>> mDtorFuncs;
+
+    std::string mKernelBuilderID;
 
     // Parse args that are relevant to this particular type: we might be called as a parent type, so if there are some
     // left over we leave it to the child to decide what to do with them. If they're genuinely extra,

@@ -96,21 +96,20 @@ static cl::list<string> OperationArgs(cl::ConsumeAfter, cl::desc("[operation arg
 
 static cl::OptionCategory ExerciserFlags("C. Command Flags");
 
-static cl::opt<string> OperationOutputFile("o", "output", cl::value_desc("output"),
+static cl::opt<string> OperationOutputFile("output", cl::value_desc("output"),
                                            cl::desc("Write the output of the operation to a file."),
                                            cl::cat(ExerciserFlags));
-static cl::opt<bool> OperationOutputHex("x", "output-hex", cl::desc("Write the output as a hex dump."),
-                                        cl::cat(ExerciserFlags));
+static cl::opt<bool> OperationOutputHex("x", cl::desc("Write the output as a hex dump."), cl::cat(ExerciserFlags));
 
-static cl::opt<bool> DisableChecks("C", "disable-checks",
+static cl::opt<bool> DisableChecks("disable-checks",
                                    cl::desc("Don't run checks (for more precise timing comparisons)."),
                                    cl::cat(ExerciserFlags));
 
 static cl::opt<unsigned>
-    WarmupCount("w", "warmup", cl::init(0), cl::value_desc("runs"),
+    WarmupCount("warmup", cl::init(0), cl::value_desc("runs"),
                 cl::desc("Run the operation on all input a number of times before recording timings."),
                 cl::cat(ExerciserFlags));
-static cl::opt<unsigned> RepeatCount("r", "repeat", cl::init(1), cl::value_desc("runs"),
+static cl::opt<unsigned> RepeatCount("repeat", cl::init(1), cl::value_desc("runs"),
                                      cl::desc("Re-run the operation multiple times."), cl::cat(ExerciserFlags));
 static cl::opt<unsigned> DropBestCount("drop-best", cl::init(0), cl::value_desc("runs"),
                                        cl::desc("Drop the best timing(s) from the average over multiple runs."),
@@ -121,7 +120,7 @@ static cl::opt<unsigned> DropWorstCount("drop-worst", cl::init(0), cl::value_des
 
 static cl::opt<bool> QuietMode("q", cl::desc("Suppress output, set the return code only."), cl::cat(ExerciserFlags));
 
-static cl::opt<bool> ReportTiming("t", "timing", cl::desc("Report pipeline compilation and kernel execution time."),
+static cl::opt<bool> ReportTiming("timing", cl::desc("Report pipeline compilation and kernel execution time."),
                                   cl::init(false), cl::cat(ExerciserFlags));
 
 int main(int argc, char *argv[]) {
@@ -136,6 +135,11 @@ int main(int argc, char *argv[]) {
         "Exercise an IDISA operation implementation, by comparing to a scalar reference or by timing runs.";
     codegen::ParseCommandLineOptions(argc, argv, {&ExerciserFlags, codegen::codegen_flags()}, overview);
 
+    // Disable caching, if we're doing testing it's almost certainly a hazard -- also, it breaks our method for figuring
+    // out which builder was used for compilation
+    codegen::EnableObjectCache = false;
+    codegen::EnablePipelineObjectCache = false;
+
     unique_ptr<OperationConfig> operationConfig;
 
     // Find opName in configurator list
@@ -146,19 +150,24 @@ int main(int argc, char *argv[]) {
         OperationArgs.error("Input can only come from STDIN if repeat count is 1, with no warmup.");
         return 2;
     }
-    if (!OperationOutputFile.empty() && (WarmupCount != 0)) {
-        WarmupCount.error("Output can only be recorded if repeat count is 1, with no warmup.");
-        return 2;
-    }
-    if (!OperationOutputFile.empty() && (RepeatCount != 1)) {
-        RepeatCount.error("Output can only be recorded if repeat count is 1, with no warmup.");
-        return 2;
-    }
+    // I don't have a better dummy sink than file output right now, so I guess we permit this
+    // if (!OperationOutputFile.empty() && (WarmupCount != 0)) {
+    //     WarmupCount.error("Output can only be recorded if repeat count is 1, with no warmup.");
+    //     return 2;
+    // }
+    // if (!OperationOutputFile.empty() && (RepeatCount != 1)) {
+    //     RepeatCount.error("Output can only be recorded if repeat count is 1, with no warmup.");
+    //     return 2;
+    // }
     if (DropBestCount + DropWorstCount >= RepeatCount) {
         RepeatCount.error("Dropping more run timings than will be captured.");
         return 2;
     }
 
+    if (ReportTiming && !DisableChecks) {
+        outs() << "timing: warning: checks are enabled, parallelization of the test and check kernels can result in "
+                  "timing which only depends on the slowest kernel\n";
+    }
     CPUDriver driver("idisa_exerciser");
     operationConfig->constructPipeline(driver);
     if (operationConfig->configurePipelineFromArgs(OperationArgs, !DisableChecks)) {
@@ -172,8 +181,9 @@ int main(int argc, char *argv[]) {
             p.CreateKernelCall<BinaryToHex>(convertedOutput, outputAsHex);
             convertedOutput = outputAsHex;
         }
-        Scalar *outputFileName = p.getInputScalar(OperationConfig::outputFilenameIdent);
-        p.CreateKernelCall<FileSink>(outputFileName, convertedOutput);
+        Scalar *outputFilename = p.getInputScalar(OperationConfig::outputFilenameIdent);
+        p.CreateKernelCall<FileSink>(outputFilename, convertedOutput);
+        operationConfig->setOutputFilename(OperationOutputFile);
     }
 
     chrono::steady_clock::time_point compileStart;
@@ -183,7 +193,10 @@ int main(int argc, char *argv[]) {
     operationConfig->compilePipeline();
     if (ReportTiming) {
         auto compileTimeUs = chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - compileStart);
-        outs() << "timing: compile: " << compileTimeUs.count() << " us\n";
+        outs() << "timing: compile: " << operationConfig->getKernelBuilderID() << " took " << compileTimeUs.count() << " us\n";
+    }
+    if (!QuietMode && !DisableChecks) {
+        outs() << "test: built with " << operationConfig->getKernelBuilderID() << "\n";
     }
 
     vector<chrono::microseconds> execTimesUs;
@@ -238,11 +251,11 @@ int main(int argc, char *argv[]) {
             outs() << "timing: kernel execution: " << execTimesUs[0].count() << " us\n";
         } else {
             if (!QuietMode) {
-                outs() << "timing: kernel execution: raw data us: ";
+                outs() << "timing: kernel execution: raw data us (including dropped elements): ";
                 unsigned i = 0;
                 for (auto const &t : execTimesUs) {
-                    if ((i >= 500) && (execTimesUs.size() >= 600)) {
-                        outs() << " // Data table too large, truncating to 500 elements";
+                    if ((i >= 1000) && (execTimesUs.size() > 1000)) {
+                        outs() << " // Data table too large, truncating to 1000 elements";
                         break;
                     }
                     if (i > 0)
