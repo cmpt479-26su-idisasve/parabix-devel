@@ -38,7 +38,7 @@ class OperationConfig {
     unsigned getFieldWidth() const { return mFieldWidth; }
 
     virtual void constructPipeline(CPUDriver &driver) = 0;
-    virtual bool configurePipelineFromArgs(llvm::cl::list<std::string> &args);
+    virtual bool configurePipelineFromArgs(llvm::cl::list<std::string> &args, bool doChecks=true);
     virtual void compilePipeline() = 0;
     virtual size_t executePipeline() = 0;
 

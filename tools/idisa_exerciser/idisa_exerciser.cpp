@@ -102,22 +102,26 @@ static cl::opt<string> OperationOutputFile("o", "output", cl::value_desc("output
 static cl::opt<bool> OperationOutputHex("x", "output-hex", cl::desc("Write the output as a hex dump."),
                                         cl::cat(ExerciserFlags));
 
+static cl::opt<bool> DisableChecks("C", "disable-checks",
+                                   cl::desc("Don't run checks (for more precise timing comparisons)."),
+                                   cl::cat(ExerciserFlags));
+
 static cl::opt<unsigned>
     WarmupCount("w", "warmup", cl::init(0), cl::value_desc("runs"),
-                cl::desc("Run the operation on all input a number of times before recording timings"),
+                cl::desc("Run the operation on all input a number of times before recording timings."),
                 cl::cat(ExerciserFlags));
 static cl::opt<unsigned> RepeatCount("r", "repeat", cl::init(1), cl::value_desc("runs"),
-                                     cl::desc("Re-run the operation multiple times"), cl::cat(ExerciserFlags));
+                                     cl::desc("Re-run the operation multiple times."), cl::cat(ExerciserFlags));
 static cl::opt<unsigned> DropBestCount("drop-best", cl::init(0), cl::value_desc("runs"),
-                                       cl::desc("Drop the best timing(s) from the average over multiple runs"),
+                                       cl::desc("Drop the best timing(s) from the average over multiple runs."),
                                        cl::cat(ExerciserFlags));
 static cl::opt<unsigned> DropWorstCount("drop-worst", cl::init(0), cl::value_desc("runs"),
-                                        cl::desc("Drop the worst timing(s) from the average over multiple runs"),
+                                        cl::desc("Drop the worst timing(s) from the average over multiple runs."),
                                         cl::cat(ExerciserFlags));
 
 static cl::opt<bool> QuietMode("q", cl::desc("Suppress output, set the return code only."), cl::cat(ExerciserFlags));
 
-static cl::opt<bool> ReportTiming("t", "timing", cl::desc("Report pipeline compilation and kernel execution time"),
+static cl::opt<bool> ReportTiming("t", "timing", cl::desc("Report pipeline compilation and kernel execution time."),
                                   cl::init(false), cl::cat(ExerciserFlags));
 
 int main(int argc, char *argv[]) {
@@ -139,25 +143,25 @@ int main(int argc, char *argv[]) {
         return 2;
     }
     if (operationConfig->isStdinGrabbed() && ((WarmupCount != 0) || (RepeatCount != 1))) {
-        OperationArgs.error("Input can only come from STDIN if repeat count is 1, with no warmup");
+        OperationArgs.error("Input can only come from STDIN if repeat count is 1, with no warmup.");
         return 2;
     }
     if (!OperationOutputFile.empty() && (WarmupCount != 0)) {
-        WarmupCount.error("Output can only be recorded if repeat count is 1, with no warmup");
+        WarmupCount.error("Output can only be recorded if repeat count is 1, with no warmup.");
         return 2;
     }
     if (!OperationOutputFile.empty() && (RepeatCount != 1)) {
-        RepeatCount.error("Output can only be recorded if repeat count is 1, with no warmup");
+        RepeatCount.error("Output can only be recorded if repeat count is 1, with no warmup.");
         return 2;
     }
     if (DropBestCount + DropWorstCount >= RepeatCount) {
-        RepeatCount.error("Dropping more run timings than will be captured");
+        RepeatCount.error("Dropping more run timings than will be captured.");
         return 2;
     }
 
     CPUDriver driver("idisa_exerciser");
     operationConfig->constructPipeline(driver);
-    if (operationConfig->configurePipelineFromArgs(OperationArgs)) {
+    if (operationConfig->configurePipelineFromArgs(OperationArgs, !DisableChecks)) {
         return 2;
     }
     if (!OperationOutputFile.empty()) {
@@ -179,16 +183,16 @@ int main(int argc, char *argv[]) {
     operationConfig->compilePipeline();
     if (ReportTiming) {
         auto compileTimeUs = chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - compileStart);
-        outs() << "timing: compile: " << compileTimeUs.count() << "us\n";
+        outs() << "timing: compile: " << compileTimeUs.count() << " us\n";
     }
 
     vector<chrono::microseconds> execTimesUs;
     for (unsigned i = 0; i < WarmupCount; ++i) {
         size_t failureCount = operationConfig->executePipeline();
-        if (failureCount > 0) {
+        if (!DisableChecks && (failureCount > 0)) {
             if (!QuietMode) {
-                outs() << "test failure: " << operationConfig->getDescription() << ": failed " << failureCount
-                       << " tests during warmup #" << i << "\n";
+                outs() << "test: fail: " << operationConfig->getDescription() << ": " << failureCount
+                       << " incorrect blocks during warmup #" << i << "\n";
             }
             if (ReportTiming) {
                 outs() << "timing: aborting due to test failure during warmup #" << i << "\n";
@@ -208,8 +212,8 @@ int main(int argc, char *argv[]) {
         }
         if (failureCount > 0) {
             if (!QuietMode) {
-                outs() << "test failure: " << operationConfig->getDescription() << ": failed " << failureCount
-                       << " tests during run #" << i << "\n";
+                outs() << "test: fail: " << operationConfig->getDescription() << ": " << failureCount
+                       << " incorrect blocks during run #" << i << "\n";
             }
             if (ReportTiming) {
                 outs() << "timing: aborting due to test failure during run #" << i << "\n";
@@ -219,36 +223,59 @@ int main(int argc, char *argv[]) {
     }
 
     if (!QuietMode) {
-        outs() << "test success: " << operationConfig->getDescription() << "\n";
+        if (DisableChecks) {
+            outs() << "test: disabled\n";
+        } else {
+            outs() << "test: pass: " << operationConfig->getDescription() << "\n";
+        }
     }
 
     if (ReportTiming) {
         assert(execTimesUs.size() > 0);
-        outs() << "timing: kernel execution: ";
-        if (execTimesUs.size() == 1) {
-            outs() << execTimesUs[0].count() << " us\n";
+        if (execTimesUs.size() == 0) {
+            outs() << "timing: kernel execution: no data!\n";
+        } else if (execTimesUs.size() == 1) {
+            outs() << "timing: kernel execution: " << execTimesUs[0].count() << " us\n";
         } else {
+            if (!QuietMode) {
+                outs() << "timing: kernel execution: raw data us: ";
+                unsigned i = 0;
+                for (auto const &t : execTimesUs) {
+                    if ((i >= 500) && (execTimesUs.size() >= 600)) {
+                        outs() << " // Data table too large, truncating to 500 elements";
+                        break;
+                    }
+                    if (i > 0)
+                        outs() << ", ";
+                    outs() << t.count();
+                    ++i;
+                }
+                outs() << "\n";
+            }
             std::sort(execTimesUs.begin(), execTimesUs.end());
             execTimesUs.erase(execTimesUs.end() - DropWorstCount, execTimesUs.end());
             execTimesUs.erase(execTimesUs.begin(), execTimesUs.begin() + DropBestCount);
             double sumExecUs = 0.;
+            for (auto const &t : execTimesUs) {
+                sumExecUs += t.count();
+            }
+            double meanExecUs = sumExecUs / execTimesUs.size();
             double devExecUs2 = 0.;
             for (auto const &t : execTimesUs) {
-                runUs = static_cast<double>(t.count());
-                sumExecUs += run_us;
-                devExecUs2 += run_us * run_us;
+                double dExecUs = t.count() - meanExecUs;
+                devExecUs2 += dExecUs * dExecUs;
             }
-            double avgExecUs = sumExecUs / execTimesUs.size();
-            double stdevExecUs = sqrt(devExecUs2 / execTimesUs.size());
-            outs() << static_cast<int64_t>(round(avgExecUs)) << " us average, "
-                   << static_cast<int64_t>(round(stdevExecUs)) << " us stdev, " << execTimesUs.size()
+            // -1 from size for sample deviation
+            double stdevExecUs = sqrt(devExecUs2 / (execTimesUs.size() - 1));
+            outs() << "timing: kernel execution: " << static_cast<int64_t>(round(meanExecUs)) << " us mean, "
+                   << static_cast<int64_t>(round(stdevExecUs)) << " us sample dev, " << execTimesUs.size()
                    << " runs counted";
             if (DropWorstCount || DropBestCount) {
                 outs() << "; ";
                 if (DropWorstCount) {
                     outs() << DropWorstCount << " worst";
                     if (DropBestCount) {
-                        outs() << " , ";
+                        outs() << ", ";
                     }
                 }
                 if (DropBestCount) {
