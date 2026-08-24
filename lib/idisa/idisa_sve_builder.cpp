@@ -215,8 +215,32 @@ llvm::Value *IDISA_SVE_Builder::mvmd_shuffle2_impl(unsigned fw, llvm::Value *tab
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_compress_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
-    // TODO JL implement
-    return mNeonB.mvmd_compress_impl(fw, a, select_mask);
+    unsigned vectorWidth = getVectorBitWidth(a);
+    if ((vectorWidth <= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        unsigned svN = SVE_min_width / fw;
+        IntegerType *fTy = mCB->getIntNTy(fw);
+        FixedVectorType *fvTy = FixedVectorType::get(fTy, svN);
+        ScalableVectorType *svTy = ScalableVectorType::get(fTy, svN);
+        ScalableVectorType *svPTy = ScalableVectorType::get(mCB->getInt1Ty(), svN);
+
+        Type *maskTy = select_mask->getType();
+        Value *pred = Constant::getNullValue(svPTy);
+        for (unsigned i = 0; i < svN; i++) {
+            Value *bit =
+                mCB->CreateAnd(mCB->CreateLShr(select_mask, ConstantInt::get(maskTy, i)), ConstantInt::get(maskTy, 1));
+            Value *isSet = mCB->CreateICmpNE(bit, ConstantInt::get(maskTy, 0));
+            pred = mCB->CreateInsertElement(pred, isSet, mCB->getIntN(64, i));
+        }
+
+        Value *scalableA = mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvTy},
+                                                {PoisonValue::get(svTy), fwCast(fw, a), mCB->getIntN(64, 0)});
+
+        Value *compacted = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_compact, {svTy}, {pred, scalableA});
+        Value *result = mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvTy, svTy}, {compacted, mCB->getIntN(64, 0)});
+        return result;
+    } else {
+        return mNeonB.mvmd_compress_impl(fw, a, select_mask);
+    }
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_expand_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
