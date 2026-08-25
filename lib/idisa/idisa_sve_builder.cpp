@@ -199,102 +199,122 @@ llvm::Value *IDISA_SVE_Builder::simd_mult_impl(unsigned fw, llvm::Value *a, llvm
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_eq_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmpeq, {svTy}, {pred, scalableA, scalableB});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_eq_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ne_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmpne, {svTy}, {pred, scalableA, scalableB});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_ne_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_gt_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmpgt, {svTy}, {pred, scalableA, scalableB});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_gt_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ge_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmpge, {svTy}, {pred, scalableA, scalableB});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_ge_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_lt_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmpgt, {svTy}, {pred, scalableB, scalableA});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_lt_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_le_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmpge, {svTy}, {pred, scalableB, scalableA});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_le_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ugt_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmphi, {svTy}, {pred, scalableA, scalableB});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_ugt_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ult_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmphi, {svTy}, {pred, scalableB, scalableA});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_ult_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ule_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmphs, {svTy}, {pred, scalableB, scalableA});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_ule_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_uge_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
-    // TODO JL implement
-    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
-    //     return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
-    //     });
-    // }
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableBinary(
+            fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value *scalableB) {
+                Value *cmp = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cmphs, {svTy}, {pred, scalableA, scalableB});
+                return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sel, {svTy},
+                                            {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
+            });
+    }
     return IDISA_Generic_Builder::simd_uge_impl(fw, a, b);
 }
 
