@@ -41,12 +41,17 @@ class IDISA_SVE_Builder : public IDISA_Generic_Builder {
     llvm::Value *simd_srlv_impl(unsigned fw, llvm::Value *a, llvm::Value *shifts) override;
     llvm::Value *simd_rotl_impl(unsigned fw, llvm::Value *a, llvm::Value *rotates) override;
     llvm::Value *simd_rotr_impl(unsigned fw, llvm::Value *a, llvm::Value *rotates) override;
+    std::vector<llvm::Value *> simd_pext_impl(unsigned fw, std::vector<llvm::Value *> vs,
+                                                      llvm::Value *extract_mask) override;
+    llvm::Value *simd_pdep_impl(unsigned fw, llvm::Value *v, llvm::Value *deposit_mask) override;
+    llvm::Value *simd_any_impl(unsigned fw, llvm::Value *a) override;
     llvm::Value *simd_popcount_impl(unsigned fw, llvm::Value *a) override;
     llvm::Value *simd_bitreverse_impl(unsigned fw, llvm::Value *a) override;
     llvm::Value *esimd_mergeh_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
     llvm::Value *esimd_mergel_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
     llvm::Value *hsimd_packh_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
     llvm::Value *hsimd_packl_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
+    llvm::Value *hsimd_packss_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
     llvm::Value *hsimd_packus_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
     llvm::Value *mvmd_shuffle_impl(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
                               ShuffleMode m = ShuffleMode::TruncateIndex) override;

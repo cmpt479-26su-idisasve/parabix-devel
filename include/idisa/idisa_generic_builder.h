@@ -14,7 +14,7 @@
 namespace IDISA {
 
 class IDISA_Generic_Builder : public IDISA_Builder {
-  protected:
+  public:
     llvm::Value *simd_fill_impl(unsigned fw, llvm::Value *a) override;
     llvm::Value *simd_fill_impl(unsigned vector_width, unsigned fw, llvm::Value *a) override;
     llvm::Value *simd_add_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;

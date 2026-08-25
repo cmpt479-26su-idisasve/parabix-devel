@@ -753,17 +753,19 @@ OperationIndexEntry allOperations[] = {
                      }>(),
     scalarCheckEntry<BinaryOpConfig, "simd_sllv", "x0, x1", "",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.simd_sllv(p.fw, p.opr[0], p.opr[1]);
+                         return b.simd_sllv(p.fw, p.opr[0],
+                                            b.CreateAnd(b.fwCast(p.fw, p.opr[1]), b.getSplatN(p.fw, p.fn, p.fw - 1)));
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.CreateShl(p.opr[0], p.opr[1]);
+                         return b.CreateShl(p.opr[0], b.CreateAnd(p.opr[1], b.getIntN(p.fw, p.fw - 1)));
                      }>(),
     scalarCheckEntry<BinaryOpConfig, "simd_srlv", "x0, x1", "",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.simd_srlv(p.fw, p.opr[0], p.opr[1]);
+                         return b.simd_srlv(p.fw, p.opr[0],
+                                            b.CreateAnd(b.fwCast(p.fw, p.opr[1]), b.getSplatN(p.fw, p.fn, p.fw - 1)));
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.CreateLShr(p.opr[0], p.opr[1]);
+                         return b.CreateLShr(p.opr[0], b.CreateAnd(p.opr[1], b.getIntN(p.fw, p.fw - 1)));
                      }>(),
     scalarCheckEntry<BinaryOpConfig, "simd_rotl", "x0, x1", "",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {

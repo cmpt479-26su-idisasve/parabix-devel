@@ -76,20 +76,19 @@ llvm::Value *IDISA_SVE_Builder::encapsulateScalableUnary(unsigned fw, llvm::Valu
         // If we're NOT iterating, the input is just the whole fixed param, otherwise extract the appropriate chunk
         Value *inputFixedChunk = (nChunks == 1) ? param
                                                 : mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, fvTy},
-                                                                       {param, mCB->getIntN(64, i * fvChunkN)});
+                                                                       {param, mCB->getInt64(i * fvChunkN)});
         // Fixed vector converted to scalable via insert
-        Value *inputScalableChunk =
-            mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
-                                 {PoisonValue::get(svTy), inputFixedChunk, mCB->getIntN(64, 0)});
+        Value *inputScalableChunk = mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
+                                                         {PoisonValue::get(svTy), inputFixedChunk, mCB->getInt64(0)});
         Value *resultScalableChunk = createOp(svTy, pred, inputScalableChunk);
         // Scalable vector converted to fixed via extract
-        Value *resultFixedChunk = mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, svTy},
-                                                       {resultScalableChunk, mCB->getIntN(64, 0)});
+        Value *resultFixedChunk =
+            mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, svTy}, {resultScalableChunk, mCB->getInt64(0)});
         // If we're NOT iterating, result is the fixed chunk directly, otherwise build the full result up in the
         // result value
         result = (nChunks == 1) ? resultFixedChunk
                                 : mCB->CreateIntrinsic(Intrinsic::vector_insert, {fvTy, fvChunkTy},
-                                                       {result, resultFixedChunk, mCB->getIntN(64, i * fvChunkN)});
+                                                       {result, resultFixedChunk, mCB->getInt64(i * fvChunkN)});
     }
     return result;
 }
@@ -122,27 +121,25 @@ llvm::Value *IDISA_SVE_Builder::encapsulateScalableBinary(unsigned fw, llvm::Val
         // If we're NOT iterating, the input is just the whole fixed param, otherwise extract the appropriate chunk
         Value *inputFixedChunk1 = (nChunks == 1) ? param1
                                                  : mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, fvTy},
-                                                                        {param1, mCB->getIntN(64, i * fvChunkN)});
+                                                                        {param1, mCB->getInt64(i * fvChunkN)});
         Value *inputFixedChunk2 = (nChunks == 1) ? param2
                                                  : mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, fvTy},
-                                                                        {param2, mCB->getIntN(64, i * fvChunkN)});
+                                                                        {param2, mCB->getInt64(i * fvChunkN)});
         // Fixed vector converted to scalable via insert
-        Value *inputScalableChunk1 =
-            mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
-                                 {PoisonValue::get(svTy), inputFixedChunk1, mCB->getIntN(64, 0)});
-        Value *inputScalableChunk2 =
-            mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
-                                 {PoisonValue::get(svTy), inputFixedChunk2, mCB->getIntN(64, 0)});
+        Value *inputScalableChunk1 = mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
+                                                          {PoisonValue::get(svTy), inputFixedChunk1, mCB->getInt64(0)});
+        Value *inputScalableChunk2 = mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvChunkTy},
+                                                          {PoisonValue::get(svTy), inputFixedChunk2, mCB->getInt64(0)});
 
         Value *resultScalableChunk = createOp(svTy, pred, inputScalableChunk1, inputScalableChunk2);
         // Scalable vector converted to fixed via extract
-        Value *resultFixedChunk = mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, svTy},
-                                                       {resultScalableChunk, mCB->getIntN(64, 0)});
+        Value *resultFixedChunk =
+            mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvChunkTy, svTy}, {resultScalableChunk, mCB->getInt64(0)});
         // If we're NOT iterating, result is the fixed chunk directly, otherwise build the full result up in the
         // result value
         result = (nChunks == 1) ? resultFixedChunk
                                 : mCB->CreateIntrinsic(Intrinsic::vector_insert, {fvTy, fvChunkTy},
-                                                       {result, resultFixedChunk, mCB->getIntN(64, i * fvChunkN)});
+                                                       {result, resultFixedChunk, mCB->getInt64(i * fvChunkN)});
     }
     return result;
 }
@@ -154,7 +151,7 @@ llvm::Value *IDISA_SVE_Builder::simd_fill_impl(unsigned fw, llvm::Value *a) {
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_dup_x, {svTy}, {a});
     //     });
     // }
-    return IDISA_Generic_Builder::simd_fill_impl(fw, a);
+    return mNeonB.simd_fill_impl(fw, a);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_fill_impl(unsigned vector_width, unsigned fw, llvm::Value *a) {
@@ -165,7 +162,7 @@ llvm::Value *IDISA_SVE_Builder::simd_fill_impl(unsigned vector_width, unsigned f
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_dup_x, {svTy}, {a});
     //     });
     // }
-    return IDISA_Generic_Builder::simd_fill_impl(vector_width, fw, a);
+    return mNeonB.simd_fill_impl(vector_width, fw, a);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_add_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -175,7 +172,7 @@ llvm::Value *IDISA_SVE_Builder::simd_add_impl(unsigned fw, llvm::Value *a, llvm:
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_add, {svTy}, {pred, scalableA, scalableB});
             });
     }
-    return IDISA_Generic_Builder::simd_add_impl(fw, a, b);
+    return mNeonB.simd_add_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_sub_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -185,7 +182,7 @@ llvm::Value *IDISA_SVE_Builder::simd_sub_impl(unsigned fw, llvm::Value *a, llvm:
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_sub, {svTy}, {pred, scalableA, scalableB});
             });
     }
-    return IDISA_Generic_Builder::simd_sub_impl(fw, a, b);
+    return mNeonB.simd_sub_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_mult_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -195,7 +192,7 @@ llvm::Value *IDISA_SVE_Builder::simd_mult_impl(unsigned fw, llvm::Value *a, llvm
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_mul, {svTy}, {pred, scalableA, scalableB});
             });
     }
-    return IDISA_Generic_Builder::simd_mult_impl(fw, a, b);
+    return mNeonB.simd_mult_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_eq_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -207,7 +204,7 @@ llvm::Value *IDISA_SVE_Builder::simd_eq_impl(unsigned fw, llvm::Value *a, llvm::
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_eq_impl(fw, a, b);
+    return mNeonB.simd_eq_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ne_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -219,7 +216,7 @@ llvm::Value *IDISA_SVE_Builder::simd_ne_impl(unsigned fw, llvm::Value *a, llvm::
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_ne_impl(fw, a, b);
+    return mNeonB.simd_ne_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_gt_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -231,7 +228,7 @@ llvm::Value *IDISA_SVE_Builder::simd_gt_impl(unsigned fw, llvm::Value *a, llvm::
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_gt_impl(fw, a, b);
+    return mNeonB.simd_gt_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ge_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -243,7 +240,7 @@ llvm::Value *IDISA_SVE_Builder::simd_ge_impl(unsigned fw, llvm::Value *a, llvm::
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_ge_impl(fw, a, b);
+    return mNeonB.simd_ge_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_lt_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -255,7 +252,7 @@ llvm::Value *IDISA_SVE_Builder::simd_lt_impl(unsigned fw, llvm::Value *a, llvm::
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_lt_impl(fw, a, b);
+    return mNeonB.simd_lt_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_le_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -267,7 +264,7 @@ llvm::Value *IDISA_SVE_Builder::simd_le_impl(unsigned fw, llvm::Value *a, llvm::
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_le_impl(fw, a, b);
+    return mNeonB.simd_le_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ugt_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -279,7 +276,7 @@ llvm::Value *IDISA_SVE_Builder::simd_ugt_impl(unsigned fw, llvm::Value *a, llvm:
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_ugt_impl(fw, a, b);
+    return mNeonB.simd_ugt_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ult_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -291,7 +288,7 @@ llvm::Value *IDISA_SVE_Builder::simd_ult_impl(unsigned fw, llvm::Value *a, llvm:
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_ult_impl(fw, a, b);
+    return mNeonB.simd_ult_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ule_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -303,7 +300,7 @@ llvm::Value *IDISA_SVE_Builder::simd_ule_impl(unsigned fw, llvm::Value *a, llvm:
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_ule_impl(fw, a, b);
+    return mNeonB.simd_ule_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_uge_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -315,7 +312,7 @@ llvm::Value *IDISA_SVE_Builder::simd_uge_impl(unsigned fw, llvm::Value *a, llvm:
                                             {cmp, Constant::getAllOnesValue(svTy), Constant::getNullValue(svTy)});
             });
     }
-    return IDISA_Generic_Builder::simd_uge_impl(fw, a, b);
+    return mNeonB.simd_uge_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_max_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -325,7 +322,7 @@ llvm::Value *IDISA_SVE_Builder::simd_max_impl(unsigned fw, llvm::Value *a, llvm:
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_smax, {svTy}, {pred, scalableA, scalableB});
             });
     }
-    return IDISA_Generic_Builder::simd_max_impl(fw, a, b);
+    return mNeonB.simd_max_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_umax_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -335,7 +332,7 @@ llvm::Value *IDISA_SVE_Builder::simd_umax_impl(unsigned fw, llvm::Value *a, llvm
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_umax, {svTy}, {pred, scalableA, scalableB});
             });
     }
-    return IDISA_Generic_Builder::simd_umax_impl(fw, a, b);
+    return mNeonB.simd_umax_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_min_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -345,7 +342,7 @@ llvm::Value *IDISA_SVE_Builder::simd_min_impl(unsigned fw, llvm::Value *a, llvm:
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_smin, {svTy}, {pred, scalableA, scalableB});
             });
     }
-    return IDISA_Generic_Builder::simd_min_impl(fw, a, b);
+    return mNeonB.simd_min_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_umin_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -355,7 +352,7 @@ llvm::Value *IDISA_SVE_Builder::simd_umin_impl(unsigned fw, llvm::Value *a, llvm
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_umin, {svTy}, {pred, scalableA, scalableB});
             });
     }
-    return IDISA_Generic_Builder::simd_umin_impl(fw, a, b);
+    return mNeonB.simd_umin_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_if_impl(unsigned fw, llvm::Value *cond, llvm::Value *a, llvm::Value *b) {
@@ -365,7 +362,7 @@ llvm::Value *IDISA_SVE_Builder::simd_if_impl(unsigned fw, llvm::Value *cond, llv
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return IDISA_Generic_Builder::simd_if_impl(fw, cond, a, b);
+    return mNeonB.simd_if_impl(fw, cond, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ternary_impl(unsigned char mask, llvm::Value *bit_2, llvm::Value *bit_1,
@@ -376,37 +373,46 @@ llvm::Value *IDISA_SVE_Builder::simd_ternary_impl(unsigned char mask, llvm::Valu
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return IDISA_Generic_Builder::simd_ternary_impl(mask, bit_2, bit_1, bit_0);
+    return mNeonB.simd_ternary_impl(mask, bit_2, bit_1, bit_0);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_slli_impl(unsigned fw, llvm::Value *a, unsigned shift) {
     if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
         return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-            Value *shiftVec = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_dup_x, {svTy}, {mCB->getIntN(fw, shift)});
-            return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_lsl, {svTy}, {pred, scalableA, shiftVec});
+            Value *scalableShift = mCB->CreateIntrinsic(
+                Intrinsic::vector_insert, {svTy, fwVectorType(fw)},
+                {PoisonValue::get(svTy), getSplatN(fw, getBitBlockWidth() / fw, shift & ((1 << fw) - 1)),
+                 mCB->getInt64(0)});
+            return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_lsl, {svTy}, {pred, scalableA, scalableShift});
         });
     }
-    return IDISA_Generic_Builder::simd_slli_impl(fw, a, shift);
+    return mNeonB.simd_slli_impl(fw, a, shift);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_srli_impl(unsigned fw, llvm::Value *a, unsigned shift) {
     if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
         return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-            Value *shiftVec = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_dup_x, {svTy}, {mCB->getIntN(fw, shift)});
-            return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_lsr, {svTy}, {pred, scalableA, shiftVec});
+            Value *scalableShift = mCB->CreateIntrinsic(
+                Intrinsic::vector_insert, {svTy, fwVectorType(fw)},
+                {PoisonValue::get(svTy), getSplatN(fw, getBitBlockWidth() / fw, shift & ((1 << fw) - 1)),
+                 mCB->getInt64(0)});
+            return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_lsr, {svTy}, {pred, scalableA, scalableShift});
         });
     }
-    return IDISA_Generic_Builder::simd_srli_impl(fw, a, shift);
+    return mNeonB.simd_srli_impl(fw, a, shift);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_srai_impl(unsigned fw, llvm::Value *a, unsigned shift) {
     if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
         return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
-            Value *shiftVec = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_dup_x, {svTy}, {mCB->getIntN(fw, shift)});
-            return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_asr, {svTy}, {pred, scalableA, shiftVec});
+            Value *scalableShift = mCB->CreateIntrinsic(
+                Intrinsic::vector_insert, {svTy, fwVectorType(fw)},
+                {PoisonValue::get(svTy), getSplatN(fw, getBitBlockWidth() / fw, shift & ((1 << fw) - 1)),
+                 mCB->getInt64(0)});
+            return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_asr, {svTy}, {pred, scalableA, scalableShift});
         });
     }
-    return IDISA_Generic_Builder::simd_srai_impl(fw, a, shift);
+    return mNeonB.simd_srai_impl(fw, a, shift);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_sllv_impl(unsigned fw, llvm::Value *a, llvm::Value *shifts) {
@@ -416,7 +422,7 @@ llvm::Value *IDISA_SVE_Builder::simd_sllv_impl(unsigned fw, llvm::Value *a, llvm
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_lsl, {svTy}, {pred, scalableA, scalableShifts});
             });
     }
-    return IDISA_Generic_Builder::simd_sllv_impl(fw, a, shifts);
+    return mNeonB.simd_sllv_impl(fw, a, shifts);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_srlv_impl(unsigned fw, llvm::Value *a, llvm::Value *shifts) {
@@ -426,7 +432,7 @@ llvm::Value *IDISA_SVE_Builder::simd_srlv_impl(unsigned fw, llvm::Value *a, llvm
                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_lsr, {svTy}, {pred, scalableA, scalableShifts});
             });
     }
-    return IDISA_Generic_Builder::simd_srlv_impl(fw, a, shifts);
+    return mNeonB.simd_srlv_impl(fw, a, shifts);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_rotl_impl(unsigned fw, llvm::Value *a, llvm::Value *rotates) {
@@ -436,7 +442,7 @@ llvm::Value *IDISA_SVE_Builder::simd_rotl_impl(unsigned fw, llvm::Value *a, llvm
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return IDISA_Generic_Builder::simd_rotl_impl(fw, a, rotates);
+    return mNeonB.simd_rotl_impl(fw, a, rotates);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_rotr_impl(unsigned fw, llvm::Value *a, llvm::Value *rotates) {
@@ -446,7 +452,62 @@ llvm::Value *IDISA_SVE_Builder::simd_rotr_impl(unsigned fw, llvm::Value *a, llvm
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return IDISA_Generic_Builder::simd_rotr_impl(fw, a, rotates);
+    return mNeonB.simd_rotr_impl(fw, a, rotates);
+}
+
+std::vector<llvm::Value *> IDISA_SVE_Builder::simd_pext_impl(unsigned fw, std::vector<llvm::Value *> vs,
+                                                             llvm::Value *extract_mask) {
+    // if (mCB->hasFeature(codegen::Feature::SVE2) && (getVectorBitWidth(extract_mask) >= SVE_min_width) && (fw >= 8) &&
+    //     (fw <= 64)) {
+    //     std::vector<llvm::Value *> results;
+    //     Value *savedMask;
+    //     if (vs.empty()) {
+    //         return results;
+    //     }
+    //     results.emplace_back(encapsulateScalableBinary(
+    //         fw, vs[0], extract_mask,
+    //         [=, &savedMask](ScalableVectorType *svTy, Value *pred, Value *scalableV, Value *scalableExtractMask) {
+    //             savedMask = scalableExtractMask;
+    //             return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_bext, {svTy}, {scalableV, savedMask});
+    //         }));
+    //     for (size_t i = 1; i < vs.size(); ++i) {
+    //         results.emplace_back(
+    //             encapsulateScalableUnary(fw, vs[i], [=](ScalableVectorType *svTy, Value *pred, Value *scalableV) {
+    //                 return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_bext_x, {svTy}, {scalableV, savedMask});
+    //             }));
+    //     }
+    //     return results;
+    // }
+    return mNeonB.simd_pext_impl(fw, vs, extract_mask);
+}
+
+llvm::Value *IDISA_SVE_Builder::simd_pdep_impl(unsigned fw, llvm::Value *v, llvm::Value *deposit_mask) {
+    // if (mCB->hasFeature(codegen::Feature::SVE2) && (getVectorBitWidth(v) >= SVE_min_width) && (fw >= 8) && (fw <=
+    // 64)) {
+    //     return encapsulateScalableBinary(
+    //         fw, v, deposit_mask,
+    //         [=](ScalableVectorType *svTy, Value *pred, Value *scalableV, Value *scalableDepositMask) {
+    //             return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_bdep_x, {svTy},
+    //                                         {scalableV, scalableDepositMask});
+    //         });
+    // }
+    return mNeonB.simd_pdep_impl(fw, v, deposit_mask);
+}
+
+llvm::Value *IDISA_SVE_Builder::simd_any_impl(unsigned fw, llvm::Value *a) {
+    if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+        return encapsulateScalableUnary(fw, a, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA) {
+            // This instruction sequence doesn't require any constants and doesn't require us to go through the
+            // predicate registers
+            Value *popcount = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
+            // popcount will be <= 64 for sure, so -popcount will either be 0 or something negative
+            Value *negPopcount = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_neg, {svTy}, {pred, popcount});
+            // arithmetic shift right sign-extends our negative number down to -1 iff popcount was nonzero
+            return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_asr_u, {svTy}, {pred, negPopcount, mCB->getInt32(7)});
+        });
+    }
+
+    return mNeonB.simd_popcount_impl(fw, a);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_popcount_impl(unsigned fw, llvm::Value *a) {
@@ -455,7 +516,7 @@ llvm::Value *IDISA_SVE_Builder::simd_popcount_impl(unsigned fw, llvm::Value *a) 
             return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
         });
     }
-    return IDISA_Generic_Builder::simd_popcount_impl(fw, a);
+    return mNeonB.simd_popcount_impl(fw, a);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_bitreverse_impl(unsigned fw, llvm::Value *a) {
@@ -464,7 +525,7 @@ llvm::Value *IDISA_SVE_Builder::simd_bitreverse_impl(unsigned fw, llvm::Value *a
             return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_rbit, {svTy}, {PoisonValue::get(svTy), pred, scalableA});
         });
     }
-    return IDISA_Generic_Builder::simd_bitreverse_impl(fw, a);
+    return mNeonB.simd_bitreverse_impl(fw, a);
 }
 
 llvm::Value *IDISA_SVE_Builder::esimd_mergeh_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -515,6 +576,18 @@ llvm::Value *IDISA_SVE_Builder::hsimd_packl_impl(unsigned fw, llvm::Value *a, ll
     return mNeonB.hsimd_packl_impl(fw, a, b);
 }
 
+llvm::Value *IDISA_SVE_Builder::hsimd_packss_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
+    // TODO JL implement
+    // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+    //     return encapsulateScalableBinary(fw, a, b, [=](ScalableVectorType *svTy, Value *pred, Value *scalableA, Value
+    //     *scalableB) {
+    //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_umin, {svTy}, {PoisonValue::get(svTy), pred,
+    //         scalableA, scalableB});
+    //     });
+    // }
+    return mNeonB.hsimd_packss_impl(fw, a, b);
+}
+
 llvm::Value *IDISA_SVE_Builder::hsimd_packus_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
     // TODO JL implement
     // if ((getVectorBitWidth(a) >= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
@@ -555,7 +628,7 @@ llvm::Value *IDISA_SVE_Builder::mvmd_shuffle2_impl(unsigned fw, llvm::Value *tab
 
 llvm::Value *IDISA_SVE_Builder::mvmd_compress_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
     unsigned vectorWidth = getVectorBitWidth(a);
-    if ((vectorWidth <= SVE_min_width) && (fw >= 8) && (fw <= 64)) {
+    if ((vectorWidth <= SVE_min_width) && (fw >= 32) && (fw <= 64)) {
         unsigned svN = SVE_min_width / fw;
         IntegerType *fTy = mCB->getIntNTy(fw);
         FixedVectorType *fvTy = FixedVectorType::get(fTy, svN);
@@ -568,14 +641,14 @@ llvm::Value *IDISA_SVE_Builder::mvmd_compress_impl(unsigned fw, llvm::Value *a, 
             Value *bit =
                 mCB->CreateAnd(mCB->CreateLShr(select_mask, ConstantInt::get(maskTy, i)), ConstantInt::get(maskTy, 1));
             Value *isSet = mCB->CreateICmpNE(bit, ConstantInt::get(maskTy, 0));
-            pred = mCB->CreateInsertElement(pred, isSet, mCB->getIntN(64, i));
+            pred = mCB->CreateInsertElement(pred, isSet, mCB->getInt64(i));
         }
 
         Value *scalableA = mCB->CreateIntrinsic(Intrinsic::vector_insert, {svTy, fvTy},
-                                                {PoisonValue::get(svTy), fwCast(fw, a), mCB->getIntN(64, 0)});
+                                                {PoisonValue::get(svTy), fwCast(fw, a), mCB->getInt64(0)});
 
         Value *compacted = mCB->CreateIntrinsic(Intrinsic::aarch64_sve_compact, {svTy}, {pred, scalableA});
-        Value *result = mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvTy, svTy}, {compacted, mCB->getIntN(64, 0)});
+        Value *result = mCB->CreateIntrinsic(Intrinsic::vector_extract, {fvTy, svTy}, {compacted, mCB->getInt64(0)});
         return result;
     } else {
         return mNeonB.mvmd_compress_impl(fw, a, select_mask);

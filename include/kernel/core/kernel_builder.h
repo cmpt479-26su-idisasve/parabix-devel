@@ -74,8 +74,8 @@ class Proxy_IDISA_Builder : public IDISA::IDISA_Builder {
     llvm::Value *simd_if_impl(unsigned fw, llvm::Value *cond, llvm::Value *a, llvm::Value *b) override final {
         return mTgt->simd_if(fw, cond, a, b);
     }
-    virtual llvm::Value *simd_ternary_impl(unsigned char mask, llvm::Value *bit_2, llvm::Value *bit_1,
-                                           llvm::Value *bit_0) {
+    llvm::Value *simd_ternary_impl(unsigned char mask, llvm::Value *bit_2, llvm::Value *bit_1,
+                                   llvm::Value *bit_0) override final {
         return mTgt->simd_ternary(mask, bit_2, bit_1, bit_0);
     }
     llvm::Value *simd_slli_impl(unsigned fw, llvm::Value *a, unsigned shift) override final {
@@ -99,8 +99,8 @@ class Proxy_IDISA_Builder : public IDISA::IDISA_Builder {
     llvm::Value *simd_rotr_impl(unsigned fw, llvm::Value *a, llvm::Value *rotates) override final {
         return mTgt->simd_rotr(fw, a, rotates);
     }
-    virtual std::vector<llvm::Value *> simd_pext_impl(unsigned fw, std::vector<llvm::Value *> vs,
-                                                      llvm::Value *extract_mask) {
+    std::vector<llvm::Value *> simd_pext_impl(unsigned fw, std::vector<llvm::Value *> vs,
+                                              llvm::Value *extract_mask) override final {
         return mTgt->simd_pext(fw, vs, extract_mask);
     }
     llvm::Value *simd_pdep_impl(unsigned fw, llvm::Value *v, llvm::Value *deposit_mask) override final {
@@ -167,12 +167,12 @@ class Proxy_IDISA_Builder : public IDISA::IDISA_Builder {
     llvm::Value *mvmd_dsll_impl(unsigned fw, llvm::Value *a, llvm::Value *b, llvm::Value *shift) override final {
         return mTgt->mvmd_dsll(fw, a, b, shift);
     }
-    virtual llvm::Value *mvmd_shuffle_impl(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
-                                           IDISA::ShuffleMode m) {
+    llvm::Value *mvmd_shuffle_impl(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
+                                   IDISA::ShuffleMode m) override final {
         return mTgt->mvmd_shuffle(fw, data_table, index_vector, m);
     }
-    virtual llvm::Value *mvmd_shuffle2_impl(unsigned fw, llvm::Value *table0, llvm::Value *table1,
-                                            llvm::Value *index_vector, IDISA::ShuffleMode m) {
+    llvm::Value *mvmd_shuffle2_impl(unsigned fw, llvm::Value *table0, llvm::Value *table1, llvm::Value *index_vector,
+                                    IDISA::ShuffleMode m) override final {
         return mTgt->mvmd_shuffle2(fw, table0, table1, index_vector, m);
     }
     llvm::Value *mvmd_compress_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) override final {
