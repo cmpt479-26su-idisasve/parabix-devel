@@ -362,7 +362,7 @@ llvm::Value *IDISA_SVE_Builder::simd_if_impl(unsigned fw, llvm::Value *cond, llv
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return mNeonB.simd_if_impl(fw, cond, a, b);
+    return IDISA_Generic_Builder::simd_if_impl(fw, cond, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_ternary_impl(unsigned char mask, llvm::Value *bit_2, llvm::Value *bit_1,
@@ -373,7 +373,7 @@ llvm::Value *IDISA_SVE_Builder::simd_ternary_impl(unsigned char mask, llvm::Valu
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return mNeonB.simd_ternary_impl(mask, bit_2, bit_1, bit_0);
+    return IDISA_Generic_Builder::simd_ternary_impl(mask, bit_2, bit_1, bit_0);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_slli_impl(unsigned fw, llvm::Value *a, unsigned shift) {
@@ -442,7 +442,7 @@ llvm::Value *IDISA_SVE_Builder::simd_rotl_impl(unsigned fw, llvm::Value *a, llvm
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return mNeonB.simd_rotl_impl(fw, a, rotates);
+    return IDISA_Generic_Builder::simd_rotl_impl(fw, a, rotates);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_rotr_impl(unsigned fw, llvm::Value *a, llvm::Value *rotates) {
@@ -452,7 +452,7 @@ llvm::Value *IDISA_SVE_Builder::simd_rotr_impl(unsigned fw, llvm::Value *a, llvm
     //         return mCB->CreateIntrinsic(Intrinsic::aarch64_sve_cnt, {svTy}, {pred, scalableA});
     //     });
     // }
-    return mNeonB.simd_rotr_impl(fw, a, rotates);
+    return IDISA_Generic_Builder::simd_rotr_impl(fw, a, rotates);
 }
 
 std::vector<llvm::Value *> IDISA_SVE_Builder::simd_pext_impl(unsigned fw, std::vector<llvm::Value *> vs,
@@ -478,7 +478,7 @@ std::vector<llvm::Value *> IDISA_SVE_Builder::simd_pext_impl(unsigned fw, std::v
     //     }
     //     return results;
     // }
-    return mNeonB.simd_pext_impl(fw, vs, extract_mask);
+    return IDISA_Generic_Builder::simd_pext_impl(fw, vs, extract_mask);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_pdep_impl(unsigned fw, llvm::Value *v, llvm::Value *deposit_mask) {
@@ -491,7 +491,7 @@ llvm::Value *IDISA_SVE_Builder::simd_pdep_impl(unsigned fw, llvm::Value *v, llvm
     //                                         {scalableV, scalableDepositMask});
     //         });
     // }
-    return mNeonB.simd_pdep_impl(fw, v, deposit_mask);
+    return IDISA_Generic_Builder::simd_pdep_impl(fw, v, deposit_mask);
 }
 
 llvm::Value *IDISA_SVE_Builder::simd_any_impl(unsigned fw, llvm::Value *a) {
@@ -537,7 +537,7 @@ llvm::Value *IDISA_SVE_Builder::esimd_mergeh_impl(unsigned fw, llvm::Value *a, l
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.esimd_mergeh_impl(fw, a, b);
+    return IDISA_Generic_Builder::esimd_mergeh_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::esimd_mergel_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -549,7 +549,7 @@ llvm::Value *IDISA_SVE_Builder::esimd_mergel_impl(unsigned fw, llvm::Value *a, l
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.esimd_mergel_impl(fw, a, b);
+    return IDISA_Generic_Builder::esimd_mergel_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packh_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -561,7 +561,7 @@ llvm::Value *IDISA_SVE_Builder::hsimd_packh_impl(unsigned fw, llvm::Value *a, ll
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.hsimd_packh_impl(fw, a, b);
+    return IDISA_Generic_Builder::hsimd_packh_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packl_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -573,7 +573,7 @@ llvm::Value *IDISA_SVE_Builder::hsimd_packl_impl(unsigned fw, llvm::Value *a, ll
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.hsimd_packl_impl(fw, a, b);
+    return IDISA_Generic_Builder::hsimd_packl_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packss_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -585,7 +585,7 @@ llvm::Value *IDISA_SVE_Builder::hsimd_packss_impl(unsigned fw, llvm::Value *a, l
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.hsimd_packss_impl(fw, a, b);
+    return IDISA_Generic_Builder::hsimd_packss_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::hsimd_packus_impl(unsigned fw, llvm::Value *a, llvm::Value *b) {
@@ -597,7 +597,7 @@ llvm::Value *IDISA_SVE_Builder::hsimd_packus_impl(unsigned fw, llvm::Value *a, l
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.hsimd_packus_impl(fw, a, b);
+    return IDISA_Generic_Builder::hsimd_packus_impl(fw, a, b);
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_shuffle_impl(unsigned fw, llvm::Value *data_table, llvm::Value *index_vector,
@@ -610,7 +610,7 @@ llvm::Value *IDISA_SVE_Builder::mvmd_shuffle_impl(unsigned fw, llvm::Value *data
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.mvmd_shuffle_impl(fw, data_table, index_vector);
+    return IDISA_Generic_Builder::mvmd_shuffle_impl(fw, data_table, index_vector);
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_shuffle2_impl(unsigned fw, llvm::Value *table0, llvm::Value *table1,
@@ -623,7 +623,7 @@ llvm::Value *IDISA_SVE_Builder::mvmd_shuffle2_impl(unsigned fw, llvm::Value *tab
     //         scalableA, scalableB});
     //     });
     // }
-    return mNeonB.mvmd_shuffle2_impl(fw, table0, table1, index_vector);
+    return IDISA_Generic_Builder::mvmd_shuffle2_impl(fw, table0, table1, index_vector);
 }
 
 llvm::Value *IDISA_SVE_Builder::mvmd_compress_impl(unsigned fw, llvm::Value *a, llvm::Value *select_mask) {
@@ -664,7 +664,7 @@ llvm::Value *IDISA_SVE_Builder::mvmd_expand_impl(unsigned fw, llvm::Value *a, ll
     //         scalableA, scalableSelectMask});
     //     });
     // }
-    return mNeonB.mvmd_expand_impl(fw, a, select_mask);
+    return IDISA_Generic_Builder::mvmd_expand_impl(fw, a, select_mask);
 }
 
 } // namespace IDISA
