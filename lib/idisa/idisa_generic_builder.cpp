@@ -396,21 +396,22 @@ Value *IDISA_Generic_Builder::simd_sllv_impl(unsigned fw, Value *v, Value *shift
     auto vec_width = getVectorBitWidth(v);
     if ((fw == 2 || fw == 4)) {
         auto splat8 = [&](uint8_t x) { return getSplat(vec_width / 8, mCB->getInt8(x)); };
+        v = fwCast(8, v);
+        shifts = fwCast(8, shifts);
         if (fw == 4) {
             // remask each nibble after the byte shift so bits never carry across the nibble boundary
-            Value *loData = simd_and(v, splat8(0x0F));
-            Value *hiData = simd_and(v, splat8(0xF0));
-            Value *loAmt = simd_and(shifts, splat8(0x0F));
+            Value *loAmt = simd_and(shifts, splat8(0x03));
             Value *hiAmt = simd_srli(8, shifts, 4);
-            Value *loSh = simd_and(mCB->CreateShl(fwCast(8, loData), fwCast(8, loAmt)), splat8(0x0F));
-            Value *hiSh = simd_and(mCB->CreateShl(fwCast(8, hiData), fwCast(8, hiAmt)), splat8(0xF0));
-            return simd_or(loSh, hiSh);
+            Value *loSh = simd_and(simd_sllv(8, v, loAmt), splat8(0x0F));
+            Value *hiSh = simd_sllv(8, simd_and(v, splat8(0xF0)), hiAmt);
+            return fwCast(4, simd_or(loSh, hiSh));
+        } else {
+            // fw == 2: amount is one bit per field; expand it to a full 0b11 field mask and BSL-select
+            Value *shifted = simd_and(mCB->CreateShl(fwCast(8, v), splat8(1)), splat8(0xAA));
+            Value *a = simd_and(shifts, splat8(0x55));
+            Value *sel = simd_or(a, mCB->CreateShl(fwCast(8, a), splat8(1)));
+            return fwCast(2, simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel))));
         }
-        // fw == 2: amount is one bit per field; expand it to a full 0b11 field mask and BSL-select
-        Value *shifted = simd_and(mCB->CreateShl(fwCast(8, v), splat8(1)), splat8(0xAA));
-        Value *a = simd_and(shifts, splat8(0x55));
-        Value *sel = simd_or(a, mCB->CreateShl(fwCast(8, a), splat8(1)));
-        return simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel)));
     }
     return mCB->CreateShl(fwCast(fw, v), fwCast(fw, shifts));
 }
@@ -419,19 +420,20 @@ Value *IDISA_Generic_Builder::simd_srlv_impl(unsigned fw, Value *v, Value *shift
     auto vec_width = getVectorBitWidth(v);
     if ((fw == 2 || fw == 4)) {
         auto splat8 = [&](uint8_t x) { return getSplat(vec_width / 8, mCB->getInt8(x)); };
+        v = fwCast(8, v);
+        shifts = fwCast(8, shifts);
         if (fw == 4) {
-            Value *loData = simd_and(v, splat8(0x0F));
-            Value *hiData = simd_and(v, splat8(0xF0));
-            Value *loAmt = simd_and(shifts, splat8(0x0F));
+            Value *loAmt = simd_and(shifts, splat8(0x03));
             Value *hiAmt = simd_srli(8, shifts, 4);
-            Value *loSh = simd_and(mCB->CreateLShr(fwCast(8, loData), fwCast(8, loAmt)), splat8(0x0F));
-            Value *hiSh = simd_and(mCB->CreateLShr(fwCast(8, hiData), fwCast(8, hiAmt)), splat8(0xF0));
-            return simd_or(loSh, hiSh);
+            Value *loSh = simd_srlv(8, simd_and(v, splat8(0x0F)), loAmt);
+            Value *hiSh = simd_and(simd_srlv(8, v, hiAmt), splat8(0xF0));
+            return fwCast(4, simd_or(loSh, hiSh));
+        } else {
+            Value *shifted = simd_and(simd_srli(8, v, 1), splat8(0x55));
+            Value *a = simd_and(shifts, splat8(0x55));
+            Value *sel = simd_or(a, simd_slli(8, a, 1));
+            return fwCast(2, simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel))));
         }
-        Value *shifted = simd_and(mCB->CreateLShr(fwCast(8, v), splat8(1)), splat8(0x55));
-        Value *a = simd_and(shifts, splat8(0x55));
-        Value *sel = simd_or(a, mCB->CreateShl(fwCast(8, a), splat8(1)));
-        return simd_or(simd_and(shifted, sel), simd_and(v, simd_not(sel)));
     }
     return mCB->CreateLShr(fwCast(fw, v), fwCast(fw, shifts));
 }
