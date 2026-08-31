@@ -34,3 +34,18 @@
 
 extern Entropy ent;
 extern XorShift256pp rng;
+
+extern llvm::cl::OptionCategory ExerciserFlags;
+
+extern llvm::cl::opt<std::string> OperationName;
+extern llvm::cl::opt<unsigned> OperationFieldWidth;
+extern llvm::cl::list<std::string> OperationArgs;
+extern llvm::cl::opt<std::string> OperationOutputFile;
+extern llvm::cl::opt<bool> OperationOutputHex;
+extern llvm::cl::opt<bool> QuietMode;
+extern llvm::cl::opt<bool> DisableChecks;
+extern llvm::cl::opt<unsigned> WarmupCount;
+extern llvm::cl::opt<unsigned> RepeatCount;
+extern llvm::cl::opt<unsigned> DropBestCount;
+extern llvm::cl::opt<unsigned> DropWorstCount;
+extern llvm::cl::opt<bool> ReportTiming;

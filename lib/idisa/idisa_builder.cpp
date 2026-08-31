@@ -63,7 +63,7 @@ Constant *IDISA_Builder::bit_interleave_byteshuffle_table(unsigned fw) {
     // Bit interleave using shuffle.
     // Make a shuffle table that translates the lower 4 bits of each byte in
     // order to spread out the bits: xxxxdcba => .d.c.b.a (fw = 1)
-    SmallVector<Constant *, 64> bit_interleave(fieldCount);
+    IndexVector bit_interleave(fieldCount);
     for (unsigned i = 0; i < fieldCount; i++) {
         if (fw == 1)
             bit_interleave[i] = mCB->getInt8((i & 1) | ((i & 2) << 1) | ((i & 4) << 2) | ((i & 8) << 3));
@@ -74,6 +74,7 @@ Constant *IDISA_Builder::bit_interleave_byteshuffle_table(unsigned fw) {
 }
 
 Value *IDISA_Builder::fwCast(const unsigned fw, Value *const a) {
+    assert(fw >= 8);
     unsigned vecWidth = getVectorBitWidth(a);
     Type *vecTy = FixedVectorType::get(mCB->getIntNTy(fw), vecWidth / fw);
     if (a->getType() == vecTy)
@@ -98,7 +99,7 @@ Constant *IDISA_Builder::getConstantVectorSequence(unsigned fw, unsigned first, 
     const unsigned seqLgth = (last - first) / by + 1;
     assert(((first + (seqLgth - 1) * by) == last) && "invalid element sequence");
     Type *fwTy = mCB->getIntNTy(fw);
-    SmallVector<Constant *, 16> elements(seqLgth);
+    IndexVector elements(seqLgth);
     for (unsigned i = 0; i < seqLgth; i++) {
         elements[i] = ConstantInt::get(fwTy, i * by + first);
     }
@@ -110,7 +111,7 @@ Constant *IDISA_Builder::getRepeatingConstantVectorSequence(unsigned fw, unsigne
     const unsigned seqLgth = (last - first) / by + 1;
     assert(((first + (seqLgth - 1) * by) == last) && "invalid element sequence");
     Type *fwTy = mCB->getIntNTy(fw);
-    SmallVector<Constant *, 16> elements(seqLgth * repeat);
+    IndexVector elements(seqLgth * repeat);
     for (unsigned i = 0; i < seqLgth; i++) {
         Constant *c = ConstantInt::get(fwTy, i * by + first);
         for (unsigned j = 0; j < repeat; j++) {
@@ -143,19 +144,27 @@ Constant *IDISA_Builder::simd_himask(unsigned fw) { return simd_himask(mBitBlock
 Constant *IDISA_Builder::simd_lomask(unsigned fw) { return simd_lomask(mBitBlockWidth, fw); }
 
 Constant *IDISA_Builder::simd_himask(unsigned vector_width, unsigned fw) {
+    if (fw < 2)
+        UnsupportedFieldWidthError(fw, "simd_himask");
     return getSplat(vector_width / fw,
                     Constant::getIntegerValue(mCB->getIntNTy(fw), APInt::getHighBitsSet(fw, fw / 2)));
 }
 
 Constant *IDISA_Builder::simd_lomask(unsigned vector_width, unsigned fw) {
+    if (fw < 2)
+        UnsupportedFieldWidthError(fw, "simd_lomask");
     return getSplat(vector_width / fw, Constant::getIntegerValue(mCB->getIntNTy(fw), APInt::getLowBitsSet(fw, fw / 2)));
 }
 
 Value *IDISA_Builder::simd_select_hi(unsigned fw, Value *a) {
+    if (fw < 2)
+        UnsupportedFieldWidthError(fw, "simd_select_hi");
     return simd_and(a, simd_himask(getVectorBitWidth(a), fw));
 }
 
 Value *IDISA_Builder::simd_select_lo(unsigned fw, Value *a) {
+    if (fw < 2)
+        UnsupportedFieldWidthError(fw, "simd_select_lo");
     return simd_and(a, simd_lomask(getVectorBitWidth(a), fw));
 }
 
@@ -212,10 +221,10 @@ Value *IDISA_Builder::simd_binary(unsigned char truth_table_mask, Value *bit_1, 
 Value *IDISA_Builder::bitblock_popcount(Value *const to_count) {
     const auto fieldWidth = mCB->getSizeTy()->getBitWidth();
     auto fields = (getBitBlockWidth() / fieldWidth);
-    Value *fieldCounts = simd_popcount(fieldWidth, to_count);
+    Value *fieldCounts = fwCast(fieldWidth, simd_popcount(fieldWidth, to_count));
     while (fields > 1) {
         fields /= 2;
-        fieldCounts = mCB->CreateAdd(fieldCounts, mvmd_srli(fieldWidth, fieldCounts, fields));
+        fieldCounts = mCB->CreateAdd(fieldCounts, fwCast(fieldWidth, mvmd_srli(fieldWidth, fieldCounts, fields)));
     }
     return mvmd_extract(fieldWidth, fieldCounts, 0);
 }

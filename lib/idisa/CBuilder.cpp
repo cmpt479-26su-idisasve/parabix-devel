@@ -460,6 +460,12 @@ CallInst * CBuilder::CallPrintRegister(StringRef name, Value * const value, cons
         Value * value = &*arg;
         value->setName("value");
         Type * const byteFixedVectorType = FixedVectorType::get(getInt8Ty(), (vec_width / 8));
+
+        // errs() << "making printf: " << vec_width << ", ";
+        // byteFixedVectorType->print(errs());
+        // errs() << "\n";
+        // errs().flush();
+
         value = builder.CreateBitCast(value, byteFixedVectorType);
         std::vector<Value *> args;
         args.push_back(fdInt);

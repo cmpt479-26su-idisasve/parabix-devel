@@ -24,7 +24,7 @@ Value *IDISA_I64_Builder::hsimd_packh_impl(unsigned fw, Value *a, Value *b) {
         b_ = simd_or(simd_and(b_, himask_odd), simd_slli(vec_width, simd_and(b_, himask_even), w / 2));
         a_ = simd_or(simd_and(a_, himask_odd), simd_slli(vec_width, simd_and(a_, himask_even), w / 2));
     }
-    return simd_or(b_, simd_srli(vec_width, a_, vec_width / 2));
+    return fwCast(fw, simd_or(b_, simd_srli(vec_width, a_, vec_width / 2)));
 }
 
 Value *IDISA_I64_Builder::hsimd_packl_impl(unsigned fw, Value *a, Value *b) {
@@ -39,7 +39,7 @@ Value *IDISA_I64_Builder::hsimd_packl_impl(unsigned fw, Value *a, Value *b) {
         b_ = simd_or(simd_and(b_, lomask_even), simd_srli(vec_width, simd_and(b_, lomask_odd), w / 2));
         a_ = simd_or(simd_and(a_, lomask_even), simd_srli(vec_width, simd_and(a_, lomask_odd), w / 2));
     }
-    return simd_or(simd_slli(vec_width, b_, vec_width / 2), a_);
+    return fwCast(fw, simd_or(simd_slli(vec_width, b_, vec_width / 2), a_));
 }
 
 } // namespace IDISA

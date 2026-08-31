@@ -12,6 +12,7 @@ NAME
 SRC
     idisa_exerciser.cpp
     idisa_operations.cpp
+    safe_ops.cpp
 DEPS
     kernel.basis
     kernel.io

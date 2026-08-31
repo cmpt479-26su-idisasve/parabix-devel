@@ -1,11 +1,24 @@
 #pragma once
 
+/*
+ *  Part of the Parabix Project, under the Open Software License 3.0.
+ *  SPDX-License-Identifier: OSL-3.0
+ */
+
 #include "idisa_exerciser.h"
 
 namespace llvm {
 class Type;
 class Value;
 } // namespace llvm
+
+enum class ExpectedType {
+    bit,
+    field,
+    size,
+    fieldVector,
+    bitBlock,
+};
 
 class OperationConfig {
   public:
@@ -15,6 +28,7 @@ class OperationConfig {
         llvm::Type *fTy;   // Field type (fw-width int)
         llvm::Type *vTy;   // Vector type (fn x fw)
         llvm::Type *i32Ty; // Just handy: int32 type
+        llvm::Type *i64Ty; // Just handy: int64 type
     };
 
     static std::string operandFDIdent(unsigned index) { return std::format("operand{}_fd", index + 1); }
@@ -54,10 +68,10 @@ class OperationConfig {
 
     bool isStdinGrabbed() const { return mStdinGrabbed; }
 
-    virtual llvm::Value *makeTestLogic(kernel::KernelBuilder &b, std::vector<llvm::Value *> operands) = 0;
-    virtual llvm::Value *makeCheckLogic(kernel::KernelBuilder &b, std::vector<llvm::Value *> operands) = 0;
+    virtual llvm::Value *makeTestLogic(kernel::KernelBuilder &b, const std::vector<llvm::Value *> &operands) = 0;
+    virtual llvm::Value *makeCheckLogic(kernel::KernelBuilder &b, const std::vector<llvm::Value *> &operands) = 0;
 
-    void fillParams(kernel::KernelBuilder &b, std::vector<llvm::Value *> operands, Params &outParams) const;
+    void fillParams(kernel::KernelBuilder &b, const std::vector<llvm::Value *> &operands, Params &outParams) const;
 
     void logKernelBuilder(kernel::KernelBuilder &b) {
         assert(mKernelBuilderID.empty());
@@ -107,6 +121,6 @@ class OperationConfig {
     OperationConfig &operator=(const OperationConfig &) = delete;
 };
 
-std::vector<std::tuple<llvm::StringRef, llvm::StringRef, llvm::StringRef>> allOperationHelpDescs();
-bool makeOperationConfig(llvm::cl::opt<std::string> &opName, llvm::cl::opt<unsigned> &opFieldWidth,
-                         llvm::cl::opt<bool> &opQuiet, std::unique_ptr<OperationConfig> &outOpConfig);
+extern llvm::cl::extrahelp SupportedOperationsHelp;
+
+bool makeOperationConfig(std::unique_ptr<OperationConfig> &outOpConfig);

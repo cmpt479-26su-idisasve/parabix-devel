@@ -9,40 +9,11 @@
 #include <kernel/util/hex_convert.h>
 
 #include "idisa_exerciser.h"
+#include "safe_ops.h"
 
 using namespace std;
 using namespace llvm;
 using namespace kernel;
-
-//////////////////////////////////////////////////////////////////////////////////
-// ShiftMaskKernel, used potentially by the config
-
-// class ShiftMaskKernel : public BlockOrientedKernel {
-//   public:
-//     ShiftMaskKernel(LLVMTypeSystemInterface &ts, unsigned fw, unsigned limit, StreamSet *input, StreamSet *output);
-
-//   protected:
-//     void generateDoBlockMethod(KernelBuilder &kb) override;
-
-//   private:
-//     const unsigned mTestFw;
-//     const unsigned mShiftMask;
-// };
-
-// ShiftMaskKernel::ShiftMaskKernel(LLVMTypeSystemInterface &ts, unsigned fw, unsigned mask, StreamSet *input,
-//                                  StreamSet *output)
-//     : BlockOrientedKernel(ts, "shiftMask" + std::to_string(fw) + "_" + std::to_string(mask),
-//                           {Binding{"shiftOperand", input}}, {Binding{"limitedShift", output}}, {}, {}, {}),
-//       mTestFw(fw), mShiftMask(mask) {}
-
-// void ShiftMaskKernel::generateDoBlockMethod(KernelBuilder &b) {
-//     Type *fwTy = b.getIntNTy(mTestFw);
-//     Constant *const ZeroConst = b.getSize(0);
-//     Value *shiftOperand = b.loadInputStreamBlock("shiftOperand", ZeroConst);
-//     unsigned fieldCount = b.getBitBlockWidth() / mTestFw;
-//     Value *masked = b.simd_and(shiftOperand, b.getSplat(fieldCount, ConstantInt::get(fwTy, mShiftMask)));
-//     b.storeOutputStreamBlock("limitedShift", ZeroConst, masked);
-// }
 
 //////////////////////////////////////////////////////////////////////////////////
 // Kernels used by the OperationConfigs
@@ -56,49 +27,53 @@ class TestKernel : public MultiBlockKernel {
           mConfig(config), mNumOperands(operandSSs.size()) {}
 
   protected:
-    void generateMultiBlockLogic(KernelBuilder &b, llvm::Value *const numBlocks) override {
-        mConfig.logKernelBuilder(b);
-
-        BasicBlock *entry = b.GetInsertBlock();
-        BasicBlock *processBlock = b.CreateBasicBlock("processBlock");
-        BasicBlock *done = b.CreateBasicBlock("done");
-        b.CreateBr(processBlock);
-        b.SetInsertPoint(processBlock);
-        PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
-        Constant *zero = b.getSize(0);
-        blockOffsetPhi->addIncoming(zero, entry);
-
-        vector<Value *> operandBlocks;
-        for (unsigned i = 0; i < mNumOperands; ++i) {
-            operandBlocks.emplace_back(b.loadInputStreamBlock(OperationConfig::operandIdent(i), zero, blockOffsetPhi));
-        }
-        Value *testOutputBlock = mConfig.makeTestLogic(b, operandBlocks);
-
-        b.storeOutputStreamBlock(OperationConfig::testOutputIdent, zero, blockOffsetPhi, b.bitCast(testOutputBlock));
-        Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
-        blockOffsetPhi->addIncoming(nextBlk, processBlock);
-        Value *moreToDo = b.CreateICmpNE(nextBlk, numBlocks);
-        b.CreateCondBr(moreToDo, processBlock, done);
-        b.SetInsertPoint(done);
-    }
+    void generateMultiBlockLogic(KernelBuilder &b, Value *const numBlocks) override;
 
   private:
     OperationConfig &mConfig;
     unsigned mNumOperands;
 
-    Bindings captureOperandBindings(const vector<StreamSet *> &operandSSs) {
-        Bindings bs;
-        bs.reserve(1);
-        unsigned i = 0;
-        for (auto ss : operandSSs) {
-            string name = OperationConfig::operandIdent(i++);
-            bs.emplace_back(name, ss);
-        }
-        return bs;
-    }
+    Bindings captureOperandBindings(const vector<StreamSet *> &operandSSs);
 
     TestKernel(const TestKernel &) = delete;
 };
+
+void TestKernel::generateMultiBlockLogic(KernelBuilder &b, Value *const numBlocks) {
+    mConfig.logKernelBuilder(b);
+
+    BasicBlock *entry = b.GetInsertBlock();
+    BasicBlock *processBlock = b.CreateBasicBlock("processBlock");
+    BasicBlock *done = b.CreateBasicBlock("done");
+    b.CreateBr(processBlock);
+    b.SetInsertPoint(processBlock);
+    PHINode *blockOffsetPhi = b.CreatePHI(b.getSizeTy(), 2);
+    Constant *zero = b.getSize(0);
+    blockOffsetPhi->addIncoming(zero, entry);
+
+    vector<Value *> operandBlocks;
+    for (unsigned i = 0; i < mNumOperands; ++i) {
+        operandBlocks.emplace_back(b.loadInputStreamBlock(OperationConfig::operandIdent(i), zero, blockOffsetPhi));
+    }
+    Value *testOutputBlock = mConfig.makeTestLogic(b, operandBlocks);
+
+    b.storeOutputStreamBlock(OperationConfig::testOutputIdent, zero, blockOffsetPhi, b.bitCast(testOutputBlock));
+    Value *nextBlk = b.CreateAdd(blockOffsetPhi, b.getSize(1));
+    blockOffsetPhi->addIncoming(nextBlk, processBlock);
+    Value *moreToDo = b.CreateICmpNE(nextBlk, numBlocks);
+    b.CreateCondBr(moreToDo, processBlock, done);
+    b.SetInsertPoint(done);
+}
+
+Bindings TestKernel::captureOperandBindings(const vector<StreamSet *> &operandSSs) {
+    Bindings bs;
+    bs.reserve(1);
+    unsigned i = 0;
+    for (auto ss : operandSSs) {
+        string name = OperationConfig::operandIdent(i++);
+        bs.emplace_back(name, ss);
+    }
+    return bs;
+}
 
 class CheckKernel : public BlockOrientedKernel {
   public:
@@ -111,53 +86,86 @@ class CheckKernel : public BlockOrientedKernel {
           mConfig(config), mQuiet(quiet), mNumOperands(operandSSs.size()) {}
 
   protected:
-    void generateDoBlockMethod(KernelBuilder &b) override {
-        Constant *zero = b.getSize(0);
-        Value *testOutputBlock = b.loadInputStreamBlock(OperationConfig::testOutputIdent, zero);
-        vector<Value *> operandBlocks;
-        for (unsigned i = 0; i < mNumOperands; ++i) {
-            operandBlocks.emplace_back(b.loadInputStreamBlock(OperationConfig::operandIdent(i), zero));
-        }
-        Value *expectedOutputBlock = mConfig.makeCheckLogic(b, operandBlocks);
-
-        b.storeOutputStreamBlock(OperationConfig::expectedOutputIdent, zero, expectedOutputBlock);
-        Value *failures =
-            b.simd_ugt(mConfig.getFieldWidth(), b.simd_xor(testOutputBlock, expectedOutputBlock), b.allZeroes());
-        Value *failureCount = b.CreateUDiv(b.bitblock_popcount(failures), b.getSize(mConfig.getFieldWidth()));
-        b.setScalarField(OperationConfig::failureCountIdent,
-                         b.CreateAdd(b.getScalarField(OperationConfig::failureCountIdent), failureCount));
-        if (!mQuiet) {
-            // created here so they always get terminators; unterminated blocks crash the JIT under -q
-            BasicBlock *reportFailure = b.CreateBasicBlock("reportFailure");
-            BasicBlock *continueTest = b.CreateBasicBlock("continueTest");
-            Value *anyFailure = b.bitblock_any(failures);
-            b.CreateCondBr(anyFailure, reportFailure, continueTest);
-            b.SetInsertPoint(reportFailure);
-            for (unsigned i = 0; i < mNumOperands; ++i) {
-                b.CallPrintRegister(OperationConfig::operandIdent(i), b.bitCast(operandBlocks[i]));
-            }
-            b.CallPrintRegister(mConfig.getDescription(), testOutputBlock);
-            b.CallPrintRegister("expecting", b.bitCast(expectedOutputBlock));
-            b.CreateBr(continueTest);
-            b.SetInsertPoint(continueTest);
-        }
-    }
+    void generateDoBlockMethod(KernelBuilder &b) override;
 
   private:
     OperationConfig &mConfig;
     bool mQuiet;
     unsigned mNumOperands;
 
-    Bindings captureOperandBindings(const vector<StreamSet *> &operandSSs, StreamSet *testOutput) {
-        Bindings bs;
-        unsigned i = 0;
-        for (auto ss : operandSSs) {
-            bs.emplace_back(OperationConfig::operandIdent(i++), ss);
-        }
-        bs.emplace_back(OperationConfig::testOutputIdent, testOutput);
-        return bs;
-    }
+    Bindings captureOperandBindings(const vector<StreamSet *> &operandSSs, StreamSet *testOutput);
 };
+
+void CheckKernel::generateDoBlockMethod(KernelBuilder &b) {
+    Constant *zero = b.getSize(0);
+    Value *testOutputBlock = b.bitCast(b.loadInputStreamBlock(OperationConfig::testOutputIdent, zero));
+    vector<Value *> operandBlocks;
+    for (unsigned i = 0; i < mNumOperands; ++i) {
+        operandBlocks.emplace_back(b.bitCast(b.loadInputStreamBlock(OperationConfig::operandIdent(i), zero)));
+    }
+    Value *expectedOutputBlock = b.bitCast(mConfig.makeCheckLogic(b, operandBlocks));
+
+    // unsigned fw = mConfig.getFieldWidth();
+    // if (fw <= 8) {
+    //     unsigned fn = b.getBitBlockWidth() / fw;
+
+    //     errs() << "fw < 8: bbw=" << b.getBitBlockWidth() << ", fn=" << fn << ", fw=" << fw << ", fvt=";
+    //     expectedOutputBlock->getType()->print(errs());
+    //     errs() << ", lob=";
+    //     b.fwVectorType(b.getLaneWidth())->print(errs());
+    //     errs() << "\n";
+    //     errs().flush();
+
+    //     Value *laneOutputBlock = Constant::getNullValue(b.fwVectorType(b.getLaneWidth()));
+    //     unsigned lanesPerBlock = b.getBitBlockWidth() / b.getLaneWidth();
+    //     unsigned fieldsPerLane = b.getLaneWidth() / fw;
+    //     for (unsigned i = 0; i < lanesPerBlock; ++i) {
+    //         Value *laneField = Constant::getNullValue(b.getLaneTy());
+    //         for (unsigned j = 0; j < fieldsPerLane; ++j) {
+    //             laneField = b.CreateOr(
+    //                 laneField,
+    //                 b.CreateShl(
+    //                     b.CreateZExt(b.CreateExtractElement(expectedOutputBlock, i * fieldsPerLane + j),
+    //                     b.getLaneTy()), j * fw));
+    //         }
+    //         laneOutputBlock = b.CreateInsertElement(laneOutputBlock, laneField, i);
+    //     }
+    //     expectedOutputBlock = laneOutputBlock;
+    // }
+
+    b.storeOutputStreamBlock(OperationConfig::expectedOutputIdent, zero, expectedOutputBlock);
+    Value *failures = b.CreateICmpNE(b.bitCast(testOutputBlock), b.bitCast(expectedOutputBlock));
+    Value *failuresWord = b.CreateBitCast(failures, b.getIntNTy(b.getBitBlockWidth() / b.getLaneWidth()));
+    assert(b.getSizeTy()->getPrimitiveSizeInBits() >= (b.getBitBlockWidth() / b.getLaneWidth()));
+    Value *failureCount = b.CreatePopcount(b.CreateZExt(failuresWord, b.getSizeTy()));
+    b.setScalarField(OperationConfig::failureCountIdent,
+                     b.CreateAdd(b.getScalarField(OperationConfig::failureCountIdent), failureCount));
+    if (!mQuiet) {
+        // created here so they always get terminators; unterminated blocks crash the JIT under -q
+        BasicBlock *reportFailure = b.CreateBasicBlock("reportFailure");
+        BasicBlock *continueTest = b.CreateBasicBlock("continueTest");
+        Value *anyFailure = b.CreateICmpNE(failureCount, zero);
+        b.CreateCondBr(anyFailure, reportFailure, continueTest);
+        b.SetInsertPoint(reportFailure);
+        for (unsigned i = 0; i < mNumOperands; ++i) {
+            b.CallPrintRegister(OperationConfig::operandIdent(i), b.bitCast(operandBlocks[i]));
+        }
+        b.CallPrintRegister(mConfig.getDescription(), b.bitCast(testOutputBlock));
+        b.CallPrintRegister("expecting", b.bitCast(expectedOutputBlock));
+        b.CreateBr(continueTest);
+        b.SetInsertPoint(continueTest);
+    }
+}
+
+Bindings CheckKernel::captureOperandBindings(const vector<StreamSet *> &operandSSs, StreamSet *testOutput) {
+    Bindings bs;
+    unsigned i = 0;
+    for (auto ss : operandSSs) {
+        bs.emplace_back(OperationConfig::operandIdent(i++), ss);
+    }
+    bs.emplace_back(OperationConfig::testOutputIdent, testOutput);
+    return bs;
+}
 
 class DummyCheckKernel : public Kernel {
   public:
@@ -183,12 +191,13 @@ OperationConfig::~OperationConfig() {
     }
 }
 
-void OperationConfig::fillParams(KernelBuilder &b, vector<Value *> operands, Params &outParams) const {
+void OperationConfig::fillParams(KernelBuilder &b, const vector<Value *> &operands, Params &outParams) const {
     outParams.fw = mFieldWidth;
     outParams.fn = b.getBitBlockWidth() / mFieldWidth;
     outParams.fTy = b.getIntNTy(mFieldWidth);
     outParams.vTy = b.fwVectorType(mFieldWidth);
     outParams.i32Ty = b.getInt32Ty();
+    outParams.i64Ty = b.getInt64Ty();
 }
 
 void OperationConfig::resetPipeline() {
@@ -209,7 +218,8 @@ bool OperationConfig::configurePipelineFromArgs(cl::list<string> &args, bool doC
         return true;
     }
     if (cur < args.size()) {
-        return args.error("Unexpected operation arguments: expected " + to_string(cur) + ", got " + to_string(cur));
+        return args.error("Unexpected operation arguments: expected " + to_string(cur) + ", got " +
+                          to_string(args.size()));
     }
 
     return false;
@@ -232,6 +242,7 @@ bool OperationConfig::parseUnsigned(cl::list<string> &args, size_t &cur, StringR
         return args.error("Expected " + expectName + "; value outside range " + to_string(minVal) + "-" +
                           to_string(maxVal));
     }
+    outResult = result;
     ++cur;
     return false;
 }
@@ -274,13 +285,6 @@ bool OperationConfig::parseStreamSource(cl::list<string> &args, size_t &cur, Str
     // mPipelineBuilder->CreateKernelCall<HexToBinary>(hexStream, bitStream);
     outSSResult = bitStream;
 
-    // Uncomment (and fix names) to get shift masked input...
-    // if (ShiftMask > 0) {
-    //     StreamSet *shiftedStream = P.CreateStreamSet(1, 1);
-    //     P.CreateKernelCall<ShiftMaskKernel>(OperationFieldWidth, ShiftMask, stream, shiftedStream);
-    //     stream = shiftedStream;
-    // }
-
     return false;
 }
 
@@ -317,7 +321,7 @@ template <unsigned N> class NaryOpConfig : public OperationConfig {
     explicit NaryOpConfig(StringRef description, StringRef identifier, unsigned fieldWidth)
         : OperationConfig(description, identifier, fieldWidth) {}
 
-    void fillParams(KernelBuilder &b, std::vector<Value *> operands, Params &outParams) const {
+    void fillParams(KernelBuilder &b, const vector<Value *> &operands, Params &outParams) const {
         assert(operands.size() == N);
         OperationConfig::fillParams(b, operands, outParams);
         for (unsigned i = 0; i < N; ++i) {
@@ -329,71 +333,7 @@ template <unsigned N> class NaryOpConfig : public OperationConfig {
     vector<int32_t> mOperandFDs;
     function<void()> mCompileFunc;
 
-    void constructPipeline(CPUDriver &driver) override {
-        assert(!mPipelineBuilder);
-        // I found lots of template magic in the PipelineBuilder, but nothing that would assist with building up a
-        // function signature and matching call programmatically. Since we don't actually need a fully general system,
-        // this mediocrity will do: at least it keeps the special-casing local, so it can be replaced easily if a better
-        // solution is wanted.
-        switch (N) {
-        case 0: {
-            auto pTmp = CreatePipeline(driver, Input<const char *>{OperationConfig::outputFilenameIdent},
-                                       Output<size_t>{OperationConfig::failureCountIdent});
-            auto p = make_unique<decltype(pTmp)>(move(pTmp));
-            auto pPtr = p.get();
-            mPipelineBuilder = move(p);
-            mCompileFunc = [=, this]() {
-                auto pipelineFunc = pPtr->compile();
-                mExecuteFunc = [=, this]() -> size_t { return pipelineFunc(mOutputFilename.c_str()); };
-            };
-        } break;
-        case 1: {
-            auto pTmp = CreatePipeline(driver, Input<int32_t>{OperationConfig::operandFDIdent(0)},
-                                       Input<const char *>{OperationConfig::outputFilenameIdent},
-                                       Output<size_t>{OperationConfig::failureCountIdent});
-            auto p = make_unique<decltype(pTmp)>(move(pTmp));
-            auto pPtr = p.get();
-            mPipelineBuilder = move(p);
-            mCompileFunc = [=, this]() {
-                auto pipelineFunc = pPtr->compile();
-                mExecuteFunc = [=, this]() -> size_t { return pipelineFunc(mOperandFDs[0], mOutputFilename.c_str()); };
-            };
-        } break;
-        case 2: {
-            auto pTmp = CreatePipeline(driver, Input<int32_t>{OperationConfig::operandFDIdent(0)},
-                                       Input<int32_t>{OperationConfig::operandFDIdent(1)},
-                                       Input<const char *>{OperationConfig::outputFilenameIdent},
-                                       Output<size_t>{OperationConfig::failureCountIdent});
-            auto p = make_unique<decltype(pTmp)>(move(pTmp));
-            auto pPtr = p.get();
-            mPipelineBuilder = move(p);
-            mCompileFunc = [=, this]() {
-                auto pipelineFunc = pPtr->compile();
-                mExecuteFunc = [=, this]() -> size_t {
-                    return pipelineFunc(mOperandFDs[0], mOperandFDs[1], mOutputFilename.c_str());
-                };
-            };
-        } break;
-        case 3: {
-            auto pTmp = CreatePipeline(driver, Input<int32_t>{OperationConfig::operandFDIdent(0)},
-                                       Input<int32_t>{OperationConfig::operandFDIdent(1)},
-                                       Input<int32_t>{OperationConfig::operandFDIdent(2)},
-                                       Input<const char *>{OperationConfig::outputFilenameIdent},
-                                       Output<size_t>{OperationConfig::failureCountIdent});
-            auto p = make_unique<decltype(pTmp)>(move(pTmp));
-            auto pPtr = p.get();
-            mPipelineBuilder = move(p);
-            mCompileFunc = [=, this]() {
-                auto pipelineFunc = pPtr->compile();
-                mExecuteFunc = [=, this]() -> size_t {
-                    return pipelineFunc(mOperandFDs[0], mOperandFDs[1], mOperandFDs[2], mOutputFilename.c_str());
-                };
-            };
-        } break;
-        default:
-            assert(!"Unimplemented N > 3");
-        }
-    }
+    void constructPipeline(CPUDriver &driver) override;
 
     void compilePipeline() {
         assert(mPipelineBuilder);
@@ -435,6 +375,78 @@ template <unsigned N> class NaryOpConfig : public OperationConfig {
     }
 };
 
+template <> void NaryOpConfig<0>::constructPipeline(CPUDriver &driver);
+template <> void NaryOpConfig<1>::constructPipeline(CPUDriver &driver);
+template <> void NaryOpConfig<2>::constructPipeline(CPUDriver &driver);
+template <> void NaryOpConfig<3>::constructPipeline(CPUDriver &driver);
+
+// I found lots of template magic in the PipelineBuilder, but nothing that would assist with building up a
+// function signature and matching call programmatically. Since we don't actually need a fully general system,
+// this mediocrity will do: at least it keeps the special-casing local, so it can be replaced easily if a better
+// solution is wanted.
+
+// Maybe you have a better way? It sure wants to be refactored!
+
+template <> void NaryOpConfig<0>::constructPipeline(CPUDriver &driver) {
+    assert(!mPipelineBuilder);
+    auto pTmp = CreatePipeline(driver, Input<const char *>{OperationConfig::outputFilenameIdent},
+                               Output<size_t>{OperationConfig::failureCountIdent});
+    auto p = make_unique<decltype(pTmp)>(move(pTmp));
+    auto pPtr = p.get();
+    mPipelineBuilder = move(p);
+    mCompileFunc = [=, this]() {
+        auto pipelineFunc = pPtr->compile();
+        mExecuteFunc = [=, this]() -> size_t { return pipelineFunc(mOutputFilename.c_str()); };
+    };
+}
+
+template <> void NaryOpConfig<1>::constructPipeline(CPUDriver &driver) {
+    assert(!mPipelineBuilder);
+    auto pTmp = CreatePipeline(driver, Input<int32_t>{OperationConfig::operandFDIdent(0)},
+                               Input<const char *>{OperationConfig::outputFilenameIdent},
+                               Output<size_t>{OperationConfig::failureCountIdent});
+    auto p = make_unique<decltype(pTmp)>(move(pTmp));
+    auto pPtr = p.get();
+    mPipelineBuilder = move(p);
+    mCompileFunc = [=, this]() {
+        auto pipelineFunc = pPtr->compile();
+        mExecuteFunc = [=, this]() -> size_t { return pipelineFunc(mOperandFDs[0], mOutputFilename.c_str()); };
+    };
+}
+
+template <> void NaryOpConfig<2>::constructPipeline(CPUDriver &driver) {
+    assert(!mPipelineBuilder);
+    auto pTmp = CreatePipeline(
+        driver, Input<int32_t>{OperationConfig::operandFDIdent(0)}, Input<int32_t>{OperationConfig::operandFDIdent(1)},
+        Input<const char *>{OperationConfig::outputFilenameIdent}, Output<size_t>{OperationConfig::failureCountIdent});
+    auto p = make_unique<decltype(pTmp)>(move(pTmp));
+    auto pPtr = p.get();
+    mPipelineBuilder = move(p);
+    mCompileFunc = [=, this]() {
+        auto pipelineFunc = pPtr->compile();
+        mExecuteFunc = [=, this]() -> size_t {
+            return pipelineFunc(mOperandFDs[0], mOperandFDs[1], mOutputFilename.c_str());
+        };
+    };
+}
+
+template <> void NaryOpConfig<3>::constructPipeline(CPUDriver &driver) {
+    assert(!mPipelineBuilder);
+    auto pTmp = CreatePipeline(
+        driver, Input<int32_t>{OperationConfig::operandFDIdent(0)}, Input<int32_t>{OperationConfig::operandFDIdent(1)},
+        Input<int32_t>{OperationConfig::operandFDIdent(2)}, Input<const char *>{OperationConfig::outputFilenameIdent},
+        Output<size_t>{OperationConfig::failureCountIdent});
+    auto p = make_unique<decltype(pTmp)>(move(pTmp));
+    auto pPtr = p.get();
+    mPipelineBuilder = move(p);
+    mCompileFunc = [=, this]() {
+        auto pipelineFunc = pPtr->compile();
+        mExecuteFunc = [=, this]() -> size_t {
+            return pipelineFunc(mOperandFDs[0], mOperandFDs[1], mOperandFDs[2], mOutputFilename.c_str());
+        };
+    };
+}
+
 template <class BaseOpConfig, unsigned MinVal = 0, unsigned MaxVal = UINT_MAX>
 class ImmediateOpConfig : public BaseOpConfig {
   public:
@@ -445,8 +457,8 @@ class ImmediateOpConfig : public BaseOpConfig {
     explicit ImmediateOpConfig(StringRef description, StringRef identifier, unsigned fieldWidth)
         : BaseOpConfig(description, identifier, fieldWidth), mImmediateValue(0) {}
 
-    void fillParams(KernelBuilder &b, std::vector<Value *> operands, Params &outParams) const {
-        OperationConfig::fillParams(b, operands, outParams);
+    void fillParams(KernelBuilder &b, const vector<Value *> &operands, Params &outParams) const {
+        BaseOpConfig::fillParams(b, operands, outParams);
         outParams.immed = mImmediateValue;
     }
 
@@ -469,7 +481,8 @@ class ImmediateOpConfig : public BaseOpConfig {
     }
 };
 
-template <class BaseOpConfig, class TestF, class ExpectedF> class GenericOpConfig : public BaseOpConfig {
+template <class BaseOpConfig, ExpectedType Typing, class TestF, class ExpectedF>
+class GenericOpConfig : public BaseOpConfig {
   public:
     using typename BaseOpConfig::Params;
 
@@ -479,16 +492,74 @@ template <class BaseOpConfig, class TestF, class ExpectedF> class GenericOpConfi
 
     using BaseOpConfig::fillParams;
     using BaseOpConfig::getDescription;
+    using BaseOpConfig::getFieldWidth;
 
-    Value *makeTestLogic(KernelBuilder &b, vector<llvm::Value *> operands) {
+    Value *makeTestLogic(KernelBuilder &b, const vector<Value *> &operands) {
         Params params;
+
         fillParams(b, operands, params);
-        return mTestF(b, *this, params);
+        Value *result = mTestF(b, *this, params);
+// Initially I wanted to be kind of picky about the types we get back, but LLVM has this habit of widening
+// vector of i2 and i4 to vector of i8, and so we can't actually return the "correct" vector type most of the
+// time.
+#ifndef NDEBUG
+        switch (Typing) {
+        case ExpectedType::bit:
+            assert(result->getType() == b.getInt1Ty());
+            break;
+        case ExpectedType::field:
+            assert(result->getType() == b.getIntNTy(getFieldWidth()));
+            break;
+        case ExpectedType::size:
+            assert(result->getType() == b.getSizeTy());
+            break;
+        case ExpectedType::fieldVector:
+        case ExpectedType::bitBlock:
+            assert(result->getType()->getPrimitiveSizeInBits() == b.getBitBlockWidth());
+            // if (getFieldWidth() >= 8) {
+            //     assert(result->getType() == b.fwVectorType(getFieldWidth()));
+            // } else {
+            //     assert(result->getType() == b.fwVectorType(8));
+            // }
+            // assert(result->getType() == b.getBitBlockType()));
+            break;
+        }
+// Type *expectedTy = nullptr;
+// if (result->getType() != expectedTy) {
+//     errs() << "Actual returned type: ";
+//     result->getType()->print(errs());
+//     errs() << ", expected ";
+//     expectedTy->print(errs());
+//     errs() << "\n";
+//     errs().flush();
+//     assert(result->getType() == expectedTy);
+// }
+#endif
+        if (Typing == ExpectedType::bit || Typing == ExpectedType::field || Typing == ExpectedType::size) {
+            unsigned maxSize = max<unsigned>(b.getSizeTy()->getPrimitiveSizeInBits(), params.fw);
+            result = SafeInsertElement(b, maxSize, Constant::getNullValue(b.fwVectorType(maxSize)),
+                                       b.CreateZExtOrTrunc(result, b.getIntNTy(maxSize)), uint64_t(0));
+        }
+        return result;
     }
-    Value *makeCheckLogic(KernelBuilder &b, vector<llvm::Value *> operands) {
+
+    Value *makeCheckLogic(KernelBuilder &b, const vector<Value *> &operands) {
         Params params;
         fillParams(b, operands, params);
-        return mExpectedF(b, *this, params);
+        Value *result = mExpectedF(b, *this, params);
+        unsigned resBits = max<unsigned>(params.fw, b.getSizeTy()->getPrimitiveSizeInBits());
+        switch (Typing) {
+        case ExpectedType::bit:
+        case ExpectedType::field:
+        case ExpectedType::size: {
+            Type *eltTy = b.getIntNTy(resBits);
+            assert(resBits >= result->getType()->getPrimitiveSizeInBits());
+            return b.CreateInsertElement(Constant::getNullValue(b.fwVectorType(resBits)), b.CreateZExt(result, eltTy),
+                                         uint64_t(0));
+        }
+        default:
+            return b.bitCast(result);
+        }
     }
 
     bool configurePipelineFromArgs(cl::list<string> &args, bool doChecks) override {
@@ -531,14 +602,15 @@ template <class BaseOpConfig, class TestF, class ExpectedF> class GenericOpConfi
 using UnaryOpConfig = NaryOpConfig<1>;
 using BinaryOpConfig = NaryOpConfig<2>;
 using TernaryOpConfig = NaryOpConfig<3>;
-using ShiftImmedBinOpConfig = ImmediateOpConfig<BinaryOpConfig, 0, 128>;
+using ImmedUnOpConfig = ImmediateOpConfig<UnaryOpConfig, 0, 256>;
+using ImmedBinOpConfig = ImmediateOpConfig<BinaryOpConfig, 0, 256>;
+using ImmedTernOpConfig = ImmediateOpConfig<TernaryOpConfig, 0, 256>;
 
 //////////////////////////////////////////////////////////////////////////////////
 // And now, the actual index of operations...
 
 struct OperationIndexEntry {
-    typedef bool (*FactoryFunc)(cl::opt<unsigned> &opFieldWidth, cl::opt<bool> &opQuiet,
-                                unique_ptr<OperationConfig> &outOpConfig);
+    typedef bool (*FactoryFunc)(unique_ptr<OperationConfig> &outOpConfig);
 
     const char *name;
     const char *helpOprs;
@@ -547,27 +619,27 @@ struct OperationIndexEntry {
 };
 
 template <size_t N> struct StrucString {
-    constexpr StrucString(const char (&str)[N]) { std::copy_n(str, N, value); }
+    constexpr StrucString(const char (&str)[N]) { copy_n(str, N, value); }
 
     char value[N];
     auto operator<=>(const StrucString &) const = default;
     bool operator==(const StrucString &) const = default;
 };
 
-template <class BaseConfigT, StrucString Name, StrucString HelpOprs, StrucString HelpDesc, auto TestF, auto ExpectedF>
+template <class BaseConfigT, ExpectedType Typing, StrucString Name, StrucString HelpOprs, StrucString HelpDesc,
+          auto TestF, auto ExpectedF>
 static constexpr OperationIndexEntry genericEntry() {
     return OperationIndexEntry{
-        Name.value, HelpOprs.value, HelpDesc.value,
-        [](cl::opt<unsigned> &opFieldWidth, cl::opt<bool> &opQuiet, unique_ptr<OperationConfig> &outOpConfig) {
-            unsigned fw = opFieldWidth;
+        Name.value, HelpOprs.value, HelpDesc.value, [](unique_ptr<OperationConfig> &outOpConfig) {
+            unsigned fw = OperationFieldWidth;
             if ((fw < 1) || (fw > 128)) {
-                return opFieldWidth.error("Must be in range 1-128");
+                return OperationFieldWidth.error("Must be in range 1-128");
             }
             if ((fw & (fw - 1)) != 0) {
-                return opFieldWidth.error("Must be a power of 2");
+                return OperationFieldWidth.error("Must be a power of 2");
             }
-            outOpConfig = make_unique<GenericOpConfig<BaseConfigT, decltype(TestF), decltype(ExpectedF)>>(
-                Name.value, Name.value, opFieldWidth, opQuiet, TestF, ExpectedF);
+            outOpConfig = make_unique<GenericOpConfig<BaseConfigT, Typing, decltype(TestF), decltype(ExpectedF)>>(
+                Name.value, Name.value, OperationFieldWidth, QuietMode, TestF, ExpectedF);
             return false;
         }};
 }
@@ -575,33 +647,34 @@ static constexpr OperationIndexEntry genericEntry() {
 // I ended up with 2 versions of these wrappers by an accident of refactoring order. It shouldn't be too hard to
 // minimize them to 1 shared pair, but it's not quite trivial so dear reader, it's your problem now.
 
-template <class ConfigT, StrucString Name, StrucString HelpOprs, StrucString HelpDesc, auto TestF,
+template <class ConfigT, ExpectedType Typing, StrucString Name, StrucString HelpOprs, StrucString HelpDesc, auto TestF,
           auto HorizontalStoreExpectedF>
 static constexpr OperationIndexEntry horizontalStoreCheckEntry() {
-    return genericEntry<ConfigT, Name, HelpOprs, HelpDesc, TestF,
-                        [](KernelBuilder &b, const ConfigT &c, const ConfigT::Params &p) -> Value * {
-                            unsigned fieldCount = b.getBitBlockWidth() / p.fw;
-                            // Since this is for the check, use null to ensure consistent results rather than poison
-                            Value *outBlock = Constant::getNullValue(p.vTy);
-                            typename ConfigT::Params scalarP = p;
-                            for (unsigned i = 0; i < fieldCount; i++) {
-                                for (unsigned j = 0; j < size(scalarP.opr); ++j) {
-                                    scalarP.opr[j] = b.mvmd_extract(p.fw, p.opr[j], i);
-                                }
-                                outBlock = HorizontalStoreExpectedF(b, c, scalarP, outBlock, i);
-                            }
-                            return outBlock;
-                        }>();
+    constexpr auto expectedF = [](KernelBuilder &b, const ConfigT &c, const ConfigT::Params &p) -> Value * {
+        unsigned fieldCount = b.getBitBlockWidth() / p.fw;
+        // Since this is for the check, use null to ensure consistent results rather than poison
+        Value *outBlock = Constant::getNullValue(p.vTy);
+        typename ConfigT::Params scalarP = p;
+        for (unsigned i = fieldCount; i > 0; i--) {
+            for (unsigned j = 0; j < size(scalarP.opr); ++j) {
+                scalarP.opr[j] = SafeExtractElement(b, p.fw, p.opr[j], i - 1);
+            }
+            outBlock = HorizontalStoreExpectedF(b, c, scalarP, outBlock, i - 1);
+        }
+        return outBlock;
+    };
+    return genericEntry<ConfigT, Typing, Name, HelpOprs, HelpDesc, TestF, expectedF>();
 }
 
-template <class ConfigT, StrucString Name, StrucString HelpOprs, StrucString HelpDesc, auto TestF, auto ScalarExpectedF>
+template <class ConfigT, ExpectedType Typing, StrucString Name, StrucString HelpOprs, StrucString HelpDesc, auto TestF,
+          auto ScalarExpectedF>
 static constexpr OperationIndexEntry scalarCheckEntry() {
-    return horizontalStoreCheckEntry<ConfigT, Name, HelpOprs, HelpDesc, TestF,
-                                     [](KernelBuilder &b, const ConfigT &c, const ConfigT::Params &p, Value *outBlock,
-                                        unsigned i) -> Value * {
-                                         Value *out = ScalarExpectedF(b, c, p);
-                                         return b.bitCast(b.mvmd_insert(p.fw, outBlock, out, i));
-                                     }>();
+    constexpr auto expectedF = [](KernelBuilder &b, const ConfigT &c, const ConfigT::Params &p, Value *outBlock,
+                                  unsigned i) -> Value * {
+        Value *out = ScalarExpectedF(b, c, p);
+        return SafeInsertElement(b, p.fw, outBlock, out, i);
+    };
+    return horizontalStoreCheckEntry<ConfigT, Typing, Name, HelpOprs, HelpDesc, TestF, expectedF>();
 }
 
 // Sort of redundant with the above, oops
@@ -614,9 +687,8 @@ auto wrapHorizontalStore(HorizontalStoreCheckF &&horizontalStoreCheckF) {
         for (unsigned i = 0; i < fieldCount; i++) {
             typename ConfigT::Params scalarP = p;
             for (unsigned j = 0; j < size(scalarP.opr); ++j) {
-                scalarP.opr[j] = b.mvmd_extract(p.fw, p.opr[j], i);
+                scalarP.opr[j] = SafeExtractElement(b, p.fw, p.opr[j], i);
             }
-
             expectedBlock = horizontalStoreCheckF(b, c, scalarP, expectedBlock, i);
         }
         return expectedBlock;
@@ -627,149 +699,280 @@ template <class ConfigT, class ScalarCheckF> auto wrapScalar(ScalarCheckF &&scal
     return wrapHorizontalStore<ConfigT>(
         [=](KernelBuilder &b, const ConfigT &c, const ConfigT::Params &p, Value *expectedBlock, unsigned i) {
             Value *expected = scalarCheckF(b, c, p);
-            return b.bitCast(b.mvmd_insert(p.fw, expectedBlock, expected, i));
+            return SafeInsertElement(b, p.fw, expectedBlock, expected, i);
         });
 }
 
 OperationIndexEntry allOperations[] = {
-    scalarCheckEntry<BinaryOpConfig, "simd_add", "x0, x1", "",
+    scalarCheckEntry<UnaryOpConfig, ExpectedType::fieldVector, "simd_select_hi", "x0", "y[i] <- x[i] & high-half mask",
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.simd_select_hi(p.fw, p.opr[0]);
+                     },
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.CreateAnd(p.opr[0], APInt::getHighBitsSet(p.fw, p.fw / 2));
+                     }>(),
+    scalarCheckEntry<UnaryOpConfig, ExpectedType::fieldVector, "simd_select_lo", "x0", "y[i] <- x[i] & low-half mask",
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.simd_select_lo(p.fw, p.opr[0]);
+                     },
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.CreateAnd(p.opr[0], APInt::getLowBitsSet(p.fw, p.fw / 2));
+                     }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::fieldVector, "simd_fill", "x0", "y[i] <- x[0]; splatting operator",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     return b.simd_fill(p.fw, scalarOpr0);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     for (unsigned i = 0; i < p.fn; ++i) {
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, scalarOpr0, i);
+                     }
+                     return expectedBlock;
+                 }>(),
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_add", "x0, x1", "y[i] <- x0[i] + x1[i]",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_add(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateAdd(p.opr[0], p.opr[1]);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_sub", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_sub", "x0, x1", "y[i] <- x0[i] - x1[i]",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_sub(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSub(p.opr[0], p.opr[1]);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_mult", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_mult", "x0, x1", "y[i] <- x0[i] * x1[i]",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_mult(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateMul(p.opr[0], p.opr[1]);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_eq", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_eq", "x0, x1", "y[i] <- -(x0[i] == x1[i])",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_eq(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpEQ(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_ne", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_ne", "x0, x1", "y[i] <- -(x0[i] != x1[i])",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_ne(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpNE(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_gt", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_gt", "x0, x1",
+                     "y[i] <- -(x0[i] > x1[i]) (signed comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_gt(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpSGT(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_ugt", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_ugt", "x0, x1",
+                     "y[i] <- -(x0[i] > x1[i]) (unsigned comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_ugt(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpUGT(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_ge", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_ge", "x0, x1",
+                     "y[i] <- -(x0[i] >= x1[i]) (signed comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_ge(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpSGE(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_uge", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_uge", "x0, x1",
+                     "y[i] <- -(x0[i] >= x1[i]) (unsigned comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_uge(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpUGE(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_lt", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_lt", "x0, x1",
+                     "y[i] <- -(x0[i] < x1[i]) (signed comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_lt(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpSLT(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_le", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_le", "x0, x1",
+                     "y[i] <- -(x0[i] <= x1[i]) (signed comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_le(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpSLE(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_ult", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_ult", "x0, x1",
+                     "y[i] <- -(x0[i] < x1[i]) (unsigned comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_ult(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpULT(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_ule", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_ule", "x0, x1",
+                     "y[i] <- -(x0[i] <= x1[i]) (unsigned comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_ule(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSExt(b.CreateICmpULE(p.opr[0], p.opr[1]), p.fTy);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_max", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_max", "x0, x1",
+                     "y[i] <- x0[i] > x1[i] ? x0 : x1 (signed comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_max(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSelect(b.CreateICmpSGT(p.opr[0], p.opr[1]), p.opr[0], p.opr[1]);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_min", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_min", "x0, x1",
+                     "y[i] <- x0[i] < x1[i] ? x0 : x1 (signed comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_min(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSelect(b.CreateICmpSLT(p.opr[0], p.opr[1]), p.opr[0], p.opr[1]);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_umax", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_umax", "x0, x1",
+                     "y[i] <- x0[i] > x1[i] ? x0 : x1 (unsigned comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_umax(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSelect(b.CreateICmpUGT(p.opr[0], p.opr[1]), p.opr[0], p.opr[1]);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_umin", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_umin", "x0, x1",
+                     "y[i] <- x0[i] < x1[i] ? x0 : x1 (unsigned comparison)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_umin(p.fw, p.opr[0], p.opr[1]);
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateSelect(b.CreateICmpULT(p.opr[0], p.opr[1]), p.opr[0], p.opr[1]);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_sllv", "x0, x1", "",
+    scalarCheckEntry<TernaryOpConfig, ExpectedType::fieldVector, "simd_if", "x0, x1, x2",
+                     "y[i] <- x0[i][fw-1] ? x1[i] : x2[i]",
+                     [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                         return b.simd_if(p.fw, p.opr[0], p.opr[1], p.opr[2]);
+                     },
+                     [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                         // simd_if checks the top bit set, which is equivalent to signed < 0
+                         return b.CreateSelect(b.CreateICmpSLT(p.opr[0], b.getIntN(p.fw, 0)), p.opr[1], p.opr[2]);
+                     }>(),
+    genericEntry<ImmedBinOpConfig, ExpectedType::bitBlock, "simd_binary", "x0, x1, imm",
+                 "y[i][j] <- imm[ (x0[i][j] << 1) | x1[i][j] ]; use <imm> as a truth table",
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     // Caution! Parameter order is MSB first, i.e. opr[0] = bit_1 and opr[1] = bit_0
+                     return b.simd_binary(p.immed & 0x0F, p.opr[0], p.opr[1]);
+                 },
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     Value *zero = b.getIntN(b.getLaneWidth(), 0);
+                     Value *one = b.getIntN(b.getLaneWidth(), 1);
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *bitOpr1 = b.bitCast(p.opr[1]);
+                     Value *funcBits = b.getIntN(b.getLaneWidth(), p.immed);
+                     Value *expectedBitBlock = Constant::getNullValue(b.getBitBlockType());
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         Value *laneResult = zero;
+                         Value *x0i = b.CreateExtractElement(bitOpr0, i);
+                         Value *x1i = b.CreateExtractElement(bitOpr1, i);
+                         for (unsigned j = 0; j < b.getLaneWidth(); ++j) {
+                             Value *x0ij = b.CreateAnd(b.CreateLShr(x0i, j), one);
+                             Value *x1ij = b.CreateAnd(b.CreateLShr(x1i, j), one);
+                             Value *funcIndex = b.CreateOr(b.CreateShl(x0ij, one), x1ij);
+                             Value *yij = b.CreateAnd(b.CreateLShr(funcBits, funcIndex), one);
+                             laneResult = b.CreateOr(laneResult, b.CreateShl(yij, j));
+                         }
+                         expectedBitBlock = b.CreateInsertElement(expectedBitBlock, laneResult, i);
+                     }
+                     return expectedBitBlock;
+                 }>(),
+    genericEntry<ImmedTernOpConfig, ExpectedType::bitBlock, "simd_ternary", "x0, x1, x2, imm",
+                 "y[i][j] <- imm[ (x0[i][j] << 2) | (x1[i][j] << 1) | x2 ]; use <imm> as a truth table",
+                 [](KernelBuilder &b, const ImmedTernOpConfig &c, const ImmedTernOpConfig::Params &p) {
+                     // Caution! Parameter order is MSB first, i.e. opr[0] = bit_2 and opr[2] = bit_0
+                     return b.simd_ternary(p.immed & 0xFF, p.opr[0], p.opr[1], p.opr[2]);
+                 },
+                 [](KernelBuilder &b, const ImmedTernOpConfig &c, const ImmedTernOpConfig::Params &p) {
+                     Value *zero = b.getIntN(b.getLaneWidth(), 0);
+                     Value *one = b.getIntN(b.getLaneWidth(), 1);
+                     Value *two = b.getIntN(b.getLaneWidth(), 2);
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *bitOpr1 = b.bitCast(p.opr[1]);
+                     Value *bitOpr2 = b.bitCast(p.opr[2]);
+                     Value *funcBits = b.getIntN(b.getLaneWidth(), p.immed);
+                     Value *expectedBitBlock = Constant::getNullValue(b.getBitBlockType());
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         Value *laneResult = zero;
+                         Value *x0i = b.CreateExtractElement(bitOpr0, i);
+                         Value *x1i = b.CreateExtractElement(bitOpr1, i);
+                         Value *x2i = b.CreateExtractElement(bitOpr2, i);
+                         for (unsigned j = 0; j < b.getLaneWidth(); ++j) {
+                             Value *x0ij = b.CreateAnd(b.CreateLShr(x0i, j), one);
+                             Value *x1ij = b.CreateAnd(b.CreateLShr(x1i, j), one);
+                             Value *x2ij = b.CreateAnd(b.CreateLShr(x2i, j), one);
+                             Value *funcIndex =
+                                 b.CreateOr(b.CreateOr(b.CreateShl(x0ij, two), b.CreateShl(x1ij, one)), x2ij);
+                             Value *yij = b.CreateAnd(b.CreateLShr(funcBits, funcIndex), one);
+                             laneResult = b.CreateOr(laneResult, b.CreateShl(yij, j));
+                         }
+                         expectedBitBlock = b.CreateInsertElement(expectedBitBlock, laneResult, i);
+                     }
+                     return expectedBitBlock;
+                 }>(),
+    scalarCheckEntry<ImmedUnOpConfig, ExpectedType::fieldVector, "simd_slli", "x0, imm", "y[i] <- x[0] << imm",
+                     [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                         return b.simd_slli(p.fw, p.opr[0], p.immed & (p.fw - 1));
+                     },
+                     [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                         return b.CreateShl(p.opr[0], p.immed & (p.fw - 1));
+                     }>(),
+    scalarCheckEntry<ImmedUnOpConfig, ExpectedType::fieldVector, "simd_srli", "x0, imm",
+                     "y[i] <- x[0] >> imm (zero extend x0)",
+                     [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                         return b.simd_srli(p.fw, p.opr[0], p.immed & (p.fw - 1));
+                     },
+                     [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                         return b.CreateLShr(p.opr[0], p.immed & (p.fw - 1));
+                     }>(),
+    scalarCheckEntry<ImmedUnOpConfig, ExpectedType::fieldVector, "simd_srai", "x0, imm",
+                     "y[i] <- x[0] >> imm (sign extend x0)",
+                     [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                         return b.simd_srai(p.fw, p.opr[0], p.immed & (p.fw - 1));
+                     },
+                     [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                         return b.CreateAShr(p.opr[0], p.immed & (p.fw - 1));
+                     }>(),
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_sllv", "x0, x1", "y[i] <- x[0] << x1[i]",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.simd_sllv(p.fw, p.opr[0],
-                                            b.CreateAnd(b.fwCast(p.fw, p.opr[1]), b.getSplatN(p.fw, p.fn, p.fw - 1)));
+                         return b.simd_sllv(p.fw, p.opr[0], SafeURem(b, p.fw, p.opr[1], p.fw));
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateShl(p.opr[0], b.CreateAnd(p.opr[1], b.getIntN(p.fw, p.fw - 1)));
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_srlv", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_srlv", "x0, x1",
+                     "y[i] <- x[0] << x1[i] (zero extend x0)",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.simd_srlv(p.fw, p.opr[0],
-                                            b.CreateAnd(b.fwCast(p.fw, p.opr[1]), b.getSplatN(p.fw, p.fn, p.fw - 1)));
+                         return b.simd_srlv(p.fw, p.opr[0], SafeURem(b, p.fw, p.opr[1], p.fw));
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.CreateLShr(p.opr[0], b.CreateAnd(p.opr[1], b.getIntN(p.fw, p.fw - 1)));
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_rotl", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_rotl", "x0, x1", "",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.simd_rotl(p.fw, p.opr[0], p.opr[1]);
+                         return b.simd_rotl(p.fw, p.opr[0], SafeURem(b, p.fw, p.opr[1], p.fw));
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          Constant *fwConst = ConstantInt::get(p.fTy, p.fw);
@@ -778,9 +981,9 @@ OperationIndexEntry allOperations[] = {
                          Value *shr = b.CreateLShr(p.opr[0], b.CreateAnd(b.CreateSub(fwConst, p.opr[1]), fwMaskConst));
                          return b.CreateOr(shl, shr);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_rotr", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_rotr", "x0, x1", "",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                         return b.simd_rotr(p.fw, p.opr[0], p.opr[1]);
+                         return b.simd_rotr(p.fw, p.opr[0], SafeURem(b, p.fw, p.opr[1], p.fw));
                      },
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          Constant *fwConst = b.getIntN(p.fw, p.fw);
@@ -789,7 +992,7 @@ OperationIndexEntry allOperations[] = {
                          Value *shr = b.CreateLShr(p.opr[0], b.CreateAnd(p.opr[1], fwMaskConst));
                          return b.CreateOr(shl, shr);
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_pext", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_pext", "x0, x1", "",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_pext(p.fw, p.opr[0], p.opr[1]);
                      },
@@ -808,7 +1011,7 @@ OperationIndexEntry allOperations[] = {
                          }
                          return expected;
                      }>(),
-    scalarCheckEntry<BinaryOpConfig, "simd_pdep", "x0, x1", "",
+    scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_pdep", "x0, x1", "",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_pdep(p.fw, p.opr[0], p.opr[1]);
                      },
@@ -828,33 +1031,81 @@ OperationIndexEntry allOperations[] = {
                          }
                          return expected;
                      }>(),
-    horizontalStoreCheckEntry<BinaryOpConfig, "hsimd_packh", "x0, x1", "",
+    horizontalStoreCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "esimd_mergeh", "x0, x1", "",
+                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                                  return b.esimd_mergeh(p.fw, p.opr[0], p.opr[1]);
+                              },
+                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p,
+                                 Value *expectedBlock, unsigned i) {
+                                  if (i >= p.fn / 2) {
+                                      expectedBlock =
+                                          SafeInsertElement(b, p.fw, expectedBlock, p.opr[0], 2 * (i - p.fn / 2));
+                                      expectedBlock = b.bitCast(
+                                          SafeInsertElement(b, p.fw, expectedBlock, p.opr[1], 2 * (i - p.fn / 2) + 1));
+                                  }
+                                  return expectedBlock;
+                              }>(),
+    horizontalStoreCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "esimd_mergel", "x0, x1", "",
+                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                                  return b.esimd_mergel(p.fw, p.opr[0], p.opr[1]);
+                              },
+                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p,
+                                 Value *expectedBlock, unsigned i) {
+                                  if (i < p.fn / 2) {
+                                      expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, p.opr[0], 2 * i);
+                                      expectedBlock =
+                                          b.bitCast(SafeInsertElement(b, p.fw, expectedBlock, p.opr[1], 2 * i + 1));
+                                  }
+                                  return expectedBlock;
+                              }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::fieldVector, "esimd_bitspread", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     return b.esimd_bitspread(b.getBitBlockWidth(), p.fw, scalarOpr0);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     for (unsigned i = 0; (i < p.fn) && (i < p.fw); ++i) {
+                         expectedBlock =
+                             SafeInsertElement(b, p.fw, expectedBlock, b.CreateAnd(b.CreateLShr(scalarOpr0, i), 1), i);
+                     }
+                     return expectedBlock;
+                 }>(),
+    horizontalStoreCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "hsimd_packh", "x0, x1", "",
                               [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                                   return b.hsimd_packh(p.fw, p.opr[0], p.opr[1]);
                               },
                               [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p,
                                  Value *expectedBlock, unsigned i) {
-                                  Value *newOpr0 =
-                                      b.CreateTrunc(b.CreateLShr(p.opr[0], p.fw / 2), b.getIntNTy(p.fw / 2));
-                                  Value *newOpr1 =
-                                      b.CreateTrunc(b.CreateLShr(p.opr[1], p.fw / 2), b.getIntNTy(p.fw / 2));
-                                  expectedBlock = b.mvmd_insert(p.fw / 2, expectedBlock, newOpr0, i);
-                                  expectedBlock = b.bitCast(b.mvmd_insert(p.fw / 2, expectedBlock, newOpr1, p.fn + i));
+                                  if (p.fw == 1) {
+                                      return expectedBlock;
+                                  }
+                                  expectedBlock = SafeInsertElement(
+                                      b, p.fw / 2, expectedBlock,
+                                      b.CreateTrunc(b.CreateLShr(p.opr[0], p.fw / 2), b.getIntNTy(p.fw / 2)), i);
+                                  expectedBlock = SafeInsertElement(
+                                      b, p.fw / 2, expectedBlock,
+                                      b.CreateTrunc(b.CreateLShr(p.opr[1], p.fw / 2), b.getIntNTy(p.fw / 2)), i + p.fn);
                                   return expectedBlock;
                               }>(),
-    horizontalStoreCheckEntry<BinaryOpConfig, "hsimd_packl", "x0, x1", "",
+    horizontalStoreCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "hsimd_packl", "x0, x1", "",
                               [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                                   return b.hsimd_packl(p.fw, p.opr[0], p.opr[1]);
                               },
                               [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p,
                                  Value *expectedBlock, unsigned i) {
-                                  Value *newOpr0 = b.CreateTrunc(p.opr[0], b.getIntNTy(p.fw / 2));
-                                  Value *newOpr1 = b.CreateTrunc(p.opr[1], b.getIntNTy(p.fw / 2));
-                                  expectedBlock = b.mvmd_insert(p.fw / 2, expectedBlock, newOpr0, i);
-                                  expectedBlock = b.bitCast(b.mvmd_insert(p.fw / 2, expectedBlock, newOpr1, p.fn + i));
+                                  if (p.fw == 1) {
+                                      return expectedBlock;
+                                  }
+                                  expectedBlock = SafeInsertElement(b, p.fw / 2, expectedBlock,
+                                                                    b.CreateTrunc(p.opr[0], b.getIntNTy(p.fw / 2)), i);
+                                  expectedBlock =
+                                      SafeInsertElement(b, p.fw / 2, expectedBlock,
+                                                        b.CreateTrunc(p.opr[1], b.getIntNTy(p.fw / 2)), i + p.fn);
                                   return expectedBlock;
                               }>(),
-    genericEntry<BinaryOpConfig, "hsimd_packus", "x0, x1", "",
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "hsimd_packus", "x0, x1", "",
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      Value *newOpr0 = b.simd_srai(p.fw, p.opr[0], p.fw / 2 - 1);
                      Value *newOpr1 = b.simd_srai(p.fw, p.opr[1], p.fw / 2 - 1);
@@ -881,7 +1132,7 @@ OperationIndexEntry allOperations[] = {
                      });
                      return expectedF(b, c, newP);
                  }>(),
-    genericEntry<BinaryOpConfig, "hsimd_packss", "x0, x1", "",
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "hsimd_packss", "x0, x1", "",
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      Value *newOpr0 = b.simd_srai(p.fw, p.opr[0], p.fw / 2 - 1);
                      Value *newOpr1 = b.simd_srai(p.fw, p.opr[1], p.fw / 2 - 1);
@@ -904,8 +1155,8 @@ OperationIndexEntry allOperations[] = {
                          newOpr1 = b.CreateSelect(b.CreateICmpSLT(newOpr1, minVal), minVal, newOpr1);
                          newOpr0 = b.CreateTrunc(newOpr0, b.getIntNTy(p.fw / 2));
                          newOpr1 = b.CreateTrunc(newOpr1, b.getIntNTy(p.fw / 2));
-                         expectedBlock = b.mvmd_insert(p.fw / 2, expectedBlock, newOpr0, i);
-                         expectedBlock = b.bitCast(b.mvmd_insert(p.fw / 2, expectedBlock, newOpr1, p.fn + i));
+                         expectedBlock = SafeInsertElement(b, p.fw / 2, expectedBlock, newOpr0, i);
+                         expectedBlock = b.bitCast(SafeInsertElement(b, p.fw / 2, expectedBlock, newOpr1, p.fn + i));
 #else
                          Value *testVal = ConstantInt::get(p.fTy, (1 << (p.fw / 2 - 1)) - 1);
                          Value *newOpr0 = b.CreateSelect(b.CreateICmpSGT(p.opr[0], testVal), testVal, p.opr[0]);
@@ -913,56 +1164,136 @@ OperationIndexEntry allOperations[] = {
                          testVal = b.CreateNot(testVal);
                          newOpr0 = b.CreateSelect(b.CreateICmpSLT(newOpr0, testVal), testVal, newOpr0);
                          newOpr1 = b.CreateSelect(b.CreateICmpSLT(newOpr1, testVal), testVal, newOpr1);
-                         expectedBlock = b.mvmd_insert(p.fw / 2, expectedBlock, newOpr0, i);
-                         expectedBlock = b.bitCast(b.mvmd_insert(p.fw / 2, expectedBlock, newOpr1, p.fn + i));
+                         expectedBlock = SafeInsertElement(b, p.fw / 2, expectedBlock, newOpr0, i);
+                         expectedBlock = b.bitCast(SafeInsertElement(b, p.fw / 2, expectedBlock, newOpr1, p.fn + i));
 #endif
                          return expectedBlock;
                      });
                      return expectedF(b, c, newP);
                  }>(),
-    horizontalStoreCheckEntry<BinaryOpConfig, "esimd_mergeh", "x0, x1", "",
-                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                                  return b.esimd_mergeh(p.fw, p.opr[0], p.opr[1]);
-                              },
-                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p,
-                                 Value *expectedBlock, unsigned i) {
-                                  if (i >= p.fn / 2) {
-                                      expectedBlock = b.mvmd_insert(p.fw, expectedBlock, p.opr[0], 2 * (i - p.fn / 2));
-                                      expectedBlock = b.bitCast(
-                                          b.mvmd_insert(p.fw, expectedBlock, p.opr[1], 2 * (i - p.fn / 2) + 1));
-                                  }
-                                  return expectedBlock;
-                              }>(),
-    horizontalStoreCheckEntry<BinaryOpConfig, "esimd_mergel", "x0, x1", "",
-                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
-                                  return b.esimd_mergel(p.fw, p.opr[0], p.opr[1]);
-                              },
-                              [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p,
-                                 Value *expectedBlock, unsigned i) {
-                                  if (i < p.fn / 2) {
-                                      expectedBlock = b.mvmd_insert(p.fw, expectedBlock, p.opr[0], 2 * i);
-                                      expectedBlock =
-                                          b.bitCast(b.mvmd_insert(p.fw, expectedBlock, p.opr[1], 2 * i + 1));
-                                  }
-                                  return expectedBlock;
-                              }>(),
-    genericEntry<BinaryOpConfig, "mvmd_shuffle", "x0, x1", "",
+    genericEntry<ImmedUnOpConfig, ExpectedType::field, "mvmd_extract", "x0, imm", "y[0] <- Extract element x0[imm]",
+                 [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                     return b.mvmd_extract(p.fw, p.opr[0], p.immed % p.fn);
+                 },
+                 [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                     return SafeExtractElement(b, p.fw, p.opr[0], p.immed % p.fn);
+                 }>(),
+    genericEntry<ImmedBinOpConfig, ExpectedType::fieldVector, "mvmd_insert", "x0, x1, imm",
+                 "y[i] <- i == imm ? x1[0] : x0[i]; i.e. insert",
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     Value *scalarOpr1 = SafeExtractElement(b, p.fw, p.opr[1], uint64_t(0));
+                     return b.mvmd_insert(p.fw, p.opr[0], scalarOpr1, p.immed % p.fn);
+                 },
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     Value *scalarOpr1 = SafeExtractElement(b, p.fw, p.opr[1], uint64_t(0));
+                     return SafeInsertElement(b, p.fw, p.opr[0], scalarOpr1, p.immed % p.fn);
+                 }>(),
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "mvmd_sll", "x0, x1",
+                 "y[i] <- x0[i - x1[0]] or 0; shuffle elements left",
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     Value *scalarOpr1 = SafeExtractElement(b, p.fw, p.opr[1], uint64_t(0));
+                     Value *shift = b.CreateAnd(scalarOpr1, p.fn - 1);
+                     return b.mvmd_sll(p.fw, p.opr[0], shift);
+                 },
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     Value *scalarOpr1 = SafeExtractElement(b, p.fw, p.opr[1], uint64_t(0));
+                     Value *shift = b.CreateZExtOrTrunc(b.CreateAnd(scalarOpr1, p.fn - 1), b.getInt64Ty());
+                     Value *zero = b.getIntN(p.fw, 0);
+                     for (unsigned i = 0; i < p.fn; ++i) {
+                         Value *index = b.getInt64(i);
+                         Value *shiftedElement = SafeExtractElement(b, p.fw, p.opr[0], b.CreateSub(index, shift));
+                         Value *selection = b.CreateSelect(b.CreateICmpUGE(index, shift), shiftedElement, zero);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, selection, i);
+                     }
+                     return expectedBlock;
+                 }>(),
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "mvmd_srl", "x0, x1",
+                 "y[i] <- x0[i + x1[0]] or 0; shuffle elements right",
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     Value *scalarOpr1 = SafeExtractElement(b, p.fw, p.opr[1], uint64_t(0));
+                     Value *shift = b.CreateAnd(scalarOpr1, p.fn - 1);
+                     return b.mvmd_srl(p.fw, p.opr[0], shift);
+                 },
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     Value *scalarOpr1 = SafeExtractElement(b, p.fw, p.opr[1], uint64_t(0));
+                     Value *shift = b.CreateZExtOrTrunc(b.CreateAnd(scalarOpr1, p.fn - 1), b.getInt64Ty());
+                     Value *zero = b.getIntN(p.fw, 0);
+                     for (unsigned i = 0; i < p.fn; ++i) {
+                         Value *index = b.getInt64(i);
+                         Value *shiftedElement = SafeExtractElement(b, p.fw, p.opr[0], b.CreateAdd(index, shift));
+                         Value *selection =
+                             b.CreateSelect(b.CreateICmpULT(shift, b.getInt64(p.fn - i)), shiftedElement, zero);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, selection, i);
+                     }
+                     return expectedBlock;
+                 }>(),
+    genericEntry<ImmedUnOpConfig, ExpectedType::fieldVector, "mvmd_slli", "x0, imm",
+                 "y[i] <- x0[i - imm], or 0; shuffle elements left",
+                 [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                     return b.mvmd_slli(p.fw, p.opr[0], p.immed % p.fn);
+                 },
+                 [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     for (unsigned i = 0; i < p.fn; ++i) {
+                         if (i >= p.immed) {
+                             Value *selection = SafeExtractElement(b, p.fw, p.opr[0], i - p.immed);
+                             expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, selection, i);
+                         }
+                     }
+                     return expectedBlock;
+                 }>(),
+    genericEntry<ImmedUnOpConfig, ExpectedType::fieldVector, "mvmd_srli", "x0, imm",
+                 "y[i] <- x0[i + imm], or 0; shuffle elements right",
+                 [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                     return b.mvmd_srli(p.fw, p.opr[0], p.immed % p.fn);
+                 },
+                 [](KernelBuilder &b, const ImmedUnOpConfig &c, const ImmedUnOpConfig::Params &p) {
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     for (unsigned i = 0; i < p.fn; ++i) {
+                         if (i + p.immed < p.fn) {
+                             Value *selection = SafeExtractElement(b, p.fw, p.opr[0], i + p.immed);
+                             expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, selection, i);
+                         }
+                     }
+                     return expectedBlock;
+                 }>(),
+
+    genericEntry<ImmedBinOpConfig, ExpectedType::fieldVector, "mvmd_dslli", "x0, x1, imm",
+                 "y[i] <- x0[i - imm], or x1[i + vl - imm]; shuffle elements left",
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     return b.mvmd_dslli(p.fw, p.opr[0], p.opr[1], p.immed);
+                 },
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     for (unsigned i = 0; i < p.fn; i++) {
+                         Value *elt = nullptr;
+                         if (i < p.immed)
+                             elt = SafeExtractElement(b, p.fw, p.opr[1], p.fn - p.immed + i);
+                         else
+                             elt = SafeExtractElement(b, p.fw, p.opr[0], i - p.immed);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, elt, i);
+                     }
+                     return expectedBlock;
+                 }>(),
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "mvmd_shuffle", "x0, x1", "y[i] <- x0[x1[i] mod vl]",
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      return b.mvmd_shuffle(p.fw, p.opr[0], p.opr[1], IDISA::ShuffleMode::TruncateIndex);
                  },
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      Value *expectedBlock = Constant::getNullValue(p.vTy);
                      for (unsigned i = 0; i < p.fn; i++) {
-                         Value *idx_field = b.mvmd_extract(p.fw, p.opr[1], i);
+                         Value *idx_field = SafeExtractElement(b, p.fw, p.opr[1], i);
                          Value *idx = b.CreateURem(idx_field, ConstantInt::get(p.fTy, p.fn));
-                         Value *elt =
-                             b.CreateExtractElement(b.fwCast(p.fw, p.opr[0]), b.CreateZExtOrTrunc(idx, p.i32Ty));
+                         Value *elt = SafeExtractElement(b, p.fw, p.opr[0], b.CreateZExtOrTrunc(idx, p.i64Ty));
                          // ShuffleMode::TruncateIndex behaviour
-                         expectedBlock = b.mvmd_insert(p.fw, expectedBlock, elt, i);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, elt, i);
                      }
                      return expectedBlock;
                  }>(),
-    genericEntry<BinaryOpConfig, "mvmd_shuffle:over", "x0, x1", "",
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "mvmd_shuffle:over", "x0, x1",
+                 "y[i] <- x0[x1[i] if i < vl else 0]",
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      return b.mvmd_shuffle(p.fw, p.opr[0], p.opr[1], IDISA::ShuffleMode::ZeroOnIndexOver);
                  },
@@ -970,36 +1301,35 @@ OperationIndexEntry allOperations[] = {
                      Constant *fieldLimit = ConstantInt::get(p.fTy, p.fn);
                      Value *expectedBlock = Constant::getNullValue(p.vTy);
                      for (unsigned i = 0; i < p.fn; i++) {
-                         Value *idx_field = b.mvmd_extract(p.fw, p.opr[1], i);
+                         Value *idx_field = SafeExtractElement(b, p.fw, p.opr[1], i);
                          Value *idx = b.CreateURem(idx_field, ConstantInt::get(p.fTy, p.fn));
-                         Value *elt =
-                             b.CreateExtractElement(b.fwCast(p.fw, p.opr[0]), b.CreateZExtOrTrunc(idx, p.i32Ty));
+                         Value *elt = SafeExtractElement(b, p.fw, p.opr[0], b.CreateZExtOrTrunc(idx, p.i64Ty));
                          // ShuffleMode::ZeroOnIndexOver behaviour
                          elt = b.CreateSelect(b.CreateICmpUGE(idx_field, fieldLimit), ConstantInt::getNullValue(p.fTy),
                                               elt);
-                         expectedBlock = b.mvmd_insert(p.fw, expectedBlock, elt, i);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, elt, i);
                      }
                      return expectedBlock;
                  }>(),
-    genericEntry<BinaryOpConfig, "mvmd_shuffle:highbit", "x0, x1", "",
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "mvmd_shuffle:highbit", "x0, x1",
+                 "y[i] <- x0[x1[i] if i & (1 << (fw - 1)) else 0]",
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      return b.mvmd_shuffle(p.fw, p.opr[0], p.opr[1], IDISA::ShuffleMode::ZeroOnHighIndexBit);
                  },
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      Value *expectedBlock = Constant::getNullValue(p.vTy);
                      for (unsigned i = 0; i < p.fn; i++) {
-                         Value *idx_field = b.mvmd_extract(p.fw, p.opr[1], i);
+                         Value *idx_field = SafeExtractElement(b, p.fw, p.opr[1], i);
                          Value *idx = b.CreateURem(idx_field, ConstantInt::get(p.fTy, p.fn));
-                         Value *elt =
-                             b.CreateExtractElement(b.fwCast(p.fw, p.opr[0]), b.CreateZExtOrTrunc(idx, p.i32Ty));
+                         Value *elt = SafeExtractElement(b, p.fw, p.opr[0], b.CreateZExtOrTrunc(idx, p.i64Ty));
                          // ShuffleMode::ZeroOnHighIndexBit behaviour
                          elt = b.CreateSelect(b.CreateICmpSLT(idx_field, ConstantInt::getNullValue(p.fTy)),
                                               ConstantInt::getNullValue(p.fTy), elt);
-                         expectedBlock = b.mvmd_insert(p.fw, expectedBlock, elt, i);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, elt, i);
                      }
                      return expectedBlock;
                  }>(),
-    genericEntry<BinaryOpConfig, "mvmd_compress", "x0, x1", "",
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "mvmd_compress", "x0, x1", "",
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      // Real callers (e.g. deletion.cpp) pass a scalar bitmask built with
                      // hsimd_signmask, not a raw data block. Derive a realistic one from
@@ -1014,8 +1344,8 @@ OperationIndexEntry allOperations[] = {
                      // For each input field i, precompute whether it's selected and its
                      // rank (how many selected fields come before it) - this is the
                      // output slot it should land in if selected.
-                     std::vector<Value *> isSelected(p.fn);
-                     std::vector<Value *> rank(p.fn);
+                     vector<Value *> isSelected(p.fn);
+                     vector<Value *> rank(p.fn);
                      Value *runningCount = ConstantInt::get(p.i32Ty, 0);
                      Value *expectedBlock = Constant::getNullValue(p.vTy);
                      for (unsigned i = 0; i < p.fn; i++) {
@@ -1032,14 +1362,14 @@ OperationIndexEntry allOperations[] = {
                          for (unsigned i = 0; i < p.fn; i++) {
                              Value *matches =
                                  b.CreateAnd(isSelected[i], b.CreateICmpEQ(rank[i], ConstantInt::get(p.i32Ty, j)));
-                             Value *elt = b.mvmd_extract(p.fw, p.opr[0], i);
+                             Value *elt = SafeExtractElement(b, p.fw, p.opr[0], i);
                              chosen = b.CreateSelect(matches, elt, chosen);
                          }
-                         expectedBlock = b.mvmd_insert(p.fw, expectedBlock, chosen, j);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, chosen, j);
                      }
                      return expectedBlock;
                  }>(),
-    genericEntry<BinaryOpConfig, "mvmd_expand", "x0, x1", "",
+    genericEntry<BinaryOpConfig, ExpectedType::fieldVector, "mvmd_expand", "x0, x1", "",
                  [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                      Value *scalarMask = b.hsimd_signmask(p.fw, p.opr[1]);
                      return b.mvmd_expand(p.fw, p.opr[0], scalarMask);
@@ -1050,8 +1380,8 @@ OperationIndexEntry allOperations[] = {
                      // rank(j) (how many selected slots come before j); otherwise 0.
                      Value *scalarMask = b.hsimd_signmask(p.fw, p.opr[1]);
                      Type *maskTy = scalarMask->getType();
-                     std::vector<Value *> isSelected(p.fn);
-                     std::vector<Value *> rank(p.fn);
+                     vector<Value *> isSelected(p.fn);
+                     vector<Value *> rank(p.fn);
                      Value *runningCount = ConstantInt::get(p.i32Ty, 0);
                      Value *expectedBlock = Constant::getNullValue(p.vTy);
                      for (unsigned j = 0; j < p.fn; j++) {
@@ -1066,40 +1396,208 @@ OperationIndexEntry allOperations[] = {
                          for (unsigned k = 0; k < p.fn; k++) {
                              Value *matches =
                                  b.CreateAnd(isSelected[j], b.CreateICmpEQ(rank[j], ConstantInt::get(p.i32Ty, k)));
-                             Value *elt = b.mvmd_extract(p.fw, p.opr[0], k);
+                             Value *elt = SafeExtractElement(b, p.fw, p.opr[0], k);
                              chosen = b.CreateSelect(matches, elt, chosen);
                          }
-                         expectedBlock = b.mvmd_insert(p.fw, expectedBlock, chosen, j);
+                         expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, chosen, j);
                      }
                      return expectedBlock;
                  }>(),
-    genericEntry<ShiftImmedBinOpConfig, "mvmd_dslli", "x0, x1, imm", "",
-                 [](KernelBuilder &b, const ShiftImmedBinOpConfig &c, const ShiftImmedBinOpConfig::Params &p) {
-                     return b.mvmd_dslli(p.fw, p.opr[0], p.opr[1], p.immed);
+    genericEntry<UnaryOpConfig, ExpectedType::bit, "bitblock_any", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     return b.bitblock_any(p.opr[0]);
                  },
-                 [](KernelBuilder &b, const ShiftImmedBinOpConfig &c, const ShiftImmedBinOpConfig::Params &p) {
-                     Value *expectedBlock = Constant::getNullValue(p.vTy);
-                     for (unsigned i = 0; i < p.fn; i++) {
-                         Value *elt = nullptr;
-                         if (i < p.immed)
-                             elt = b.mvmd_extract(p.fw, p.opr[1], p.fn - p.immed + i);
-                         else
-                             elt = b.mvmd_extract(p.fw, p.opr[0], i - p.immed);
-                         expectedBlock = b.mvmd_insert(p.fw, expectedBlock, elt, i);
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *merge = Constant::getNullValue(b.getIntNTy(b.getLaneWidth()));
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         merge = b.CreateOr(merge, b.CreateExtractElement(bitOpr0, i));
                      }
-                     return expectedBlock;
+                     return b.CreateICmpNE(merge, b.getIntN(b.getLaneWidth(), 0));
+                 }>(),
+    genericEntry<TernaryOpConfig, ExpectedType::bitBlock, "bitblock_add_with_carry.sum", "x0, x1, x2",
+                 "y <- x0 + x1 + x2",
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     return b.bitblock_add_with_carry(p.opr[0], p.opr[1], p.opr[2]).first;
+                 },
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     Type *bbIntTy = b.getIntNTy(b.getBitBlockWidth());
+                     return b.bitCast(b.CreateAdd(
+                         b.CreateAdd(b.CreateBitCast(p.opr[0], bbIntTy), b.CreateBitCast(p.opr[1], bbIntTy)),
+                         b.CreateZExt(p.opr[3], bbIntTy)));
+                 }>(),
+    genericEntry<TernaryOpConfig, ExpectedType::bitBlock, "bitblock_add_with_carry.carry", "x0, x1, x2",
+                 "y <- (x0 + x1 + x2) >= (1 << bbw)? 1 : 0",
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     return b.bitblock_add_with_carry(p.opr[0], p.opr[1], p.opr[2]).second;
+                 },
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     // TODO implement
+                     return Constant::getNullValue(b.getBitBlockType());
+                 }>(),
+    genericEntry<TernaryOpConfig, ExpectedType::bitBlock, "bitblock_subtract_with_borrow.diff", "x0, x1, x2",
+                 "y <- x0 - x1 - x2",
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     return b.bitblock_subtract_with_borrow(p.opr[0], p.opr[1], p.opr[2]).first;
+                 },
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     // TODO implement
+                     return Constant::getNullValue(b.getBitBlockType());
+                 }>(),
+    genericEntry<TernaryOpConfig, ExpectedType::bitBlock, "bitblock_subtract_with_borrow.borrow", "x0, x1, x2",
+                 "y <- (x0 - x1 - x2) < (-1 << (bbw - 1)) ? 1 : 0",
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     return b.bitblock_subtract_with_borrow(p.opr[0], p.opr[1], p.opr[2]).second;
+                 },
+                 [](KernelBuilder &b, const TernaryOpConfig &c, const TernaryOpConfig::Params &p) {
+                     // TODO implement
+                     return Constant::getNullValue(b.getBitBlockType());
+                 }>(),
+    genericEntry<ImmedBinOpConfig, ExpectedType::bitBlock, "bitblock_advance.shiftout", "x0, x1, imm", "",
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     return b.bitblock_advance(p.opr[0], p.opr[1], p.immed).first;
+                 },
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     // TODO implement
+                     return Constant::getNullValue(b.getBitBlockType());
+                 }>(),
+    genericEntry<ImmedBinOpConfig, ExpectedType::bitBlock, "bitblock_advance.shifted", "x0, x1, imm", "",
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     return b.bitblock_advance(p.opr[0], p.opr[1], p.immed).second;
+                 },
+                 [](KernelBuilder &b, const ImmedBinOpConfig &c, const ImmedBinOpConfig::Params &p) {
+                     // TODO implement
+                     return Constant::getNullValue(b.getBitBlockType());
+                 }>(),
+    genericEntry<ImmedTernOpConfig, ExpectedType::bitBlock, "bitblock_indexed_advance.shiftout", "x0, x1, x2, imm", "",
+                 [](KernelBuilder &b, const ImmedTernOpConfig &c, const ImmedTernOpConfig::Params &p) {
+                     return b.bitblock_indexed_advance(p.opr[0], p.opr[1], p.opr[2], p.immed).first;
+                 },
+                 [](KernelBuilder &b, const ImmedTernOpConfig &c, const ImmedTernOpConfig::Params &p) {
+                     // TODO implement
+                     return Constant::getNullValue(b.getBitBlockType());
+                 }>(),
+    genericEntry<ImmedTernOpConfig, ExpectedType::bitBlock, "bitblock_indexed_advance.shifted", "x0, x1, x2, imm", "",
+                 [](KernelBuilder &b, const ImmedTernOpConfig &c, const ImmedTernOpConfig::Params &p) {
+                     return b.bitblock_indexed_advance(p.opr[0], p.opr[1], p.opr[2], p.immed).second;
+                 },
+                 [](KernelBuilder &b, const ImmedTernOpConfig &c, const ImmedTernOpConfig::Params &p) {
+                     // TODO implement
+                     return Constant::getNullValue(b.getBitBlockType());
+                 }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::bitBlock, "bitblock_mask_from", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *maskOpr0 = b.CreateAnd(scalarOpr0, b.getBitBlockWidth() - 1);
+                     return b.bitblock_mask_from(maskOpr0);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *maskOpr0 = b.CreateAnd(scalarOpr0, b.getBitBlockWidth() - 1);
+                     Value *widenOpr0 = b.CreateZExt(maskOpr0, b.getIntNTy(b.getBitBlockWidth()));
+                     return b.bitCast(b.CreateSub(Constant::getNullValue(b.getIntNTy(b.getBitBlockWidth())),
+                                                  b.CreateShl(b.getIntN(b.getBitBlockWidth(), 1), widenOpr0)));
+                 }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::bitBlock, "bitblock_mask_to", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *maskOpr0 = b.CreateAnd(scalarOpr0, b.getBitBlockWidth() - 1);
+                     return b.bitblock_mask_to(maskOpr0);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *maskOpr0 = b.CreateAnd(scalarOpr0, b.getBitBlockWidth() - 1);
+                     Value *widenOpr0 = b.CreateZExt(maskOpr0, b.getIntNTy(b.getBitBlockWidth()));
+                     return b.bitCast(b.CreateSub(b.CreateShl(b.getIntN(b.getBitBlockWidth(), 2), widenOpr0),
+                                                  b.getIntN(b.getBitBlockWidth(), 1)));
+                 }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::bitBlock, "bitblock_set_bit", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *maskOpr0 = b.CreateAnd(scalarOpr0, b.getBitBlockWidth() - 1);
+                     return b.bitblock_set_bit(maskOpr0);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *maskOpr0 = b.CreateAnd(scalarOpr0, b.getBitBlockWidth() - 1);
+                     Value *widenOpr0 = b.CreateZExt(maskOpr0, b.getIntNTy(b.getBitBlockWidth()));
+                     return b.bitCast(b.CreateShl(b.getIntN(b.getBitBlockWidth(), 1), widenOpr0));
+                 }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::size, "bitblock_popcount", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     return b.bitblock_popcount(p.opr[0]);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *total = b.getSize(0);
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         Value *bitOpr0i = b.CreateExtractElement(bitOpr0, i);
+                         total = b.CreateAdd(total, b.CreatePopcount(bitOpr0i));
+                     }
+                     return total;
+                 }>(),
+    genericEntry<BinaryOpConfig, ExpectedType::bitBlock, "simd_and", "x0", "",
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     return b.simd_and(p.opr[0], p.opr[1]);
+                 },
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *bitOpr1 = b.bitCast(p.opr[1]);
+                     Value *expectedBitBlock = Constant::getNullValue(b.getBitBlockType());
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         Value *bitOpr0i = b.CreateExtractElement(bitOpr0, i);
+                         Value *bitOpr1i = b.CreateExtractElement(bitOpr1, i);
+                         expectedBitBlock = b.CreateInsertElement(expectedBitBlock, b.CreateAnd(bitOpr0i, bitOpr1i), i);
+                     }
+                     return expectedBitBlock;
+                 }>(),
+    genericEntry<BinaryOpConfig, ExpectedType::bitBlock, "simd_or", "x0", "",
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     return b.simd_or(p.opr[0], p.opr[1]);
+                 },
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *bitOpr1 = b.bitCast(p.opr[1]);
+                     Value *expectedBitBlock = Constant::getNullValue(b.getBitBlockType());
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         Value *bitOpr0i = b.CreateExtractElement(bitOpr0, i);
+                         Value *bitOpr1i = b.CreateExtractElement(bitOpr1, i);
+                         expectedBitBlock = b.CreateInsertElement(expectedBitBlock, b.CreateOr(bitOpr0i, bitOpr1i), i);
+                     }
+                     return expectedBitBlock;
+                 }>(),
+    genericEntry<BinaryOpConfig, ExpectedType::bitBlock, "simd_xor", "x0", "",
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     return b.simd_xor(p.opr[0], p.opr[1]);
+                 },
+                 [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *bitOpr1 = b.bitCast(p.opr[1]);
+                     Value *expectedBitBlock = Constant::getNullValue(b.getBitBlockType());
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         Value *bitOpr0i = b.CreateExtractElement(bitOpr0, i);
+                         Value *bitOpr1i = b.CreateExtractElement(bitOpr1, i);
+                         expectedBitBlock = b.CreateInsertElement(expectedBitBlock, b.CreateXor(bitOpr0i, bitOpr1i), i);
+                     }
+                     return expectedBitBlock;
+                 }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::bitBlock, "simd_not", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     return b.simd_not(p.opr[0]);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *bitOpr0 = b.bitCast(p.opr[0]);
+                     Value *expectedBitBlock = Constant::getNullValue(b.getBitBlockType());
+                     for (unsigned i = 0; i < b.getBitBlockWidth() / b.getLaneWidth(); ++i) {
+                         Value *bitOpr0i = b.CreateExtractElement(bitOpr0, i);
+                         expectedBitBlock = b.CreateInsertElement(expectedBitBlock, b.CreateNot(bitOpr0i), i);
+                     }
+                     return expectedBitBlock;
                  }>(),
 };
 
 /*
-    llvm::Value *simd_fill(unsigned fw, llvm::Value *a)
-
-    llvm::Value *simd_if(unsigned fw, llvm::Value *cond, llvm::Value *a, llvm::Value *b)
-    llvm::Value *simd_binary(unsigned char mask, llvm::Value *bit_1, llvm::Value *bit_0)
-    llvm::Value *simd_ternary(unsigned char mask, llvm::Value *bit_2, llvm::Value *bit_1, llvm::Value *bit_0)
-
-    llvm::Value *simd_slli(unsigned fw, llvm::Value *a, unsigned shift)
-    llvm::Value *simd_srli(unsigned fw, llvm::Value *a, unsigned shift)
+// Need to add to list, still:
 
     llvm::Value *simd_any(unsigned fw, llvm::Value *a)
     llvm::Value *simd_popcount(unsigned fw, llvm::Value *a)
@@ -1113,61 +1611,34 @@ OperationIndexEntry allOperations[] = {
 
     llvm::Value *hsimd_signmask(unsigned fw, llvm::Value *a)
 
-    llvm::Value *mvmd_extract(unsigned fw, llvm::Value *a, unsigned fieldIndex)
-    llvm::Value *mvmd_insert(unsigned fw, llvm::Value *blk, llvm::Value *elt, unsigned fieldIndex)
-
-    llvm::Value *mvmd_sll(unsigned fw, llvm::Value *value, llvm::Value *shift, const bool safe = false)
-    llvm::Value *mvmd_srl(unsigned fw, llvm::Value *value, llvm::Value *shift, const bool safe = false)
-    llvm::Value *mvmd_slli(unsigned fw, llvm::Value *a, unsigned shift)
-    llvm::Value *mvmd_srli(unsigned fw, llvm::Value *a, unsigned shift)
-    //llvm::Value *mvmd_dslli(unsigned fw, llvm::Value *a, llvm::Value *b, unsigned shift)
     llvm::Value *mvmd_dsll(unsigned fw, llvm::Value *a, llvm::Value *b, llvm::Value *shift)
 
     llvm::Value *mvmd_shuffle2(unsigned fw, llvm::Value *table0, llvm::Value *table1, llvm::Value *index_vector,
                                ShuffleMode m = ShuffleMode::TruncateIndex)
-
-    llvm::Value *bitblock_any(llvm::Value *a)
-    std::pair<llvm::Value *, llvm::Value *> bitblock_add_with_carry(llvm::Value *a, llvm::Value *b,
-                                                                    llvm::Value *carryin)
-    std::pair<llvm::Value *, llvm::Value *> bitblock_subtract_with_borrow(llvm::Value *a, llvm::Value *b,
-                                                                          llvm::Value *borrowin)
-    std::pair<llvm::Value *, llvm::Value *> bitblock_advance(llvm::Value *a, llvm::Value *shiftin, unsigned shift)
-    std::pair<llvm::Value *, llvm::Value *> bitblock_indexed_advance(llvm::Value *a, llvm::Value *index_strm,
-                                                                     llvm::Value *shiftin, unsigned shift)
-
-    llvm::Value *bitblock_mask_from(llvm::Value *const position, const bool safe = false)
-    llvm::Value *bitblock_mask_to(llvm::Value *const position, const bool safe = false)
-    llvm::Value *bitblock_set_bit(llvm::Value *const position, const bool safe = false)
-
-    llvm::Value *bitblock_popcount(llvm::Value *const to_count)
-
-    llvm::Value *simd_not(llvm::Value *a, llvm::StringRef s = llvm::StringRef());
 */
 
-// static cl::opt<IDISA::ShuffleMode>
-//     ShuffleIndex("ShuffleIndex",
-//                  cl::values(clEnumValN(IDISA::ShuffleMode::TruncateIndex, "Truncate",
-//                                        "Truncate out-of-bound shuffle indexes."),
-//                             clEnumValN(IDISA::ShuffleMode::ZeroOnIndexOver, "ZeroOnOver",
-//                                        "Select zero for shuffle indexes out of bound."),
-//                             clEnumValN(IDISA::ShuffleMode::ZeroOnHighIndexBit, "ZeroOnHighBit",
-//                                        "Select zero if high index bit set, otherwise truncate.")),
-//                  cl::init(IDISA::IDISA_Builder::ShuffleMode::TruncateIndex));
-
-vector<tuple<StringRef, StringRef, StringRef>> allOperationHelpDescs() {
-    vector<tuple<StringRef, StringRef, StringRef>> allOps;
+static string supportedOpsString = []() {
+    stringstream result;
+    result << "\nSUPPORTED OPERATIONS:\n\n";
     for (auto const &entry : allOperations) {
-        allOps.emplace_back(entry.name, entry.helpOprs, entry.helpDesc);
+        result << setw(4) << " " << setw(36) << right << entry.name << "  " << setw(16) << left << entry.helpOprs;
+        if (entry.helpDesc[0] != 0) {
+            result << " - " << entry.helpDesc;
+        }
+        result << '\n';
     }
-    return allOps;
-}
+    result << '\n';
+    return result.str();
+}();
 
-bool makeOperationConfig(cl::opt<string> &opName, cl::opt<unsigned> &opFieldWidth, cl::opt<bool> &opQuiet,
-                         unique_ptr<OperationConfig> &outOpConfig) {
+cl::extrahelp SupportedOperationsHelp(supportedOpsString);
+
+bool makeOperationConfig(unique_ptr<OperationConfig> &outOpConfig) {
+    StringRef opName = OperationName;
     for (auto const &entry : allOperations) {
         if (opName == entry.name) {
-            return entry.factory(opFieldWidth, opQuiet, outOpConfig);
+            return entry.factory(outOpConfig);
         }
     }
-    return opName.error("Operation " + opName + " unknown or not implemented yet");
+    return OperationName.error("Operation " + opName + " unknown or not implemented yet");
 }

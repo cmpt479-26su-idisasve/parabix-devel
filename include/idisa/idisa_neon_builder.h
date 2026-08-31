@@ -9,7 +9,7 @@ constexpr unsigned Neon_width = 128;
 class IDISA_Neon_Builder : public IDISA_Generic_Builder {
   public:
     explicit IDISA_Neon_Builder(CBuilder *cb, unsigned vectorWidth, unsigned laneWidth)
-        : IDISA_Generic_Builder(cb, vectorWidth, laneWidth, Neon_width) {}
+        : IDISA_Generic_Builder(cb, vectorWidth, laneWidth, Neon_width, 64, 8) {}
     ~IDISA_Neon_Builder() = default;
 
     std::string getBuilderCacheName() override;

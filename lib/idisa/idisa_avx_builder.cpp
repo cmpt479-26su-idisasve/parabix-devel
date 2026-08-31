@@ -276,7 +276,7 @@ std::pair<Value *, Value *> IDISA_AVX2_Builder::bitblock_advance_impl(Value *a, 
 }
 
 std::vector<Value *> IDISA_AVX2_Builder::simd_pext_impl(unsigned fw, std::vector<Value *> vs, Value *extract_mask) {
-    if (mCB->hasFeature(codegen::Feature::AVX_BMI2) && (fw <= 64)) {
+    if (mCB->hasFeature(codegen::Feature::AVX_BMI2) && (fw >= 8) && (fw <= 64)) {
         unsigned fieldCount = getVectorBitWidth(vs[0]) / fw;
         SmallVector<Value *> mask(fieldCount);
         for (unsigned i = 0; i < fieldCount; i++) {
@@ -313,7 +313,7 @@ std::vector<Value *> IDISA_AVX2_Builder::simd_pext_impl(unsigned fw, std::vector
 }
 
 Value *IDISA_AVX2_Builder::simd_pdep_impl(unsigned fw, Value *v, Value *deposit_mask) {
-    if (mCB->hasFeature(codegen::Feature::AVX_BMI2) && (fw <= 64)) {
+    if (mCB->hasFeature(codegen::Feature::AVX_BMI2) && (fw >= 8) && (fw <= 64)) {
         if (fw == 64) {
             return vectorize(fw, v, deposit_mask, [=](unsigned i, Value *v_i, Value *mask_i) -> Value * {
                 return mCB->CreateIntrinsic(Intrinsic::x86_bmi_pdep_64, {v_i, mask_i});
@@ -542,7 +542,7 @@ Value *IDISA_AVX2_Builder::mvmd_shuffle_impl(unsigned fw, Value *a, Value *index
         Value *hiSelect = ConstantVector::get({mCB->getInt64(2), mCB->getInt64(3), mCB->getInt64(2), mCB->getInt64(3)});
         Value *hiVec = fwCast(fw, mCB->CreateShuffleVector(a64, UndefValue::get(vec64Ty), hiSelect));
         Value *hiShufIdxs = simd_or(index_vector, simd_xor(isHiIdxs, hiBits));
-        
+
         Value *loShuffle = mCB->CreateIntrinsic(Intrinsic::x86_avx2_pshuf_b, {loVec, fwCast(fw, loShufIdxs)});
         Value *hiShuffle = mCB->CreateIntrinsic(Intrinsic::x86_avx2_pshuf_b, {hiVec, fwCast(fw, hiShufIdxs)});
         return fwCast(fw, simd_or(loShuffle, hiShuffle));
@@ -563,8 +563,7 @@ Value *IDISA_AVX2_Builder::mvmd_compress_impl(unsigned fw, Value *a, Value *sele
             Value *mask32 =
                 mCB->CreateMul(mCB->CreateCall(PDEP_func->getFunctionType(), PDEP_func, {mask, mCB->getInt32(0x55)}),
                                mCB->getInt32(3));
-            Value *result = fwCast(fw, mvmd_compress(32, fwCast(32, a), mCB->CreateTrunc(mask32, mCB->getInt8Ty())));
-            return result;
+            return mvmd_compress(32, fwCast(32, a), mCB->CreateTrunc(mask32, mCB->getInt8Ty()));
         } else if (fw == 32) {
             Type *v1xi32Ty = FixedVectorType::get(mCB->getInt32Ty(), 1);
             Type *v8xi32Ty = FixedVectorType::get(mCB->getInt32Ty(), 8);
@@ -642,11 +641,10 @@ Value *IDISA_AVX2_Builder::mvmd_compress_impl(unsigned fw, Value *a, Value *sele
             // // Step 4: Use mvmd_shuffle2 to shuffle using permute_vec
             Value *const shuffled = mvmd_shuffle(fw, a, permute_vec);
             Value *const count = mCB->CreatePopcount(select_mask);
-            Constant *ALL_ONES = ConstantVector::getAllOnesValue(resultTy);
-            Value *mask = mCB->CreateNot(mvmd_sll(fw, ALL_ONES, count));
-            mask = mCB->CreateSelect(mCB->CreateICmpNE(count, ConstantInt::get(intTy, fieldCount)), mask, ALL_ONES);
-            assert(shuffled->getType() == mask->getType());
-            return mCB->CreateAnd(shuffled, mask);
+            Value *mask = simd_not(mvmd_sll(fw, allOnes(), count));
+            mask = mCB->CreateSelect(mCB->CreateICmpNE(count, ConstantInt::get(intTy, fieldCount)), bitCast(mask),
+                                     allOnes());
+            return simd_and(shuffled, mask);
         }
     }
 

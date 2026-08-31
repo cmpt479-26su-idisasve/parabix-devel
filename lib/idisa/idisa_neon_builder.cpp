@@ -159,21 +159,21 @@ Value *IDISA_Neon_Builder::simd_bitreverse_impl(unsigned fw, Value *a) {
     if (fw == 8) {
         return mCB->CreateCall(rbit->getFunctionType(), rbit, fwCast(8, a));
     }
-    Function *refBytesInFields = nullptr;
+    Function *revBytesInFields = nullptr;
 
     // Then reverse the bytes in each field
     if (fw == 64) {
-        refBytesInFields = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_revw);
+        revBytesInFields = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_revw);
     } else if (fw == 32) {
-        refBytesInFields = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_revh);
+        revBytesInFields = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_revh);
     } else if (fw == 16) {
-        refBytesInFields = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_revb);
+        revBytesInFields = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_revb);
     } else {
         return IDISA_Generic_Builder::simd_bitreverse_impl(fw, a);
     }
 
     auto bitsInBytesRevsd = mCB->CreateCall(rbit->getFunctionType(), rbit, fwCast(8, a));
-    return mCB->CreateCall(refBytesInFields->getFunctionType(), refBytesInFields, fwCast(fw, bitsInBytesRevsd));
+    return fwCast(fw, mCB->CreateCall(revBytesInFields->getFunctionType(), revBytesInFields, fwCast(fw, bitsInBytesRevsd)));
 }
 
 Value *IDISA_Neon_Builder::mvmd_shuffle_impl(unsigned fw, Value *data_table, Value *index_vector, ShuffleMode mode) {
@@ -267,10 +267,10 @@ Value *IDISA_Neon_Builder::fieldPermute(unsigned fw, Value *a, Value *select_mas
 Value *IDISA_Neon_Builder::mvmd_compress_impl(unsigned fw, Value *a, Value *select_mask) {
     if (getVectorBitWidth(a) == Neon_width) {
         if (fw == 16 || fw == 32 || fw == 64) {
-            return fieldPermute(fw, a, select_mask, false);
+            return fwCast(fw, fieldPermute(fw, a, select_mask, false));
         }
         if (fw == 8) {
-            return compressBytes(a, mCB->CreateZExtOrTrunc(select_mask, mCB->getInt16Ty()));
+            return fwCast(fw, compressBytes(a, mCB->CreateZExtOrTrunc(select_mask, mCB->getInt16Ty())));
         }
     }
     return IDISA_Generic_Builder::mvmd_compress_impl(fw, a, select_mask);
@@ -279,7 +279,7 @@ Value *IDISA_Neon_Builder::mvmd_compress_impl(unsigned fw, Value *a, Value *sele
 Value *IDISA_Neon_Builder::mvmd_expand_impl(unsigned fw, Value *a, Value *select_mask) {
     if (getVectorBitWidth(a) == Neon_width) {
         if (fw == 16 || fw == 32 || fw == 64) {
-            return fieldPermute(fw, a, select_mask, true);
+            return fwCast(fw, fieldPermute(fw, a, select_mask, true));
         }
     }
     return IDISA_Generic_Builder::mvmd_expand_impl(fw, a, select_mask);
@@ -291,7 +291,7 @@ Value *IDISA_Neon_Builder::hsimd_packl_impl(unsigned fw, Value *a, Value *b) {
         int halfFw = fw / 2;
         Function *uzp1_fn = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_uzp1,
                                                               FixedVectorType::get(mCB->getIntNTy(halfFw), nElems * 2));
-        return mCB->CreateCall(uzp1_fn->getFunctionType(), uzp1_fn, {fwCast(halfFw, a), fwCast(halfFw, b)});
+        return fwCast(fw, mCB->CreateCall(uzp1_fn->getFunctionType(), uzp1_fn, {fwCast(halfFw, a), fwCast(halfFw, b)}));
     }
     // Otherwise use default logic.
     return IDISA_Generic_Builder::hsimd_packl_impl(fw, a, b);
@@ -303,7 +303,7 @@ Value *IDISA_Neon_Builder::hsimd_packh_impl(unsigned fw, Value *a, Value *b) {
         int halfFw = fw / 2;
         Function *uzp2_fn = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::aarch64_sve_uzp2,
                                                               FixedVectorType::get(mCB->getIntNTy(halfFw), nElems * 2));
-        return mCB->CreateCall(uzp2_fn->getFunctionType(), uzp2_fn, {fwCast(halfFw, a), fwCast(halfFw, b)});
+        return fwCast(fw, mCB->CreateCall(uzp2_fn->getFunctionType(), uzp2_fn, {fwCast(halfFw, a), fwCast(halfFw, b)}));
     }
     // Otherwise use default logic.
     return IDISA_Generic_Builder::hsimd_packh_impl(fw, a, b);

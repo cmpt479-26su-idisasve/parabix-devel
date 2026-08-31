@@ -18,110 +18,37 @@ using namespace kernel;
 Entropy ent;
 XorShift256pp rng(ent.nextWord());
 
-#if 0
-// Cribbed from LLVM documentation August 2026
-struct FileSizeParser : public cl::parser<uint64_t> {
-    // parse - Return true on error.
-    bool parse(cl::Option &opt, StringRef argName, const std::string &arg, unsigned &val);
-};
-
-bool FileSizeParser::parse(cl::Option &opt, StringRef argName, const std::string &arg, uint64_t &val) {
-    char *p;
-    // Parse integer part, leaving 'p' pointing to the first non-integer char
-    val = (uint64_t)strtoll(arg.c_str(), &p, 0);
-
-    switch (tolower(*p)) {
-    case 'g':
-        val *= 1024 * 1024 * 1024;
-        ++p;
-        break;
-    case 'm':
-        val *= 1024 * 1024;
-        ++p;
-        break;
-    case 'k':
-        val *= 1024;
-        ++p;
-        break;
-    case 0:
-        goto done;
-    default:
-        goto fail;
-    }
-
-    // Ignore the 'i' in KiB if people use that
-    if (tolower(*p) == 'i') {
-        ++p;
-    }
-    // Ignore B suffix
-    if (tolower(*end) == 'b') {
-        ++p;
-    }
-    // Check for extra junk of any other kind
-    if (*p != 0) {
-        goto fail;
-    }
-    // fall through!
-done:
-    return false; // No error
-fail:
-    return opt.error("'" + arg + "' value invalid for file size argument!");
-}
-#endif
-
 const char *const ProgramName = "idisa_exerciser";
 
-string supportedOperationsDesc = []() {
-    stringstream result;
-    result << "\nSUPPORTED OPERATIONS:\n\n";
-    for (auto t : allOperationHelpDescs()) {
-        StringRef name, operands, desc;
-        tie(name, operands, desc) = t;
-        result << setw(4) << " " << setw(22) << left << name.str() << " " << setw(20) << operands.str();
-        if (!desc.empty()) {
-            result << " - " << desc.str();
-        }
-        result << '\n';
-    }
-    result << '\n';
-    return result.str();
-}();
+cl::opt<string> OperationName(cl::Positional, cl::desc("<IDISA op>"), cl::Required);
+cl::opt<unsigned> OperationFieldWidth(cl::Positional, cl::desc("<field width>"), cl::Required);
+cl::list<string> OperationArgs(cl::ConsumeAfter, cl::desc("[operation args..]"));
 
-// static cl::OptionCategory SupportedOperations("A. Supported IDISA Operations", supportedOperationsDesc);
-cl::extrahelp SupportedOperationsHelp(supportedOperationsDesc);
+cl::OptionCategory ExerciserFlags("C. Command Flags");
 
-static cl::opt<string> OperationName(cl::Positional, cl::desc("<IDISA op>"), cl::Required);
-static cl::opt<unsigned> OperationFieldWidth(cl::Positional, cl::desc("<field width>"), cl::Required);
-static cl::list<string> OperationArgs(cl::ConsumeAfter, cl::desc("[operation args..]"));
+cl::opt<string> OperationOutputFile("output", cl::value_desc("output"),
+                                    cl::desc("Write the output of the operation to a file."), cl::cat(ExerciserFlags));
+cl::opt<bool> OperationOutputHex("x", cl::desc("Write the output as a hex dump."), cl::cat(ExerciserFlags));
 
-static cl::OptionCategory ExerciserFlags("C. Command Flags");
+cl::opt<bool> QuietMode("q", cl::desc("Suppress output, set the return code only."), cl::cat(ExerciserFlags));
 
-static cl::opt<string> OperationOutputFile("output", cl::value_desc("output"),
-                                           cl::desc("Write the output of the operation to a file."),
-                                           cl::cat(ExerciserFlags));
-static cl::opt<bool> OperationOutputHex("x", cl::desc("Write the output as a hex dump."), cl::cat(ExerciserFlags));
+cl::opt<bool> DisableChecks("disable-checks", cl::desc("Don't run checks (for more precise timing comparisons)."),
+                            cl::cat(ExerciserFlags));
 
-static cl::opt<bool> DisableChecks("disable-checks",
-                                   cl::desc("Don't run checks (for more precise timing comparisons)."),
-                                   cl::cat(ExerciserFlags));
+cl::opt<unsigned> WarmupCount("warmup", cl::init(0), cl::value_desc("runs"),
+                              cl::desc("Run the operation on all input a number of times before recording timings."),
+                              cl::cat(ExerciserFlags));
+cl::opt<unsigned> RepeatCount("repeat", cl::init(1), cl::value_desc("runs"),
+                              cl::desc("Re-run the operation multiple times."), cl::cat(ExerciserFlags));
+cl::opt<unsigned> DropBestCount("drop-best", cl::init(0), cl::value_desc("runs"),
+                                cl::desc("Drop the best timing(s) from the average over multiple runs."),
+                                cl::cat(ExerciserFlags));
+cl::opt<unsigned> DropWorstCount("drop-worst", cl::init(0), cl::value_desc("runs"),
+                                 cl::desc("Drop the worst timing(s) from the average over multiple runs."),
+                                 cl::cat(ExerciserFlags));
 
-static cl::opt<unsigned>
-    WarmupCount("warmup", cl::init(0), cl::value_desc("runs"),
-                cl::desc("Run the operation on all input a number of times before recording timings."),
-                cl::cat(ExerciserFlags));
-static cl::opt<unsigned> RepeatCount("repeat", cl::init(1), cl::value_desc("runs"),
-                                     cl::desc("Re-run the operation multiple times."), cl::cat(ExerciserFlags));
-static cl::opt<unsigned> DropBestCount("drop-best", cl::init(0), cl::value_desc("runs"),
-                                       cl::desc("Drop the best timing(s) from the average over multiple runs."),
-                                       cl::cat(ExerciserFlags));
-static cl::opt<unsigned> DropWorstCount("drop-worst", cl::init(0), cl::value_desc("runs"),
-                                        cl::desc("Drop the worst timing(s) from the average over multiple runs."),
-                                        cl::cat(ExerciserFlags));
-
-static cl::opt<bool> QuietMode("q", cl::desc("Suppress output, set the return code only."), cl::cat(ExerciserFlags));
-
-static cl::opt<bool> ReportTiming("timing", cl::desc("Report pipeline compilation and kernel execution time."),
-                                  cl::init(false), cl::cat(ExerciserFlags));
+cl::opt<bool> ReportTiming("timing", cl::desc("Report pipeline compilation and kernel execution time."),
+                           cl::init(false), cl::cat(ExerciserFlags));
 
 int main(int argc, char *argv[]) {
     // The argument parsing for the operations is kind of janky. Another possibly better way is to register each
@@ -143,7 +70,7 @@ int main(int argc, char *argv[]) {
     unique_ptr<OperationConfig> operationConfig;
 
     // Find opName in configurator list
-    if (makeOperationConfig(OperationName, OperationFieldWidth, QuietMode, operationConfig)) {
+    if (makeOperationConfig(operationConfig)) {
         return 2;
     }
     if (operationConfig->isStdinGrabbed() && ((WarmupCount != 0) || (RepeatCount != 1))) {
@@ -193,7 +120,8 @@ int main(int argc, char *argv[]) {
     operationConfig->compilePipeline();
     if (ReportTiming) {
         auto compileTimeUs = chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - compileStart);
-        outs() << "timing: compile: " << operationConfig->getKernelBuilderID() << " took " << compileTimeUs.count() << " us\n";
+        outs() << "timing: compile: " << operationConfig->getKernelBuilderID() << " took " << compileTimeUs.count()
+               << " us\n";
     }
     if (!QuietMode && !DisableChecks) {
         outs() << "test: built with " << operationConfig->getKernelBuilderID() << "\n";

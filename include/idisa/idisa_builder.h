@@ -74,6 +74,7 @@ class IDISA_Builder {
 
     unsigned getBitBlockWidth() const { return mBitBlockWidth; }
     unsigned getLaneWidth() const { return mLaneWidth; }
+    llvm::IntegerType *getLaneTy() const { return mCB->getIntNTy(mLaneWidth); }
     llvm::FixedVectorType *getBitBlockType() const { return mBitBlockType; }
     llvm::Constant *allZeroes() const { return mZeroInitializer; }
     llvm::Constant *allOnes() const { return mOneInitializer; }
@@ -97,7 +98,7 @@ class IDISA_Builder {
     llvm::Constant *getSplat(const unsigned fieldCount, llvm::Constant *Elt);
     llvm::Constant *getSplat(const unsigned fieldCount, llvm::APInt intVal);
     llvm::Constant *getSplatN(const unsigned fw, const unsigned fieldCount, int intVal);
-    
+
     llvm::LoadInst *CreateBlockAlignedLoad(llvm::Type *type, llvm::Value *const ptr) {
         return mCB->CreateAlignedLoad(type, ptr, mBitBlockWidth / 8);
     }
@@ -324,6 +325,12 @@ class IDISA_Builder {
     virtual std::string getBuilderCacheName() = 0;
 
   protected:
+    // A bunch of places were using SmallVector<..., 16> to build up a list of indices for a shuffle. Using SmallVector
+    // at all is probably premature optimization, but anyway 16 is too small: if you're dealing with AVX512 or 512-bit
+    // SVE then you're going to be doing <64 x i8> shuffles. So I figure this should at least be defined one common
+    // location.
+    using IndexVector = llvm::SmallVector<llvm::Constant *, 64>;
+
     virtual llvm::Value *simd_fill_impl(unsigned fw, llvm::Value *a) = 0;
     virtual llvm::Value *simd_fill_impl(unsigned vector_width, unsigned fw, llvm::Value *a) = 0;
     virtual llvm::Value *simd_add_impl(unsigned fw, llvm::Value *a, llvm::Value *b) = 0;
@@ -406,15 +413,15 @@ class IDISA_Builder {
 
     // Repeats the synthesis of ScalarF across all vector elements of aVec
     template <class ScalarF> llvm::Value *vectorize(unsigned fw, llvm::Value *aVec, ScalarF &&scalarF) {
+        assert(fw >= 8);
         unsigned fieldCount = getVectorBitWidth(aVec) / fw;
         aVec = fwCast(fw, aVec); // just in case
         llvm::Value *result = llvm::PoisonValue::get(fwVectorType(fw));
         for (unsigned i = 0; i < fieldCount; i++) {
-            llvm::Value *v_i = mvmd_extract(fw, aVec, i);
-            llvm::Value *result_i = scalarF(i, v_i);
-            if (i == 0) {
-            }
-            result = mvmd_insert(fw, result, result_i, i);
+            llvm::Value *iIndex = mCB->getInt64(i);
+            llvm::Value *a_i = mCB->CreateExtractElement(aVec, iIndex);
+            llvm::Value *result_i = scalarF(i, a_i);
+            result = mCB->CreateInsertElement(result, result_i, iIndex);
         }
         return result;
     }
@@ -422,15 +429,17 @@ class IDISA_Builder {
     // Repeats the synthesis of ScalarF across all vector elements of aVec, bVec
     template <class ScalarF>
     llvm::Value *vectorize(unsigned fw, llvm::Value *aVec, llvm::Value *bVec, ScalarF &&scalarF) {
+        assert(fw >= 8);
         unsigned fieldCount = getVectorBitWidth(aVec) / fw;
         aVec = fwCast(fw, aVec); // just in case
         bVec = fwCast(fw, bVec); // just in case
         llvm::Value *result = llvm::PoisonValue::get(fwVectorType(fw));
         for (unsigned i = 0; i < fieldCount; i++) {
-            llvm::Value *a_i = mvmd_extract(fw, aVec, i);
-            llvm::Value *b_i = mvmd_extract(fw, bVec, i);
+            llvm::Value *iIndex = mCB->getInt64(i);
+            llvm::Value *a_i = mCB->CreateExtractElement(aVec, iIndex);
+            llvm::Value *b_i = mCB->CreateExtractElement(bVec, iIndex);
             llvm::Value *result_i = scalarF(i, a_i, b_i);
-            result = mvmd_insert(fw, result, result_i, i);
+            result = mCB->CreateInsertElement(result, result_i, iIndex);
         }
         return result;
     }

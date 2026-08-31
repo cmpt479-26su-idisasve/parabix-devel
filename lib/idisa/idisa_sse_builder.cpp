@@ -35,14 +35,14 @@ Value *IDISA_SSE_Builder::hsimd_signmask_impl(const unsigned fw, Value *a) {
     //     Type * maskTy = getIntNTy(maskWidth);
     //     Value * mask_lo = CreateZExtOrTrunc(hsimd_signmask(fw, a_lo), maskTy);
     //     Value * mask_hi = CreateZExtOrTrunc(hsimd_signmask(fw, a_hi), maskTy);
-    //     return CreateOr(CreateShl(mask_hi, maskWidth/2), mask_lo);
+    //     return fwCast(fw, CreateOr(CreateShl(mask_hi, maskWidth/2), mask_lo));
     // }
     // SSE special cases using Intrinsic::x86_sse_movmsk_ps (fw=32 only)
     if ((getVectorBitWidth(a) == SSE_width) && (fw == 32)) {
         Function *signmask_f32func = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::x86_sse_movmsk_ps);
         Type *bitBlock_f32type = FixedVectorType::get(mCB->getFloatTy(), SSE_width / 32);
         Value *a_as_ps = mCB->CreateBitCast(a, bitBlock_f32type);
-        return mCB->CreateCall(signmask_f32func->getFunctionType(), signmask_f32func, a_as_ps);
+        return fwCast(fw, mCB->CreateCall(signmask_f32func->getFunctionType(), signmask_f32func, a_as_ps));
     }
     // Otherwise use default logic.
     return IDISA_Generic_Builder::hsimd_signmask_impl(fw, a);
@@ -59,7 +59,7 @@ Value *IDISA_SSE_Builder::mvmd_compress_impl(unsigned fw, Value *a, Value *selec
             Value *bdcst = simd_fill(64, mCB->CreateZExt(selector, mCB->getInt64Ty()));
             Value *kept = simd_and(simd_eq(64, simd_and(keep_mask, bdcst), keep_mask), a);
             Value *shifted = simd_and(a_srli1, simd_eq(64, shifted_mask, bdcst));
-            return simd_or(kept, shifted);
+            return fwCast(fw, simd_or(kept, shifted));
         } else if (fw == 32) {
             Value *bdcst = simd_fill(32, mCB->CreateZExtOrTrunc(selector, mCB->getInt32Ty()));
             Constant *fieldBit[4] = {mCB->getInt32(1), mCB->getInt32(2), mCB->getInt32(4), mCB->getInt32(8)};
@@ -85,8 +85,8 @@ Value *IDISA_SSE_Builder::mvmd_compress_impl(unsigned fw, Value *a, Value *selec
 Value *IDISA_SSE2_Builder::hsimd_packh_impl(unsigned fw, Value *a, Value *b) {
     if ((fw == 16) && (getVectorBitWidth(a) == SSE_width)) {
         Function *packuswb_func = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::x86_sse2_packuswb_128);
-        return mCB->CreateCall(packuswb_func->getFunctionType(), packuswb_func,
-                               {simd_srli(16, a, 8), simd_srli(16, b, 8)});
+        return fwCast(fw, mCB->CreateCall(packuswb_func->getFunctionType(), packuswb_func,
+                                          {simd_srli(16, a, 8), simd_srli(16, b, 8)}));
     }
     // Otherwise use default logic.
     return IDISA_SSE_Builder::hsimd_packh_impl(fw, a, b);
@@ -104,7 +104,8 @@ Value *IDISA_SSE2_Builder::hsimd_packl_impl(unsigned fw, Value *a, Value *b) {
 Value *IDISA_SSE2_Builder::hsimd_packus_impl(unsigned fw, Value *a, Value *b) {
     if ((fw == 16) && (getVectorBitWidth(a) == SSE_width)) {
         Function *packuswb_func = Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::x86_sse2_packuswb_128);
-        return mCB->CreateCall(packuswb_func->getFunctionType(), packuswb_func, {fwCast(16, a), fwCast(16, b)});
+        return fwCast(fw,
+                      mCB->CreateCall(packuswb_func->getFunctionType(), packuswb_func, {fwCast(16, a), fwCast(16, b)}));
     }
     // Otherwise use default logic.
     return IDISA_SSE_Builder::hsimd_packus_impl(fw, a, b);
@@ -118,12 +119,12 @@ Value *IDISA_SSE2_Builder::hsimd_signmask_impl(unsigned fw, Value *a) {
                 Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::x86_sse2_movmsk_pd);
             Type *bitBlock_f64type = FixedVectorType::get(mCB->getDoubleTy(), SSE_width / 64);
             Value *a_as_pd = mCB->CreateBitCast(a, bitBlock_f64type);
-            return mCB->CreateCall(signmask_f64func->getFunctionType(), signmask_f64func, a_as_pd);
+            return fwCast(fw, mCB->CreateCall(signmask_f64func->getFunctionType(), signmask_f64func, a_as_pd));
         }
         if (fw == 8) {
             Function *pmovmskb_func =
                 Intrinsic::getOrInsertDeclaration(mCB->getModule(), Intrinsic::x86_sse2_pmovmskb_128);
-            return mCB->CreateCall(pmovmskb_func->getFunctionType(), pmovmskb_func, fwCast(8, a));
+            return fwCast(fw, mCB->CreateCall(pmovmskb_func->getFunctionType(), pmovmskb_func, fwCast(8, a)));
         }
     }
     // Otherwise use default SSE logic.
@@ -144,7 +145,7 @@ Value *IDISA_SSE2_Builder::mvmd_shuffle_impl(unsigned fw, Value *a, Value *index
         Constant *oneSplat = getSplat(2, mCB->getInt64(1));
         Value *exchange_mask = simd_eq(fw, simd_and(index_vector, oneSplat), xchg_vec);
         Value *rslt = simd_xor(simd_and(changed, exchange_mask), a);
-        return rslt;
+        return fwCast(fw, rslt);
     }
     return IDISA_SSE_Builder::mvmd_shuffle_impl(fw, a, index_vector, mode);
 }
@@ -158,7 +159,8 @@ std::vector<Value *> IDISA_SSE2_Builder::simd_pext_impl(unsigned fw, std::vector
         Value *multiplier = simd_add(fw, compressed_masks, simd_fill(fw, mCB->getIntN(fw, 1)));
         std::vector<Value *> c(v.size());
         for (unsigned i = 0; i < v.size(); i++) {
-            c[i] = simd_or(simd_mult(fw, multiplier, simd_srli(fw, w[i], fw / 2)), simd_select_lo(fw, w[i]));
+            c[i] =
+                fwCast(fw, simd_or(simd_mult(fw, multiplier, simd_srli(fw, w[i], fw / 2)), simd_select_lo(fw, w[i])));
         }
         return c;
     }
@@ -176,7 +178,7 @@ Value *IDISA_SSSE3_Builder::esimd_mergeh_impl(unsigned fw, Value *a, Value *b) {
         low_bits = simd_or(simd_select_lo(16, low_bits), simd_srli(16, low_bits, 8 - fw));
         // For each 16-bit field, interleave the high bits of the two bytes.
         high_bits = simd_or(simd_select_hi(16, high_bits), simd_slli(16, high_bits, 8 - fw));
-        return simd_or(low_bits, high_bits);
+        return fwCast(fw, simd_or(low_bits, high_bits));
     }
     // Otherwise use default SSE logic.
     return IDISA_SSE2_Builder::esimd_mergeh_impl(fw, a, b);
@@ -193,7 +195,7 @@ Value *IDISA_SSSE3_Builder::esimd_mergel_impl(unsigned fw, Value *a, Value *b) {
         low_bits = simd_or(simd_select_lo(16, low_bits), simd_srli(16, low_bits, 8 - fw));
         // For each 16-bit field, interleave the high bits of the two bytes.
         high_bits = simd_or(simd_select_hi(16, high_bits), simd_slli(16, high_bits, 8 - fw));
-        return simd_or(low_bits, high_bits);
+        return fwCast(fw, simd_or(low_bits, high_bits));
     }
     // Otherwise use default SSE2 logic.
     return IDISA_SSE2_Builder::esimd_mergel_impl(fw, a, b);
@@ -212,8 +214,8 @@ Value *IDISA_SSSE3_Builder::mvmd_shuffle_impl(unsigned fw, Value *data_table, Va
             Constant *fieldMask = mCB->getIntN(fw, fieldCount - 1);
             index_vector = simd_and(index_vector, simd_ugt(fw, index_vector, getSplat(fieldCount, fieldMask)));
         }
-        return mCB->CreateCall(shuf8Func->getFunctionType(), shuf8Func,
-                               {fwCast(8, data_table), fwCast(8, index_vector)});
+        return fwCast(fw, mCB->CreateCall(shuf8Func->getFunctionType(), shuf8Func,
+                                          {fwCast(8, data_table), fwCast(8, index_vector)}));
     }
     return IDISA_SSE2_Builder::mvmd_shuffle_impl(fw, data_table, index_vector, mode);
 }
