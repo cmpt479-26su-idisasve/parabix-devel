@@ -1092,7 +1092,7 @@ Value * PabloCompiler::compileExpression(KernelBuilder & b, const PabloAST * con
                                 break;
                             default: llvm_unreachable("invalid vector operator id");
                         }
-                        Value * const mask = b.CreateZExtOrTrunc(b.hsimd_signmask(intWidth, comp), maskTy);
+                        Value *const mask = b.CreateZExt(b.hsimd_signmask(intWidth, comp), maskTy);
                         value = b.mvmd_insert(maskWidth, value, mask, i);
                     }
                     value = b.CreateBitCast(value, b.getBitBlockType());

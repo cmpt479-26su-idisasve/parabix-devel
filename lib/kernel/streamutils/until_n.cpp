@@ -94,7 +94,7 @@ void UntilNkernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * cons
         b.storeOutputStreamBlock("uptoN", ZERO, blockIndex, inputValue);
     }
     Value * const inputPackValue = b.simd_any(packSize, inputValue);
-    Value * iteratorMask = b.CreateZExtOrTrunc(b.hsimd_signmask(packSize, inputPackValue), sizeTy);
+    Value * iteratorMask = b.CreateZExt(b.hsimd_signmask(packSize, inputPackValue), sizeTy);
     iteratorMask = b.CreateShl(iteratorMask, b.CreateMul(localIndex, PACKS_PER_BLOCK));
     iteratorMask = b.CreateOr(groupMaskPhi, iteratorMask);
     groupMaskPhi->addIncoming(iteratorMask, iteratorLoop);

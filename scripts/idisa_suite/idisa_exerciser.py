@@ -2,6 +2,7 @@ import logging, os, subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from functools import partial
 
 import util
 
@@ -11,6 +12,8 @@ mlog = logging.Logger(__name__)
 @dataclass(frozen=True)
 class OperationMetadata:
     num_operands: int
+    min_field_width: int = 1
+    max_field_width: int | Callable | None = None
     bitblock: bool = False
     bit_immed: bool = False
     field_immed: bool = False
@@ -22,6 +25,17 @@ class OperationMetadata:
                                                     is not None) <= 1
         return self.bit_immed or self.field_immed or (self.fixed_immed
                                                       is not None)
+
+    def field_width_range(self, bitblock_width: int, lane_width: int):
+        if self.bitblock:
+            return (lane_width, lane_width)
+        elif self.max_field_width is None:
+            return (self.min_field_width, bitblock_width)
+        elif isinstance(self.max_field_width, int):
+            return (self.min_field_width, self.max_field_width)
+        else:
+            return (self.min_field_width,
+                    self.max_field_width(bitblock_width, lane_width))
 
     def immediate_range(self, bitblock_width: int, field_width: int):
         if self.fixed_immed is not None:
@@ -46,87 +60,104 @@ class OperationMetadata:
             return 0
 
 
-unary = OperationMetadata(1)
-unary_bitblock = OperationMetadata(1, bitblock=True)
-unary_bitblock_immed = OperationMetadata(1, bitblock=True, bit_immed=True)
-unary_bit_immed = OperationMetadata(1, bit_immed=True)
-unary_field_immed = OperationMetadata(1, field_immed=True)
-binary = OperationMetadata(2)
-binary_bitblock = OperationMetadata(2, bitblock=True)
-binary_bitblock_immed = OperationMetadata(2, bitblock=True, bit_immed=True)
-binary_field_immed = OperationMetadata(2, field_immed=True)
-ternary = OperationMetadata(3)
-ternary_bitblock_immed = OperationMetadata(3, bitblock=True, bit_immed=True)
+unary = partial(OperationMetadata, 1)
+unary_bitblock = partial(OperationMetadata, 1, bitblock=True)
+unary_bitblock_immed = partial(OperationMetadata,
+                               1,
+                               bitblock=True,
+                               bit_immed=True)
+unary_bit_immed = partial(OperationMetadata, 1, bit_immed=True)
+unary_field_immed = partial(OperationMetadata, 1, field_immed=True)
+binary = partial(OperationMetadata, 2)
+binary_bitblock = partial(OperationMetadata, 2, bitblock=True)
+binary_bitblock_immed = partial(OperationMetadata,
+                                2,
+                                bitblock=True,
+                                bit_immed=True)
+binary_field_immed = partial(OperationMetadata, 2, field_immed=True)
+ternary = partial(OperationMetadata, 3)
+ternary_bitblock = partial(OperationMetadata, 3, bitblock=True)
+ternary_bitblock_immed = partial(OperationMetadata,
+                                 3,
+                                 bitblock=True,
+                                 bit_immed=True)
 
 all_ops: dict[str, OperationMetadata] = {
-    "simd_select_hi": unary,
-    "simd_select_lo": unary,
-    "simd_fill": unary,
-    "esimd_bitspread": unary,
-    "bitblock_any": unary_bitblock,
-    "bitblock_popcount": unary_bitblock,
-    "simd_not": unary_bitblock,
-    "bitblock_mask_from": unary_bitblock,
-    "bitblock_mask_to": unary_bitblock,
-    "bitblock_set_bit": unary_bitblock,
-    "simd_slli": unary_bit_immed,
-    "simd_srli": unary_bit_immed,
-    "simd_srai": unary_bit_immed,
-    "mvmd_extract": unary_field_immed,
-    "mvmd_slli": unary_field_immed,
-    "mvmd_srli": unary_field_immed,
-    "simd_add": binary,
-    "simd_sub": binary,
-    "simd_mult": binary,
-    "simd_eq": binary,
-    "simd_ne": binary,
-    "simd_gt": binary,
-    "simd_ugt": binary,
-    "simd_ge": binary,
-    "simd_uge": binary,
-    "simd_lt": binary,
-    "simd_le": binary,
-    "simd_ult": binary,
-    "simd_ule": binary,
-    "simd_max": binary,
-    "simd_min": binary,
-    "simd_umax": binary,
-    "simd_umin": binary,
-    "simd_sllv": binary,
-    "simd_srlv": binary,
-    "simd_rotl": binary,
-    "simd_rotr": binary,
-    "simd_pext": binary,
-    "simd_pdep": binary,
-    "esimd_mergeh": binary,
-    "esimd_mergel": binary,
-    "hsimd_packh": binary,
-    "hsimd_packl": binary,
-    "hsimd_packus": binary,
-    "hsimd_packss": binary,
-    "mvmd_sll": binary,
-    "mvmd_srl": binary,
-    "mvmd_shuffle": binary,
-    "mvmd_shuffle:over": binary,
-    "mvmd_shuffle:highbit": binary,
-    "mvmd_compress": binary,
-    "mvmd_expand": binary,
-    "simd_and": binary_bitblock,
-    "simd_or": binary_bitblock,
-    "simd_xor": binary_bitblock,
-    "simd_binary": OperationMetadata(2, bitblock=True, fixed_immed=(1 << 2)),
-    "mvmd_insert": binary_field_immed,
-    "mvmd_dslli": binary_field_immed,
-    "bitblock_advance.shiftout": binary_bitblock_immed,
-    "bitblock_advance.shifted": binary_bitblock_immed,
-    "simd_if": ternary,
-    "bitblock_add_with_carry.sum": ternary,
-    "bitblock_add_with_carry.carry": ternary,
-    "bitblock_subtract_with_borrow.diff": ternary,
-    "bitblock_subtract_with_borrow.borrow": ternary,
-    "simd_ternary": OperationMetadata(3, bitblock=True, fixed_immed=(1 << 3)),
-    "bitblock_indexed_advance.shiftout": ternary_bitblock_immed,
-    "bitblock_indexed_advance.shifted": ternary_bitblock_immed,
+    "simd_select_hi": unary(min_field_width=2),
+    "simd_select_lo": unary(min_field_width=2),
+    "simd_fill": unary(),
+    "simd_any": unary(),
+    "simd_popcount": unary(),
+    "simd_cttz": unary(),
+    "simd_bitreverse": unary(),
+    # fw=1,2,4 is well defined (though maybe pointless)
+    "hsimd_partial_sum": unary(min_field_width=8),
+    "esimd_bitspread": unary(),
+    "bitblock_any": unary_bitblock(),
+    "bitblock_popcount": unary_bitblock(),
+    "simd_not": unary_bitblock(),
+    "bitblock_mask_from": unary_bitblock(),
+    "bitblock_mask_to": unary_bitblock(),
+    "bitblock_set_bit": unary_bitblock(),
+    "simd_slli": unary_bit_immed(),
+    "simd_srli": unary_bit_immed(),
+    "simd_srai": unary_bit_immed(),
+    "mvmd_extract": unary_field_immed(),
+    "mvmd_slli": unary_field_immed(),
+    "mvmd_srli": unary_field_immed(),
+    "simd_add": binary(),
+    "simd_sub": binary(),
+    "simd_mult": binary(),
+    "simd_eq": binary(),
+    "simd_ne": binary(),
+    "simd_gt": binary(),
+    "simd_ugt": binary(),
+    "simd_ge": binary(),
+    "simd_uge": binary(),
+    "simd_lt": binary(),
+    "simd_le": binary(),
+    "simd_ult": binary(),
+    "simd_ule": binary(),
+    "simd_max": binary(),
+    "simd_min": binary(),
+    "simd_umax": binary(),
+    "simd_umin": binary(),
+    "simd_sllv": binary(),
+    "simd_srlv": binary(),
+    "simd_rotl": binary(),
+    "simd_rotr": binary(),
+    "simd_pext": binary(),
+    "simd_pdep": binary(),
+    "esimd_mergeh": binary(max_field_width=lambda bw, lw: bw // 2),
+    "esimd_mergel": binary(max_field_width=lambda bw, lw: bw // 2),
+    "hsimd_packh": binary(min_field_width=2),
+    "hsimd_packl": binary(min_field_width=2),
+    "hsimd_packus": binary(min_field_width=2),
+    "hsimd_packss": binary(min_field_width=2),
+    "mvmd_sll": binary(),
+    "mvmd_srl": binary(),
+    # fw=1,2,4 are well defined, these ops just not implemented for fw<8
+    "mvmd_shuffle": binary(min_field_width=8),
+    "mvmd_shuffle:over": binary(min_field_width=8),
+    "mvmd_shuffle:highbit": binary(min_field_width=8),
+    "mvmd_compress": binary(min_field_width=8),
+    "mvmd_expand": binary(min_field_width=8),
+    "simd_and": binary_bitblock(),
+    "simd_or": binary_bitblock(),
+    "simd_xor": binary_bitblock(),
+    "simd_binary": binary_bitblock(fixed_immed=(1 << (1 << 2))),
+    "mvmd_insert": binary_field_immed(),
+    "mvmd_dslli": binary_field_immed(),
+    "bitblock_advance.shiftout": binary_bitblock_immed(),
+    "bitblock_advance.shifted": binary_bitblock_immed(),
+    "simd_if": ternary(),
+    "bitblock_add_with_carry.sum": ternary(),
+    "bitblock_add_with_carry.carry": ternary(),
+    "bitblock_subtract_with_borrow.diff": ternary(),
+    "bitblock_subtract_with_borrow.borrow": ternary(),
+    "simd_ternary": ternary_bitblock(fixed_immed=(1 << (1 << 3))),
+    "bitblock_indexed_advance.shiftout": ternary_bitblock_immed(),
+    "bitblock_indexed_advance.shifted": ternary_bitblock_immed(),
 }
 
 
@@ -181,12 +212,13 @@ def run_idisa_exerciser(exerciser_path,
                         ir_path=None,
                         unopt_ir_path=None,
                         asm_path=None,
-                        log_path=None):
+                        log_path=None,
+                        with_valgrind=False):
     cmd = [str(exerciser_path)]
+    if with_valgrind:
+        cmd = ["valgrind"] + cmd
     if disable_checks:
         cmd.append("--disable-checks")
-    # else:
-    #     cmd = ["valgrind"] + cmd
     if warmup is not None:
         cmd += ["--warmup", str(warmup)]
     if drop_best is not None:

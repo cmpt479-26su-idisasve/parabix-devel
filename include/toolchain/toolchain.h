@@ -144,6 +144,7 @@ extern std::string ThreadLocalPermittedOptions;
 extern std::string PreserveAllStreamSetDataOptions;
 extern std::string DoubleStreamSetSizeOptions;
 extern std::string CPUFeatureOptions;
+extern bool UseI64Builder;
 extern PipelineCompilationModeOptions PipelineCompilationMode;
 #ifdef ENABLE_PAPI
 extern std::string PapiCounterOptions;

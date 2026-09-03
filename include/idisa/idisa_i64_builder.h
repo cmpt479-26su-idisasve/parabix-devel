@@ -17,9 +17,6 @@ class IDISA_I64_Builder : public IDISA_Generic_Builder {
         : IDISA_Generic_Builder(cb, vectorWidth, laneWidth, overrideNativeVectorWidth) {}
 
     std::string getBuilderCacheName() override;
-
-    llvm::Value *hsimd_packh_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
-    llvm::Value *hsimd_packl_impl(unsigned fw, llvm::Value *a, llvm::Value *b) override;
 };
 
 } // namespace IDISA

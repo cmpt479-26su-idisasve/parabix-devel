@@ -160,7 +160,7 @@ std::vector<Value *> initializeCompressionMasks(KernelBuilder & b,
     for (unsigned i = 0; i < maskCount; i++) {
         Value * keyBitBlock = b.loadInputStreamBlock("symbolMarks" + (i > 0 ? std::to_string(i) : ""), sz_ZERO, strideBlockIndex);
         Value * const anyKey = b.simd_any(sw.width, keyBitBlock);
-        Value * keyWordMask = b.CreateZExtOrTrunc(b.hsimd_signmask(sw.width, anyKey), sizeTy);
+        Value * keyWordMask = b.CreateZExt(b.hsimd_signmask(sw.width, anyKey), sizeTy);
         keyMasks[i] = b.CreateOr(keyMaskAccum[i], b.CreateShl(keyWordMask, b.CreateMul(blockNo, sw.WORDS_PER_BLOCK)));
         keyMaskAccum[i]->addIncoming(keyMasks[i], maskInitialization);
     }
@@ -475,8 +475,8 @@ void initializeDecompressionMasks(KernelBuilder & b,
         Value * hashBitBlock = b.loadInputStreamBlock("hashMarks" + std::to_string(i), sz_ZERO, strideBlockIndex);
         Value * const anyKey = b.simd_any(sw.width, keyBitBlock);
         Value * const anyHash = b.simd_any(sw.width, hashBitBlock);
-        Value * keyWordMask = b.CreateZExtOrTrunc(b.hsimd_signmask(sw.width, anyKey), sizeTy);
-        Value * hashWordMask = b.CreateZExtOrTrunc(b.hsimd_signmask(sw.width, anyHash), sizeTy);
+        Value * keyWordMask = b.CreateZExt(b.hsimd_signmask(sw.width, anyKey), sizeTy);
+        Value * hashWordMask = b.CreateZExt(b.hsimd_signmask(sw.width, anyHash), sizeTy);
         keyMasks[i] = b.CreateOr(keyMaskAccum[i], b.CreateShl(keyWordMask, b.CreateMul(blockNo, sw.WORDS_PER_BLOCK)));
         hashMasks[i] = b.CreateOr(hashMaskAccum[i], b.CreateShl(hashWordMask, b.CreateMul(blockNo, sw.WORDS_PER_BLOCK)));
         keyMaskAccum[i]->addIncoming(keyMasks[i], maskInitialization);

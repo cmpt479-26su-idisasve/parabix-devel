@@ -668,7 +668,7 @@ void ElemSpreadKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * 
     Value * const moreBlocksToDo = b.CreateICmpNE(nextBlock, numOfBlocks);
 
     Value * const maskVector = b.loadInputStreamBlock("mask", ZERO, blockNoPhi);
-    Value * const metaMask = b.CreateZExtOrTrunc(b.hsimd_signmask(maskWidth, b.simd_any(maskWidth, maskVector)), metaMaskTy);
+    Value * const metaMask = b.CreateZExt(b.hsimd_signmask(maskWidth, b.simd_any(maskWidth, maskVector)), metaMaskTy);
 
     // I/O pointers for the current block
     Value * const maskBasePtr = b.getInputStreamBlockPtr("mask", ZERO, blockNoPhi);

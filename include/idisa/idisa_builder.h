@@ -240,7 +240,12 @@ class IDISA_Builder {
         return hsimd_packl_in_lanes_impl(lanes, fw, a, b);
     }
 
-    llvm::Value *hsimd_signmask(unsigned fw, llvm::Value *a) { return hsimd_signmask_impl(fw, a); }
+    llvm::Value *hsimd_signmask(unsigned fw, llvm::Value *a) {
+        // For very large bitBlockWidth (which would happen naturally on RVV with 2048-bit SIMD registers),
+        // hsimd_signmask can in theory produce ints that are larger than sizeTy
+        assert(getBitBlockWidth() / fw <= mCB->getSizeTy()->getBitWidth());
+        return hsimd_signmask_impl(fw, a);
+    }
 
     llvm::Value *mvmd_extract(unsigned fw, llvm::Value *a, unsigned fieldIndex) {
         return mvmd_extract_impl(fw, a, fieldIndex);

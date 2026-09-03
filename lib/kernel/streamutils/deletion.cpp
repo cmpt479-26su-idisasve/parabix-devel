@@ -122,7 +122,7 @@ void ElemFilterKernel::generateMultiBlockLogic(KernelBuilder & b, llvm::Value * 
 
     Value * const maskVector = b.loadInputStreamBlock("mask", ZERO, blockNoPhi);
     //b.CallPrintRegister("maskVector", maskVector);
-    Value * const metaMask = b.CreateZExtOrTrunc(b.hsimd_signmask(maskWidth, b.simd_any(maskWidth, maskVector)), metaMaskTy);
+    Value * const metaMask = b.CreateZExt(b.hsimd_signmask(maskWidth, b.simd_any(maskWidth, maskVector)), metaMaskTy);
     //b.CallPrintInt("metaMask", metaMask);
 
     // Input pointers for the current block

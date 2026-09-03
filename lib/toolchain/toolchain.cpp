@@ -224,6 +224,10 @@ static cl::opt<std::string, true> optCPUFeatureOptions("cpu-features", cl::locat
   cl::desc("Comma delimited list of CPU features to enable or disable"),
   cl::value_desc("attrs"), cl::cat(CodeGenOptions));
 
+bool UseI64Builder = false;
+static cl::opt<bool, true> optUseI64Builder("i64-builder", cl::location(UseI64Builder),
+  cl::desc("Force fallback (scalar) path even at larger bit block size"), cl::cat(CodeGenOptions));
+
 #ifdef ENABLE_PAPI
 std::string PapiCounterOptions = OmittedOption;
 static cl::opt<std::string, true> clPapiCounterOptions("PapiCounters", cl::location(PapiCounterOptions), cl::ValueOptional,

@@ -33,8 +33,8 @@ Value *IDISA_SSE_Builder::hsimd_signmask_impl(const unsigned fw, Value *a) {
     //     }
     //     unsigned maskWidth = getVectorBitWidth(a)/fw;
     //     Type * maskTy = getIntNTy(maskWidth);
-    //     Value * mask_lo = CreateZExtOrTrunc(hsimd_signmask(fw, a_lo), maskTy);
-    //     Value * mask_hi = CreateZExtOrTrunc(hsimd_signmask(fw, a_hi), maskTy);
+    //     Value * mask_lo = CreateZExt(hsimd_signmask(fw, a_lo), maskTy);
+    //     Value * mask_hi = CreateZExt(hsimd_signmask(fw, a_hi), maskTy);
     //     return fwCast(fw, CreateOr(CreateShl(mask_hi, maskWidth/2), mask_lo));
     // }
     // SSE special cases using Intrinsic::x86_sse_movmsk_ps (fw=32 only)

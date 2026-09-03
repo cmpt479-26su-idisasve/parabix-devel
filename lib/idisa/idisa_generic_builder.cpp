@@ -541,9 +541,9 @@ Value *IDISA_Generic_Builder::simd_rotl_impl(unsigned fw, Value *v, Value *rotat
         return v;
     }
     Type *fwTy = mCB->getIntNTy(fw);
-    unsigned numFields = getVectorBitWidth(v) / fw;
-    Constant *fw_mask = getSplat(numFields, ConstantInt::get(fwTy, fw - 1));
-    Constant *fw_splat = getSplat(numFields, ConstantInt::get(fwTy, fw));
+    unsigned fieldCount = getVectorBitWidth(v) / fw;
+    Constant *fw_mask = getSplat(fieldCount, ConstantInt::get(fwTy, fw - 1));
+    Constant *fw_splat = getSplat(fieldCount, ConstantInt::get(fwTy, fw));
     Value *shft = simd_and(fw_mask, rotates);
     Value *fwd = simd_sllv(fw, v, shft);
     // Masking is necessary to avoid a srlv by fw (poison value) when the
@@ -557,9 +557,9 @@ Value *IDISA_Generic_Builder::simd_rotr_impl(unsigned fw, Value *v, Value *rotat
         return v;
     }
     Type *fwTy = mCB->getIntNTy(fw);
-    unsigned numFields = getVectorBitWidth(v) / fw;
-    Constant *fw_mask = getSplat(numFields, ConstantInt::get(fwTy, fw - 1));
-    Constant *fw_splat = getSplat(numFields, ConstantInt::get(fwTy, fw));
+    unsigned fieldCount = getVectorBitWidth(v) / fw;
+    Constant *fw_mask = getSplat(fieldCount, ConstantInt::get(fwTy, fw - 1));
+    Constant *fw_splat = getSplat(fieldCount, ConstantInt::get(fwTy, fw));
     Value *shft = simd_and(fw_mask, rotates);
     // Masking is necessary to avoid a sllv by fw (poison value) when the
     // rotate amount is 0.
@@ -676,25 +676,28 @@ Value *IDISA_Generic_Builder::simd_bitreverse_impl(unsigned fw, Value *a) {
      Function * func = Intrinsic::getDeclaration(getModule(), Intrinsic::bitreverse, fwVectorType(fw));
      return CreateCall(func->getFunctionType(), func, fwCast(fw, a));
      */
-    if (fw > 8) {
-        // Reverse the bits of each byte and then use a byte shuffle to complete the job.
-        Value *bitrev8 = fwCast(8, simd_bitreverse(8, a));
-        const auto bytes_per_field = fw / 8;
-        const unsigned vectorWidth = getVectorBitWidth(a);
-        const auto byte_count = vectorWidth / 8;
-        IndexVector Idxs(byte_count);
-        for (unsigned i = 0; i < byte_count; i += bytes_per_field) {
-            for (unsigned j = 0; j < bytes_per_field; j++) {
-                Idxs[i + j] = mCB->getInt32(i + bytes_per_field - j - 1);
-            }
-        }
-        return mCB->CreateShuffleVector(bitrev8, UndefValue::get(bitrev8->getType()), ConstantVector::get(Idxs));
-    } else {
+    if (fw == 1) {
+        return a;
+    }
+    if (fw <= 8) {
         if (fw > 2) {
             a = simd_bitreverse(fw / 2, a);
         }
         return simd_or(simd_srli(16, simd_select_hi(fw, a), fw / 2), simd_slli(16, simd_select_lo(fw, a), fw / 2));
     }
+    assert(fw >= 16);
+    // Reverse the bits of each byte and then use a byte shuffle to complete the job.
+    Value *bitrev8 = fwCast(8, simd_bitreverse(8, a));
+    const auto bytes_per_field = fw / 8;
+    const unsigned vectorWidth = getVectorBitWidth(a);
+    const auto byte_count = vectorWidth / 8;
+    IndexVector Idxs(byte_count);
+    for (unsigned i = 0; i < byte_count; i += bytes_per_field) {
+        for (unsigned j = 0; j < bytes_per_field; j++) {
+            Idxs[i + j] = mCB->getInt32(i + bytes_per_field - j - 1);
+        }
+    }
+    return mCB->CreateShuffleVector(bitrev8, UndefValue::get(bitrev8->getType()), ConstantVector::get(Idxs));
 }
 
 Value *IDISA_Generic_Builder::simd_if_impl(unsigned fw, Value *cond, Value *a, Value *b) {
@@ -747,6 +750,8 @@ Value *IDISA_Generic_Builder::simd_ternary_impl(unsigned char mask, Value *a, Va
 }
 
 Value *IDISA_Generic_Builder::esimd_mergeh_impl(unsigned fw, Value *a, Value *b) {
+    const auto field_count = getVectorBitWidth(a) / fw;
+    assert(field_count >= 2);
     if (fw < 8) {
         if (getVectorBitWidth(a) > mNativeBitBlockWidth) {
             Value *a_hi = CreateHalfVectorHigh(a);
@@ -757,8 +762,6 @@ Value *IDISA_Generic_Builder::esimd_mergeh_impl(unsigned fw, Value *a, Value *b)
         Value *abl = simd_or(simd_slli(bitManipFW, simd_select_lo(fw * 2, b), fw), simd_select_lo(fw * 2, a));
         return esimd_mergeh(fw * 2, abl, abh);
     }
-    const auto field_count = getVectorBitWidth(a) / fw;
-
     IndexVector Idxs(field_count);
     for (unsigned i = 0; i < field_count / 2; i++) {
         Idxs[2 * i] = mCB->getInt32(i + field_count / 2);                   // selects elements from first reg.
@@ -768,6 +771,8 @@ Value *IDISA_Generic_Builder::esimd_mergeh_impl(unsigned fw, Value *a, Value *b)
 }
 
 Value *IDISA_Generic_Builder::esimd_mergel_impl(unsigned fw, Value *a, Value *b) {
+    const auto field_count = getVectorBitWidth(a) / fw;
+    assert(field_count >= 2);
     if (fw < 8) {
         if (getVectorBitWidth(a) > mNativeBitBlockWidth) {
             Value *a_lo = CreateHalfVectorLow(a);
@@ -778,7 +783,6 @@ Value *IDISA_Generic_Builder::esimd_mergel_impl(unsigned fw, Value *a, Value *b)
         Value *abl = simd_or(simd_slli(bitManipFW, simd_select_lo(fw * 2, b), fw), simd_select_lo(fw * 2, a));
         return esimd_mergel(fw * 2, abl, abh);
     }
-    const auto field_count = getVectorBitWidth(a) / fw;
     IndexVector Idxs(field_count);
     for (unsigned i = 0; i < field_count / 2; i++) {
         Idxs[2 * i] = mCB->getInt32(i);                   // selects elements from first reg.
@@ -791,6 +795,7 @@ Value *IDISA_Generic_Builder::esimd_bitspread_impl(unsigned vec_width, unsigned 
     const size_t fieldCount = vec_width / fw;
     Type *maskVecTy = FixedVectorType::get(mCB->getInt1Ty(), fieldCount);
     Type *spreadVecTy = FixedVectorType::get(mCB->getIntNTy(fw), fieldCount);
+    // This doesn't seem to cause LLVM to widen small (< 8 bit) vector elements?
     return mCB->CreateZExt(mCB->CreateBitCast(mCB->CreateZExtOrTrunc(bitmask, mCB->getIntNTy(fieldCount)), maskVecTy),
                            spreadVecTy);
 }
@@ -899,14 +904,28 @@ Value *IDISA_Generic_Builder::hsimd_packl_in_lanes_impl(unsigned lanes, unsigned
 }
 
 Value *IDISA_Generic_Builder::hsimd_signmask_impl(unsigned fw, Value *a) {
-    if (fw < 8)
-        UnsupportedFieldWidthError(fw, "hsimd_signmask");
+    const unsigned maskWidth = getBitBlockWidth() / fw;
+    const unsigned sizeBits = mCB->getSizeTy()->getBitWidth();
+    assert(maskWidth <= sizeBits);
+    if (fw == 1) {
+        mCB->CreateBitCast(a, mCB->getIntNTy(a->getType()->getPrimitiveSizeInBits()));
+    } else if (fw < 8) {
+        assert(sizeBits <= getBitBlockWidth());
+        const unsigned lanes = getBitBlockWidth() / sizeBits;
+        Value *accum = nullptr;
+        Value *compressed = simd_pext(
+            sizeBits, a,
+            simd_fill(sizeBits, ConstantInt::get(getContext(), APInt::getSplat(sizeBits, APInt(fw, 1 << (fw - 1))))));
+        for (unsigned i = 0; i < lanes; ++i) {
+            Value *part = mCB->CreateShl(mvmd_extract(sizeBits, compressed, i), i * sizeBits / fw);
+            accum = accum ? mCB->CreateOr(accum, part) : part;
+        }
+    }
     Value *a1 = fwCast(fw, a);
     Value *mask = mCB->CreateICmpSLT(a1, ConstantAggregateZero::get(a1->getType()));
-    const auto maskWidth = getBitBlockWidth() / fw;
     mask = mCB->CreateBitCast(mask, mCB->getIntNTy(maskWidth));
     if (maskWidth < bitManipFW) {
-        mask = mCB->CreateZExt(mask, mCB->getInt32Ty());
+        mask = mCB->CreateZExt(mask, mCB->getIntNTy(bitManipFW));
     }
     return mask;
 }
@@ -977,18 +996,8 @@ Value *IDISA_Generic_Builder::mvmd_dslli_impl(unsigned fw, Value *a, Value *b, u
 //  Generic mvmd_shuffle reduces to byte shuffling at the native SIMD width.
 Value *IDISA_Generic_Builder::mvmd_shuffle_impl(unsigned fw, Value *data_table, Value *index_vector, ShuffleMode mode) {
     auto vec_width = getVectorBitWidth(data_table);
-    // llvm::errs() << "IDISA_Generic_Builder::mvmd_shuffle , vec_width = " << vec_width << ", fw = " << fw <<
-    // "\n";
-    if (vec_width == fw) {
-        // Special case for a vector with a single field.
-        if (mode == ShuffleMode::TruncateIndex) {
-            return data_table;
-        }
-        Value *isIndex0 = mCB->CreateIsNull(index_vector);
-        return mCB->CreateSelect(isIndex0, data_table, ConstantInt::getNullValue(data_table->getType()));
-    }
+    const unsigned fieldCount = vec_width / fw;
     if (vec_width > mNativeBitBlockWidth) {
-        auto fieldCount = vec_width / fw;
         if (fw >= 16) {
             Value *t0 = CreateHalfVectorLow(data_table);
             Value *t1 = CreateHalfVectorHigh(data_table);
@@ -1025,9 +1034,8 @@ Value *IDISA_Generic_Builder::mvmd_shuffle_impl(unsigned fw, Value *data_table, 
             return fwCast(fw, CreateDoubleVector(shuf0, shuf1));
         }
     }
-    if ((vec_width == mNativeBitBlockWidth) && ((fw == 16) || (fw == 32) || (fw == 64))) {
+    if ((fieldCount > 2) && ((fw == 16) || (fw == 32) || (fw == 64))) {
         // Create a table for shuffling with smaller field widths.
-        const unsigned fieldCount = vec_width / fw;
         Constant *fieldMask = getSplat(fieldCount, ConstantInt::get(mCB->getIntNTy(fw), fieldCount - 1));
         Value *inbounds_idx = simd_and(index_vector, fieldMask);
         ConstantInt *multiplier = 0;
@@ -1052,7 +1060,37 @@ Value *IDISA_Generic_Builder::mvmd_shuffle_impl(unsigned fw, Value *data_table, 
         }
         return fwCast(fw, mvmd_shuffle(8, data_table, narrowed_idx, mode));
     }
-    UnsupportedFieldWidthError(fw, "mvmd_shuffle");
+    // Otherwise...
+    data_table = fwCast(fw, data_table);
+    index_vector = fwCast(fw, index_vector);
+    Value *outMask = nullptr;
+    Value *fnMaskVec = ConstantVector::getSplat(ElementCount::getFixed(fieldCount),
+                                                ConstantInt::get(getContext(), APInt(fw, fieldCount - 1)));
+    switch (mode) {
+    default:
+    case ShuffleMode::TruncateIndex:
+        assert(mode == ShuffleMode::TruncateIndex || "Bad ShuffleMode");
+        assert(floor_log2(fieldCount) <= fw);
+        break;
+    case ShuffleMode::ZeroOnIndexOver:
+        assert(floor_log2(fieldCount) < fw);
+        outMask = mCB->CreateSExt(mCB->CreateICmpULE(index_vector, fnMaskVec), fwVectorType(fw));
+        break;
+    case ShuffleMode::ZeroOnHighIndexBit:
+        assert(floor_log2(fieldCount) < fw);
+        outMask = mCB->CreateNot(mCB->CreateAShr(index_vector, fw - 1));
+        break;
+    }
+    Value *result = PoisonValue::get(fwVectorType(fw));
+    index_vector = mCB->CreateAnd(index_vector, fnMaskVec);
+    for (unsigned i = 0; i < fieldCount; ++i) {
+        Value *idx = mCB->CreateExtractElement(index_vector, i);
+        result = mCB->CreateInsertElement(result, mCB->CreateExtractElement(data_table, idx), i);
+    }
+    if (outMask) {
+        result = mCB->CreateAnd(result, outMask);
+    }
+    return result;
 }
 
 Value *IDISA_Generic_Builder::mvmd_shuffle2_impl(unsigned fw, Value *table0, Value *table1, Value *index_vector,
@@ -1123,13 +1161,19 @@ Value *IDISA_Generic_Builder::mvmd_expand_impl(unsigned fw, Value *v, Value *sel
 }
 
 Value *IDISA_Generic_Builder::bitblock_any_impl(Value *a) {
-    Type *aType = a->getType();
-    if (aType->isIntegerTy()) {
-        return mCB->CreateICmpNE(a, ConstantInt::getNullValue(aType));
+    unsigned mergeCount = getBitBlockWidth() / getLaneWidth();
+    assert(mergeCount > 0);
+    Value *accum = a;
+    while (mergeCount > 2) {
+        accum = simd_or(accum, mvmd_srli(getLaneWidth(), accum, mergeCount / 2));
+        mergeCount = mergeCount >> 1;
+    }
+    if (mergeCount == 2) {
+        Value *lastOr = mCB->CreateOr(mvmd_extract(getLaneWidth(), accum, 1), mvmd_extract(getLaneWidth(), accum, 0));
+        return mCB->CreateICmpNE(lastOr, ConstantInt::getNullValue(getLaneTy()));
     } else {
-        Value *r = simd_ne(bitManipFW, a, allZeroes());
-        r = hsimd_signmask(bitManipFW, r);
-        return mCB->CreateICmpNE(r, ConstantInt::getNullValue(r->getType()), "bitblock_any");
+        assert(mergeCount == 1);
+        return mCB->CreateICmpNE(mvmd_extract(getLaneWidth(), accum, 0), ConstantInt::getNullValue(getLaneTy()));
     }
 }
 

@@ -14,13 +14,14 @@ mlog = logging.Logger(__name__)
 
 
 def default_immediate_order(imm_range: int):
-    assert(imm_range > 0)
+    assert (imm_range > 0)
     if imm_range == 1:
         return [0]
     bits = (imm_range - 1).bit_length()
     basis = [(1 << (bits - i)) - 1 for i in range(bits)]
     swizzle_basis: list[int] = [
-        basis[bits - (i >> 1) - 1] if i & 1 else basis[i >> 1] for i in range(bits)
+        basis[bits - (i >> 1) - 1] if i & 1 else basis[i >> 1]
+        for i in range(bits)
     ]
     imms = [
         reduce(xor, (swizzle_basis[j] * ((i >> j) & 1) for j in range(bits)))
@@ -46,6 +47,7 @@ class ExerciserProcedure:
     default_timing_operand_vectors: list[Path | str]
     specialized_test_operand_vectors: dict[str, list[Path | str]]
     specialized_timing_operand_vectors: dict[str, list[Path | str]]
+    lane_width = 32  # should be configured?
     timing_warmup: int = 2
     timing_repeat: int = 500
     timing_drop_worst: int = 0
@@ -63,7 +65,7 @@ class ExerciserProcedure:
     test_capture_log_path: Callable[..., Path | str
                                     | None] = lambda proc, cfg: None
 
-    def prep_test_run(self, cfg: OperationConfig) -> Callable:
+    def test_run(self, cfg: OperationConfig, **extra_kwargs) -> Callable:
         meta = idisa_exerciser.all_ops[cfg.operation]
         operands = self.specialized_test_operand_vectors.get(
             cfg.operation, self.default_test_operand_vectors)
@@ -74,35 +76,38 @@ class ExerciserProcedure:
         asm_path = self.prep_file(cfg, self.test_capture_asm_path)
         output_path = self.prep_file(cfg, self.test_capture_output_path)
         log_path = self.prep_file(cfg, self.test_capture_log_path)
-        return partial(idisa_exerciser.run_idisa_exerciser,
-                       util.project_dir / self.exerciser_path,
-                       self.extra_args,
-                       cfg.operation,
-                       cfg.field_width,
-                       operands[:meta.num_operands] + immeds,
-                       output_path=output_path,
-                       ir_path=ir_path,
-                       unopt_ir_path=unopt_ir_path,
-                       asm_path=asm_path,
-                       log_path=log_path)
+        return idisa_exerciser.run_idisa_exerciser(
+            util.project_dir / self.exerciser_path,
+            self.extra_args,
+            cfg.operation,
+            cfg.field_width,
+            operands[:meta.num_operands] + immeds,
+            output_path=output_path,
+            ir_path=ir_path,
+            unopt_ir_path=unopt_ir_path,
+            asm_path=asm_path,
+            log_path=log_path,
+            **extra_kwargs)
 
-    def prep_timing_run(self, cfg: OperationConfig) -> Callable:
+    def timing_run(self, cfg: OperationConfig, **extra_kwargs) -> Callable:
         meta = idisa_exerciser.all_ops[cfg.operation]
         operands = self.specialized_timing_operand_vectors.get(
             cfg.operation, self.default_timing_operand_vectors)
         immeds = [str(cfg.immediate)] if cfg.immediate is not None else []
         log_path = self.prep_file(cfg, self.test_capture_log_path)
-        return partial(idisa_exerciser.run_idisa_exerciser,
-                       util.project_dir / self.exerciser_path,
-                       self.extra_args,
-                       cfg.operation,
-                       cfg.field_width,
-                       operands[:meta.num_operands] + immeds,
-                       warmup=self.timing_warmup,
-                       repeat=self.timing_repeat,
-                       drop_worst=self.timing_drop_worst,
-                       drop_best=self.timing_drop_best,
-                       log_path=log_path)
+        return idisa_exerciser.run_idisa_exerciser(
+            util.project_dir / self.exerciser_path,
+            self.extra_args,
+            cfg.operation,
+            cfg.field_width,
+            operands[:meta.num_operands] + immeds,
+            disable_checks=True,
+            warmup=self.timing_warmup,
+            repeat=self.timing_repeat,
+            drop_worst=self.timing_drop_worst,
+            drop_best=self.timing_drop_best,
+            log_path=log_path,
+            **extra_kwargs)
 
     def prep_file(self, cfg, path_f):
         path = path_f(self, cfg)
@@ -128,9 +133,17 @@ def make_configs(
     for operation in operations:
         assert operation in idisa_exerciser.all_ops
         meta = idisa_exerciser.all_ops[operation]
-        default_fw = 32 # Kinda hokey: pick something arbitrary for bitblock ops
-        for fw in (field_widths if not meta.bitblock else [default_fw]):
+
+        available_fws = []
+        fw_min, fw_max = meta.field_width_range(proc.block_width, proc.lane_width)
+        assert(fw_min <= fw_max)
+        for fw in field_widths:
             assert type(fw) == int
+            fw = min(max(fw, fw_min), fw_max)
+            if fw not in available_fws:
+                available_fws.append(fw)
+
+        for fw in available_fws:
             this_imms = [None]
             if meta.takes_immediate:
                 imm_range = meta.immediate_range(proc.block_width, fw)
@@ -144,8 +157,8 @@ def make_configs(
                     if immediates is None:
                         this_imms = this_imms[:3]
                     elif immediates > 0 and immediates < 1:
-                        this_imms = this_imms[:math.
-                                            ceil(len(this_imms) * immediates)]
+                        this_imms = this_imms[:math.ceil(
+                            len(this_imms) * immediates)]
                     else:
                         this_imms = this_imms[:round(immediates)]
 
@@ -266,6 +279,7 @@ def main():
                         nargs="?",
                         default=cfgyaml["default"].get("immediates"))
     parser.add_argument("--time", action="store_true", default=False)
+    parser.add_argument("--valgrind", action="store_true", default=False)
     args: argparse.Namespace = parser.parse_args()
 
     if isinstance(args.modes, str):
@@ -303,20 +317,17 @@ def main():
         for m in do_modes:
             p = procedures[m]
             for c in make_configs(p, do_ops, do_fws, imms):
-                fn = p.prep_timing_run(c)
-                fn()
+                p.timing_run(c, with_valgrind=args.valgrind)
     else:
         mlog.info("mode,bw,op,fw,imm,status,log")
         for m in do_modes:
             p = procedures[m]
             for c in make_configs(p, do_ops, do_fws, imms):
-                fn = p.prep_test_run(c)
-                res, logf = fn()
-                mlog.info(
-                    f"{p.name},{p.block_width},{c.operation},"
-                    f"{c.field_width},"
-                    f"{c.immediate if c.immediate is not None else ''},"
-                    f"{'pass' if res == 0 else 'FAIL'},{logf}")
+                res, logf = p.test_run(c, with_valgrind=args.valgrind)
+                mlog.info(f"{p.name},{p.block_width},{c.operation},"
+                          f"{c.field_width},"
+                          f"{c.immediate if c.immediate is not None else ''},"
+                          f"{'pass' if res == 0 else 'FAIL'},{logf}")
 
 
 if __name__ == "__main__":

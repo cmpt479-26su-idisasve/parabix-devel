@@ -731,6 +731,90 @@ OperationIndexEntry allOperations[] = {
                      }
                      return expectedBlock;
                  }>(),
+    scalarCheckEntry<UnaryOpConfig, ExpectedType::fieldVector, "simd_any", "x0", "",
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.simd_any(p.fw, p.opr[0]);
+                     },
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.CreateSExt(b.CreateICmpNE(p.opr[0], b.getIntN(p.fw, 0)), b.getIntNTy(p.fw));
+                     }>(),
+    scalarCheckEntry<UnaryOpConfig, ExpectedType::fieldVector, "simd_popcount", "x0", "",
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.simd_popcount(p.fw, p.opr[0]);
+                     },
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         Value *accum = b.getIntN(p.fw, 0);
+                         for (unsigned i = 0; i < p.fw; ++i) {
+                             accum = b.CreateAdd(b.CreateAnd(b.CreateLShr(p.opr[0], i), 1), accum);
+                         }
+                         return accum;
+                     }>(),
+    scalarCheckEntry<UnaryOpConfig, ExpectedType::fieldVector, "simd_cttz", "x0", "",
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.simd_cttz(p.fw, p.opr[0]);
+                     },
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         Value *accum = b.getIntN(p.fw, p.fw);
+                         Value *zero = b.getIntN(p.fw, 0);
+                         // Eval order is opposite to construction order (LIFO)
+                         for (unsigned i = 0; i < p.fw; ++i) {
+                             accum = b.CreateSelect(
+                                 b.CreateICmpNE(b.CreateAnd(b.CreateLShr(p.opr[0], p.fw - 1 - i), 1), zero),
+                                 b.getIntN(p.fw, p.fw - 1 - i), accum);
+                         }
+                         return accum;
+                     }>(),
+    scalarCheckEntry<UnaryOpConfig, ExpectedType::fieldVector, "simd_bitreverse", "x0", "",
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         return b.simd_bitreverse(p.fw, p.opr[0]);
+                     },
+                     [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                         Value *accum = nullptr;
+                         for (unsigned i = 0; i < p.fw; ++i) {
+                             Value *shifted;
+                             if (i * 2 <= p.fw - 1) {
+                                 shifted = b.CreateLShr(p.opr[0], p.fw - 1 - i * 2);
+                             } else {
+                                 shifted = b.CreateShl(p.opr[0], i * 2 - (p.fw - 1));
+                             }
+                             shifted = b.CreateAnd(shifted, uint64_t(1) << i);
+                             if (accum) {
+                                 accum = b.CreateOr(accum, shifted);
+                             } else {
+                                 accum = shifted;
+                             }
+                         }
+                         return accum;
+                     }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::fieldVector, "hsimd_partial_sum", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     return b.hsimd_partial_sum(p.fw, p.opr[0]);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *expectedBlock = p.opr[0];
+                     for (unsigned i = 2; i <= p.fn; i *= 2) {
+                         for (unsigned j = p.fn; j != i / 2; --j) {
+                             Value *partialIJ = b.CreateAdd(SafeExtractElement(b, p.fw, expectedBlock, j - 1),
+                                                            SafeExtractElement(b, p.fw, expectedBlock, j - 1 - i / 2));
+                             expectedBlock = SafeInsertElement(b, p.fw, expectedBlock, partialIJ, j - 1);
+                         }
+                     }
+                     return expectedBlock;
+                 }>(),
+    genericEntry<UnaryOpConfig, ExpectedType::fieldVector, "esimd_bitspread", "x0", "",
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     return b.esimd_bitspread(b.getBitBlockWidth(), p.fw, scalarOpr0);
+                 },
+                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
+                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
+                     Value *expectedBlock = Constant::getNullValue(p.vTy);
+                     for (unsigned i = 0; (i < p.fn) && (i < p.fw); ++i) {
+                         expectedBlock =
+                             SafeInsertElement(b, p.fw, expectedBlock, b.CreateAnd(b.CreateLShr(scalarOpr0, i), 1), i);
+                     }
+                     return expectedBlock;
+                 }>(),
     scalarCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "simd_add", "x0, x1", "y[i] <- x0[i] + x1[i]",
                      [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                          return b.simd_add(p.fw, p.opr[0], p.opr[1]);
@@ -1058,20 +1142,6 @@ OperationIndexEntry allOperations[] = {
                                   }
                                   return expectedBlock;
                               }>(),
-    genericEntry<UnaryOpConfig, ExpectedType::fieldVector, "esimd_bitspread", "x0", "",
-                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
-                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
-                     return b.esimd_bitspread(b.getBitBlockWidth(), p.fw, scalarOpr0);
-                 },
-                 [](KernelBuilder &b, const UnaryOpConfig &c, const UnaryOpConfig::Params &p) {
-                     Value *scalarOpr0 = SafeExtractElement(b, p.fw, p.opr[0], uint64_t(0));
-                     Value *expectedBlock = Constant::getNullValue(p.vTy);
-                     for (unsigned i = 0; (i < p.fn) && (i < p.fw); ++i) {
-                         expectedBlock =
-                             SafeInsertElement(b, p.fw, expectedBlock, b.CreateAnd(b.CreateLShr(scalarOpr0, i), 1), i);
-                     }
-                     return expectedBlock;
-                 }>(),
     horizontalStoreCheckEntry<BinaryOpConfig, ExpectedType::fieldVector, "hsimd_packh", "x0, x1", "",
                               [](KernelBuilder &b, const BinaryOpConfig &c, const BinaryOpConfig::Params &p) {
                                   return b.hsimd_packh(p.fw, p.opr[0], p.opr[1]);
@@ -1598,14 +1668,6 @@ OperationIndexEntry allOperations[] = {
 
 /*
 // Need to add to list, still:
-
-    llvm::Value *simd_any(unsigned fw, llvm::Value *a)
-    llvm::Value *simd_popcount(unsigned fw, llvm::Value *a)
-    llvm::Value *hsimd_partial_sum(unsigned fw, llvm::Value *a)
-    llvm::Value *simd_cttz(unsigned fw, llvm::Value *a)
-
-    llvm::Value *simd_bitreverse(unsigned fw, llvm::Value *a)
-
     llvm::Value *hsimd_packh_in_lanes(unsigned lanes, unsigned fw, llvm::Value *a, llvm::Value *b)
     llvm::Value *hsimd_packl_in_lanes(unsigned lanes, unsigned fw, llvm::Value *a, llvm::Value *b)
 

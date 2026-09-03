@@ -768,8 +768,8 @@ void MatchCoordinatesKernel::generateMultiBlockLogic(KernelBuilder & b, Value * 
         Value * baseCountsNext = b.bitCast(b.simd_fill(sw.width, b.mvmd_extract(sw.width, breakCounts, b.getBitBlockWidth()/sw.width - 1)));
         baseCounts->addIncoming(baseCountsNext, stridePrecomputation);
     }
-    Value * matchWordMask = b.CreateZExtOrTrunc(b.hsimd_signmask(sw.width, anyMatch), sizeTy);
-    Value * breakWordMask = b.CreateZExtOrTrunc(b.hsimd_signmask(sw.width, anyBreak), sizeTy);
+    Value * matchWordMask = b.CreateZExt(b.hsimd_signmask(sw.width, anyMatch), sizeTy);
+    Value * breakWordMask = b.CreateZExt(b.hsimd_signmask(sw.width, anyBreak), sizeTy);
     Value * matchMask = b.CreateOr(matchMaskAccum, b.CreateShl(matchWordMask, b.CreateMul(blockNo, sw.WORDS_PER_BLOCK)), "matchMask");
     Value * breakMask = b.CreateOr(breakMaskAccum, b.CreateShl(breakWordMask, b.CreateMul(blockNo, sw.WORDS_PER_BLOCK)), "breakMask");
     Value * const nextBlockNo = b.CreateAdd(blockNo, sz_ONE);
@@ -1388,8 +1388,8 @@ void MatchFilterKernel::generateMultiBlockLogic(KernelBuilder & b, Value * const
 
     Value * const anyMatch = b.simd_any(sw.width, matchBitBlock);
     Value * const anyBreak = b.simd_any(sw.width, breakBitBlock);
-    Value * matchWordMask = b.CreateZExtOrTrunc(b.hsimd_signmask(sw.width, anyMatch), sizeTy);
-    Value * breakWordMask = b.CreateZExtOrTrunc(b.hsimd_signmask(sw.width, anyBreak), sizeTy);
+    Value * matchWordMask = b.CreateZExt(b.hsimd_signmask(sw.width, anyMatch), sizeTy);
+    Value * breakWordMask = b.CreateZExt(b.hsimd_signmask(sw.width, anyBreak), sizeTy);
     Value * matchMask = b.CreateOr(matchMaskAccum, b.CreateShl(matchWordMask, b.CreateMul(blockNo, sw.WORDS_PER_BLOCK)), "matchMask");
     Value * breakMask = b.CreateOr(breakMaskAccum, b.CreateShl(breakWordMask, b.CreateMul(blockNo, sw.WORDS_PER_BLOCK)), "breakMask");
     Value * const nextBlockNo = b.CreateAdd(blockNo, sz_ONE);
