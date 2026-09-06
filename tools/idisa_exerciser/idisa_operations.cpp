@@ -77,13 +77,13 @@ Bindings TestKernel::captureOperandBindings(const vector<StreamSet *> &operandSS
 
 class CheckKernel : public BlockOrientedKernel {
   public:
-    CheckKernel(LLVMTypeSystemInterface &ts, OperationConfig &config, bool quiet, const vector<StreamSet *> &operandSSs,
+    CheckKernel(LLVMTypeSystemInterface &ts, OperationConfig &config, const vector<StreamSet *> &operandSSs,
                 StreamSet *testOutput, StreamSet *expectedOutput, Scalar *failureCount)
-        : BlockOrientedKernel(ts, "check_" + config.getIdentifier().str(),
+        : BlockOrientedKernel(ts, "check_" + config.getIdentifier().str() + (QuietMode ? "_q" : ""),
                               captureOperandBindings(operandSSs, testOutput),
                               {Binding{OperationConfig::expectedOutputIdent, expectedOutput}}, {},
                               {Binding{OperationConfig::failureCountIdent, failureCount}}, {}),
-          mConfig(config), mQuiet(quiet), mNumOperands(operandSSs.size()) {}
+          mConfig(config), mQuiet(QuietMode), mNumOperands(operandSSs.size()) {}
 
   protected:
     void generateDoBlockMethod(KernelBuilder &b) override;
@@ -475,7 +475,7 @@ class ImmediateOpConfig : public BaseOpConfig {
             return true;
         }
         mDescription = mDescription + " #" + to_string(immedVal);
-        mIdentifier = mIdentifier + "_#" + to_string(immedVal);
+        mIdentifier = mIdentifier + "_i" + to_string(immedVal);
         mImmediateValue = immedVal;
         return false;
     }
@@ -488,7 +488,7 @@ class GenericOpConfig : public BaseOpConfig {
 
     GenericOpConfig(StringRef description, StringRef identifier, unsigned fieldWidth, bool quiet, TestF testF,
                     ExpectedF expectedF)
-        : BaseOpConfig(description, identifier, fieldWidth), mQuiet(quiet), mTestF(testF), mExpectedF(expectedF) {}
+        : BaseOpConfig(description, identifier, fieldWidth), mTestF(testF), mExpectedF(expectedF) {}
 
     using BaseOpConfig::fillParams;
     using BaseOpConfig::getDescription;
@@ -567,14 +567,12 @@ class GenericOpConfig : public BaseOpConfig {
             return true;
         }
 
-        mIdentifier = +(mQuiet ? "_quiet" : "");
-
         mTestOutput = mPipelineBuilder->CreateStreamSet(1, 1);
         mPipelineBuilder->template CreateKernelCall<TestKernel>(*this, mOperandSSs, mTestOutput);
         if (doChecks) {
             mExpectedOutput = mPipelineBuilder->CreateStreamSet(1, 1);
             mPipelineBuilder->template CreateKernelCall<CheckKernel>(
-                *this, mQuiet, mOperandSSs, mTestOutput, mExpectedOutput,
+                *this, mOperandSSs, mTestOutput, mExpectedOutput,
                 mPipelineBuilder->getOutputScalar(OperationConfig::failureCountIdent));
         } else {
             // Dummy kernel just to provide a 0 error count
@@ -593,7 +591,6 @@ class GenericOpConfig : public BaseOpConfig {
     using BaseOpConfig::mPipelineBuilder;
     using BaseOpConfig::mTestOutput;
 
-    bool mQuiet;
     TestF mTestF;
     ExpectedF mExpectedF;
 };
